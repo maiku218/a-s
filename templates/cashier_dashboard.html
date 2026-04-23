@@ -88,6 +88,12 @@
             background: transparent; border: none; color: white; 
             width: 100%; font-size: 18px; font-weight: 700; outline: none;
         }
+        .clear-btn {
+            background: transparent; border: none; color: var(--text-muted);
+            cursor: pointer; font-size: 20px; padding: 5px;
+            transition: color 0.2s;
+        }
+        .clear-btn:hover { color: white; }
 
         /* Selected Product Display */
         .selected-product {
@@ -252,6 +258,82 @@
             cursor: pointer;
             margin-top: 15px;
         }
+
+        /* 58mm Thermal Printer Styles */
+        @media print {
+            body * { visibility: hidden; }
+            #print-area, #print-area * { 
+                visibility: visible; 
+            }
+            #print-area {
+                position: absolute;
+                left: 0;
+                top: 0;
+                width: 58mm;
+                padding: 0;
+                margin: 0;
+            }
+        }
+        
+        #print-area {
+            display: none;
+            background: white;
+            color: black;
+            padding: 10px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            line-height: 1.4;
+        }
+        
+        .print-receipt {
+            width: 58mm;
+            margin: 0 auto;
+        }
+        
+        .print-header {
+            text-align: center;
+            border-bottom: 1px dashed #000;
+            padding-bottom: 10px;
+            margin-bottom: 10px;
+        }
+        
+        .print-header h3 {
+            margin: 5px 0;
+            font-size: 16px;
+        }
+        
+        .print-header p {
+            margin: 3px 0;
+            font-size: 10px;
+        }
+        
+        .print-items {
+            margin-bottom: 10px;
+        }
+        
+        .print-item {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 5px;
+            font-size: 11px;
+        }
+        
+        .print-total {
+            border-top: 2px solid #000;
+            padding-top: 8px;
+            margin-top: 8px;
+            font-weight: bold;
+            font-size: 14px;
+            text-align: right;
+        }
+        
+        .print-footer {
+            text-align: center;
+            margin-top: 10px;
+            padding-top: 8px;
+            border-top: 1px dashed #000;
+            font-size: 10px;
+        }
     </style>
 </head>
 <body>
@@ -263,7 +345,7 @@
                 <div style="width: 7px; height: 7px; background: var(--green); border-radius: 50%;"></div>
                 <span style="font-size: 10px; font-weight: 800; color: var(--green);">SYSTEM READY</span>
             </div>
-            <span style="font-size: 14px;">Cashier: <b>{{ session['user'] }}</b></span>
+             <span style="font-size: 14px;">Cashier: <b>{{ session['cashier_user'] }}</b></span>
         </div>
     </header>
 
@@ -291,6 +373,7 @@
                     <div class="glass search-box">
                         <svg viewBox="0 0 24 24" width="24" height="24" fill="var(--orange)"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
                         <input type="text" id="barcode-scanner" placeholder="SEARCH BY NAME OR BARCODE NUMBER..." autocomplete="off">
+                        <button class="clear-btn" onclick="clearSearch()" title="Clear search">&times;</button>
                     </div>
                     <div id="search-results" class="glass"></div>
                     
@@ -326,7 +409,7 @@
                     <span style="font-weight: 900; font-size: 20px;">Total</span>
                     <span style="font-size: 32px; font-weight: 900; color: var(--orange);">₱<span id="display-total">0.00</span></span>
                 </div>
-                <button class="pay-btn" onclick="completeSale()">COMPLETE SALE</button>
+                <button class="pay-btn" onclick="checkout()">CHECKOUT</button>
             </div>
         </aside>
     </div>
@@ -384,6 +467,12 @@
                 resultsDiv.style.display = 'none'; 
                 selectedProduct.classList.remove('show');
                 return; 
+            }
+
+            // Skip search if input looks like a barcode (6+ digits) - direct scan to cart
+            if (query.length >= 6 && /^\d+$/.test(query)) {
+                resultsDiv.style.display = 'none';
+                return;
             }
 
             fetch(`/search_product?q=${query}`)
@@ -446,13 +535,47 @@
             input.value = val;
         }
 
+        // Show product briefly when scanned (auto-add feedback)
+        function showScannedDisplay(product) {
+            // Populate the selected product panel
+            document.getElementById('sel-name').innerText = product.name;
+            document.getElementById('sel-details').innerText = `Price: ₱${product.price.toFixed(2)} | Stock: ${product.stock} | Exp: ${product.expiry || 'N/A'}`;
+            document.getElementById('sel-qty').value = 1;
+            document.getElementById('sel-qty').max = product.stock;
+            
+            // Show panel briefly
+            selectedProduct.classList.add('show');
+            setTimeout(() => {
+                selectedProduct.classList.remove('show');
+            }, 1000);
+        }
+
+        // Log scan activity (placeholder - can be extended)
+        function logScan() {
+            console.log('Barcode scan logged');
+        }
+
         function addSelectedToCart() {
             if (!selectedProductData) return;
             
             const qty = parseInt(document.getElementById('sel-qty').value);
+            const availableStock = selectedProductData.stock;
             
-            // Check if already in cart
+            // Check if already in cart - get current qty
             const existingIndex = cart.findIndex(item => item.id === selectedProductData.id);
+            let currentCartQty = 0;
+            if (existingIndex >= 0) {
+                currentCartQty = cart[existingIndex].quantity;
+            }
+            
+            // Check if total would exceed stock
+            const totalRequested = currentCartQty + qty;
+            if (totalRequested > availableStock) {
+                alert(`Cannot add more! Only ${availableStock - currentCartQty} items available. You already have ${currentCartQty} in cart.`);
+                return;
+            }
+            
+            // Add to cart
             if (existingIndex >= 0) {
                 cart[existingIndex].quantity += qty;
             } else {
@@ -472,25 +595,43 @@
         }
 
         function processScan(barcode) {
+            // Hide search results immediately
+            resultsDiv.style.display = 'none';
             fetch(`/get_product/${barcode}`)
                 .then(res => res.json())
                 .then(data => {
                     if(data.success) {
-                        showScannedDisplay(data.product);
+                        const product = data.product;
+                        const availableStock = product.stock;
+                        
+                        // Get current qty in cart
+                        const existingIndex = cart.findIndex(item => item.id === product.id);
+                        let currentCartQty = 0;
+                        if (existingIndex >= 0) {
+                            currentCartQty = cart[existingIndex].quantity;
+                        }
+                        
+                        // Check if adding 1 would exceed stock
+                        if (currentCartQty + 1 > availableStock) {
+                            alert(`Cannot add ${product.name}! Only ${availableStock - currentCartQty} items available.`);
+                            return;
+                        }
+                        
+                        showScannedDisplay(product);
                         // Auto add to cart
-                        const existingIndex = cart.findIndex(item => item.id === data.product.id);
                         if (existingIndex >= 0) {
                             cart[existingIndex].quantity += 1;
                         } else {
                             cart.push({
-                                id: data.product.id,
-                                name: data.product.name,
-                                price: data.product.price,
-                                expiry: data.product.expiry || null,
+                                id: product.id,
+                                name: product.name,
+                                price: product.price,
+                                expiry: product.expiry || null,
                                 quantity: 1
                             });
                         }
                         renderCart();
+                        logScan();  // Log scan activity per spec
                     }
                 });
         }
@@ -524,27 +665,38 @@
             renderCart();
         }
 
-        function completeSale() {
+                function checkout() {
             if (cart.length === 0) {
                 alert('Cart is empty!');
                 return;
             }
 
-            console.log('Sending cart:', cart);
+            const cartData = { items: cart };
 
             fetch('/complete_sale', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
                 body: JSON.stringify({ items: cart })
             })
             .then(res => {
-                console.log('Response status:', res.status);
+                if (res.status === 401) {
+                    alert('Session expired. Please login again.');
+                    window.location.href = '/cashier_login';
+                    return null;
+                }
                 return res.json();
             })
             .then(data => {
-                console.log('Response data:', data);
+                if (!data) return;
                 if (data.success) {
+                    // Show receipt modal
                     showReceipt(data);
+                    // Print receipt to thermal printer
+                    printReceipt(data);
+                    // Clear cart
                     cart = [];
                     renderCart();
                 } else {
@@ -556,7 +708,6 @@
                 alert('Error completing sale: ' + error);
             });
         }
-
         function showReceipt(data) {
             document.getElementById('receipt-number').innerText = data.receipt_number;
             document.getElementById('receipt-date').innerText = data.date;
@@ -584,10 +735,118 @@
             document.getElementById('receipt-modal').classList.remove('show');
         }
 
+        function clearSearch() {
+            scanner.value = '';
+            resultsDiv.style.display = 'none';
+            selectedProduct.classList.remove('show');
+            selectedProductData = null;
+            scanner.focus();
+        }
+
         function handleLogout() {
             if(confirm("Logout from system? Cart will be cleared.")) {
                 window.location.href = "/cashier_logout";
             }
+        }
+
+        // Thermal Receipt Printing for 58mm printer
+        function printReceipt(data) {
+            // Create a hidden iframe for printing
+            const printFrame = document.createElement('iframe');
+            printFrame.style.position = 'absolute';
+            printFrame.style.top = '-9999px';
+            printFrame.style.left = '-9999px';
+            printFrame.style.width = '58mm';
+            printFrame.style.height = 'auto';
+            document.body.appendChild(printFrame);
+
+            const now = new Date();
+            const dateStr = now.toLocaleDateString('en-PH') + ' ' + now.toLocaleTimeString('en-PH', {hour: '2-digit', minute:'2-digit'});
+            const receiptNumber = data.receipt_number;
+
+            // Build receipt HTML
+            let receiptHTML = `
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>Receipt</title>
+                <style>
+                    @page { margin: 0; size: 58mm auto; }
+                    body {
+                        width: 58mm;
+                        margin: 0;
+                        padding: 8px;
+                        font-family: 'Courier New', monospace;
+                        font-size: 11px;
+                        line-height: 1.3;
+                        color: #000;
+                    }
+                    .center { text-align: center; }
+                    .bold { font-weight: bold; }
+                    .divider { border-bottom: 1px dashed #000; margin: 8px 0; }
+                    .flex-between { display: flex; justify-content: space-between; }
+                    .mt-10 { margin-top: 10px; }
+                    .mt-5 { margin-top: 5px; }
+                </style>
+            </head>
+            <body>
+                <div class="center bold" style="font-size: 13px;">PHARMACON</div>
+                <div class="center" style="font-size: 9px;">A's PharmaHealth & Convenience</div>
+                <div class="divider"></div>
+                <div class="flex-between">
+                    <span>Receipt:</span>
+                    <span>${receiptNumber}</span>
+                </div>
+                <div class="flex-between">
+                    <span>Date:</span>
+                    <span>${dateStr}</span>
+                </div>
+                <div class="divider"></div>
+                <div>
+            `;
+
+            // Add items
+            data.items.forEach(item => {
+                receiptHTML += `
+                    <div class="flex-between">
+                        <span>${item.name.substring(0,20)}</span>
+                        <span>₱${item.price.toFixed(2)}</span>
+                    </div>
+                    <div class="flex-between" style="font-size: 10px;">
+                        <span>${item.quantity} x ${item.price.toFixed(2)}</span>
+                        <span>₱${item.subtotal.toFixed(2)}</span>
+                    </div>
+                `;
+            });
+
+            receiptHTML += `
+                </div>
+                <div class="divider"></div>
+                <div class="flex-between bold" style="font-size: 13px;">
+                    <span>TOTAL</span>
+                    <span>₱${data.total.toFixed(2)}</span>
+                </div>
+                <div class="divider"></div>
+                <div class="center" style="font-size: 10px;">Thank you! Please come again.</div>
+                <div class="center" style="font-size: 9px; margin-top: 5px;">--- END OF RECEIPT ---</div>
+            `;
+
+            // Write to iframe
+            printFrame.contentDocument.open();
+            printFrame.contentDocument.write(receiptHTML);
+            printFrame.contentDocument.close();
+
+            // Wait for content to load, then print
+            printFrame.onload = function() {
+                setTimeout(() => {
+                    printFrame.contentWindow.focus();
+                    printFrame.contentWindow.print();
+                    // Remove iframe after printing
+                    setTimeout(() => {
+                        document.body.removeChild(printFrame);
+                    }, 1000);
+                }, 100);
+            };
         }
     </script>
 </body>

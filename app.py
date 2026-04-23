@@ -15,7 +15,6 @@ app.config['PERMANENT_SESSION_LIFETIME'] = 86400  # 24 hours - session lasts 24 
 app.config['SESSION_COOKIE_NAME'] = 'pharmacon_session'
 
 # Add datetime to template context
-from datetime import datetime
 @app.context_processor
 def inject_datetime():
     return dict(datetime=datetime)
@@ -49,12 +48,17 @@ def cashier_required(f):
     from functools import wraps
     @wraps(f)
     def decorated_function(*args, **kwargs):
+        is_api = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
         if 'role' not in session or session['role'] != 'cashier':
+            if is_api:
+                return jsonify({'success': False, 'message': 'Session expired. Please login again.'}), 401
             return redirect(url_for('cashier_login'))
         if 'cashier_id' not in session:
             session.pop('cashier_user', None)
             session.pop('cashier_id', None)
             session.pop('role', None)
+            if is_api:
+                return jsonify({'success': False, 'message': 'Session expired. Please login again.'}), 401
             return redirect(url_for('cashier_login'))
         return f(*args, **kwargs)
     return decorated_function
@@ -378,11 +382,17 @@ def add_product():
         category_id = cat_result[0] if cat_result else None
         
         try:
-            # Check if product exists with same name, barcode AND expiration date
-            cur.execute("""
-                SELECT id, stock FROM products 
-                WHERE product_name = %s AND barcode = %s AND expiration_date = %s
-            """, (name, barcode, expiry))
+            # Check if product exists with same name AND expiration date (barcode can be empty or same)
+            if barcode:
+                cur.execute("""
+                    SELECT id, stock FROM products 
+                    WHERE product_name = %s AND barcode = %s AND expiration_date = %s
+                """, (name, barcode, expiry))
+            else:
+                cur.execute("""
+                    SELECT id, stock FROM products 
+                    WHERE product_name = %s AND (barcode IS NULL OR barcode = '') AND expiration_date = %s
+                """, (name, expiry))
             existing = cur.fetchone()
             
             if existing:
@@ -395,10 +405,12 @@ def add_product():
             else:
                 # Insert new product if different expiry or new product
                 query = """
-                    INSERT INTO products (product_name, barcode, category_id, type, price, stock, expiration_date) 
+                    INSERT INTO products (product_name, barcode, category_id, product_type, price, stock, expiration_date) 
                     VALUES (%s, %s, %s, %s, %s, %s, %s)
                 """
-                cur.execute(query, (name, barcode, category_id, p_type, price, stock, expiry))
+                # Set barcode to None if empty
+                barcode_value = barcode if barcode else None
+                cur.execute(query, (name, barcode_value, category_id, p_type, price, stock, expiry))
                 product_id = cur.lastrowid
                 message = "Product registered and stock movement logged!"
                 action = 'Add New Product'
@@ -519,18 +531,45 @@ def add_product():
                                active_main='catalog', 
                                active_sub='add_product')
 
-@app.route('/delete_product/<int:id>', methods=['POST'])
+@app.route('/delete_product/<int:id>', methods=['GET', 'POST'])
 @admin_required
 def delete_product(id):
     cur = mysql.connection.cursor()
     
-    # Get product info before deleting
-    cur.execute("SELECT product_name FROM products WHERE id=%s", (id,))
-    product_info = cur.fetchone()
-    product_name = product_info[0] if product_info else 'Unknown'
+    if request.method == 'GET':
+        cur.execute("SELECT id, product_name, barcode, stock FROM products WHERE id=%s", (id,))
+        product = cur.fetchone()
+        if not product:
+            flash("Product not found", "error")
+            return redirect(url_for('all_products'))
+        
+        cur.execute("SELECT COUNT(*) FROM products WHERE stock <= %s", (LOW_STOCK_THRESHOLD,))
+        low_stock_count = cur.fetchone()[0]
+        
+        cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date <= CURDATE() + INTERVAL 30 DAY AND expiration_date IS NOT NULL")
+        expiring_count = cur.fetchone()[0]
+        
+        cur.close()
+        return render_template('confirm_delete_product.html', product=product,
+                               low_stock_count=low_stock_count,
+                               expiring_count=expiring_count,
+                               active_main='catalog', active_sub='all_products')
     
-    cur.execute("DELETE FROM products WHERE id=%s", (id,))
-    mysql.connection.commit()
+    if request.method == 'POST':
+        cur = mysql.connection.cursor()
+        
+        # Get product info before deleting
+        cur.execute("SELECT product_name FROM products WHERE id=%s", (id,))
+        product_info = cur.fetchone()
+        product_name = product_info[0] if product_info else "Unknown"
+        
+        # Delete related records first (stock_movements and sale_items)
+        cur.execute("DELETE FROM stock_movements WHERE product_id=%s", (id,))
+        cur.execute("DELETE FROM sale_items WHERE product_id=%s", (id,))
+        
+        # Now delete the product
+        cur.execute("DELETE FROM products WHERE id=%s", (id,))
+        mysql.connection.commit()
     
     # Log admin activity
     ip_address = request.remote_addr
@@ -549,6 +588,78 @@ def delete_product(id):
     cur.close()
     flash("Product deleted successfully", "success")
     return redirect(url_for('all_products'))
+
+@app.route('/edit_product/<int:id>', methods=['GET', 'POST'])
+@admin_required
+def edit_product(id):
+    cur = mysql.connection.cursor()
+    
+    if request.method == 'POST':
+        product_name = request.form.get('product_name')
+        barcode = request.form.get('barcode')
+        category = request.form.get('category')
+        price = request.form.get('price')
+        stock = request.form.get('stock')
+        expiration_date = request.form.get('expiration_date')
+        
+        if not product_name or not barcode or not category:
+            flash("Product name, barcode, and category are required", "error")
+            return redirect(url_for('edit_product', id=id))
+        
+        try:
+            price = float(price) if price else 0
+            stock = int(stock) if stock else 0
+        except ValueError:
+            flash("Invalid price or stock value", "error")
+            return redirect(url_for('edit_product', id=id))
+        
+        cur.execute("SELECT id FROM categories WHERE category_name=%s", (category,))
+        cat_result = cur.fetchone()
+        category_id = cat_result[0] if cat_result else None
+        
+        cur.execute("""
+            UPDATE products 
+            SET product_name=%s, barcode=%s, category_id=%s, product_type=%s, price=%s, stock=%s, expiration_date=%s
+            WHERE id=%s
+        """, (product_name, barcode, category_id, category, price, stock, expiration_date, id))
+        
+        mysql.connection.commit()
+        
+        ip_address = request.remote_addr
+        if request.headers.get('X-Forwarded-For'):
+            ip_address = request.headers.get('X-Forwarded-For')
+        
+        try:
+            cur.execute("""
+                INSERT INTO admin_activity (admin_id, action, ip_address, details)
+                VALUES (%s, %s, %s, %s)
+            """, (session.get('admin_id'), 'Edit Product', ip_address, f'Edited product: {product_name}'))
+            mysql.connection.commit()
+        except:
+            pass
+        
+        cur.close()
+        flash("Product updated successfully", "success")
+        return redirect(url_for('all_products'))
+    
+    cur.execute("SELECT * FROM products WHERE id=%s", (id,))
+    product = cur.fetchone()
+    
+    cur.execute("SELECT id, category_name FROM categories ORDER BY category_name ASC")
+    categories = cur.fetchall()
+    
+    cur.execute("SELECT COUNT(*) FROM products WHERE stock <= %s", (LOW_STOCK_THRESHOLD,))
+    low_stock_count = cur.fetchone()[0]
+    
+    cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date <= CURDATE() + INTERVAL 30 DAY AND expiration_date IS NOT NULL")
+    expiring_count = cur.fetchone()[0]
+    
+    cur.close()
+    
+    return render_template('edit_product.html', product=product, categories=categories,
+                         low_stock_count=low_stock_count,
+                         expiring_count=expiring_count,
+                         active_main='catalog', active_sub='all_products')
 
 # =============================
 # SALES
@@ -828,10 +939,10 @@ def non_medical_sales():
 @admin_required
 def out_of_stock():
     cur = mysql.connection.cursor()
-    cur.execute("SELECT * FROM products WHERE stock <= %s", (LOW_STOCK_THRESHOLD,))
+    cur.execute("SELECT * FROM products WHERE stock = 0")
     products = cur.fetchall()
     
-    cur.execute("SELECT COUNT(*) FROM products WHERE stock <= %s", (LOW_STOCK_THRESHOLD,))
+    cur.execute("SELECT COUNT(*) FROM products WHERE stock = 0")
     low_stock_count = cur.fetchone()[0]
     
     cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date <= CURDATE() + INTERVAL 30 DAY AND expiration_date IS NOT NULL")
@@ -847,9 +958,22 @@ def out_of_stock():
 @admin_required
 def expiring_medical():
     from datetime import date
+    category_filter = request.args.get('category', 'all')
+    
     cur = mysql.connection.cursor()
-    cur.execute("SELECT * FROM products WHERE expiration_date <= CURDATE() + INTERVAL 30 DAY AND expiration_date IS NOT NULL")
-    products = cur.fetchall()
+    
+    if category_filter == 'all':
+        cur.execute("SELECT * FROM products WHERE expiration_date <= CURDATE() + INTERVAL 30 DAY AND expiration_date IS NOT NULL")
+        products = cur.fetchall()
+    elif category_filter == 'Medical':
+        cur.execute("SELECT * FROM products WHERE expiration_date <= CURDATE() + INTERVAL 30 DAY AND expiration_date IS NOT NULL AND product_type = 'Medical'")
+        products = cur.fetchall()
+    elif category_filter == 'Non-Medical':
+        cur.execute("SELECT * FROM products WHERE expiration_date <= CURDATE() + INTERVAL 30 DAY AND expiration_date IS NOT NULL AND product_type = 'Non-Medical'")
+        products = cur.fetchall()
+    else:
+        cur.execute("SELECT * FROM products WHERE expiration_date <= CURDATE() + INTERVAL 30 DAY AND expiration_date IS NOT NULL")
+        products = cur.fetchall()
     
     cur.execute("SELECT COUNT(*) FROM products WHERE stock <= %s", (LOW_STOCK_THRESHOLD,))
     low_stock_count = cur.fetchone()[0]
@@ -862,7 +986,7 @@ def expiring_medical():
                            low_stock_count=low_stock_count,
                            expiring_count=expiring_count,
                            active_main='inventory', active_sub='expiring_medical',
-                           now=date.today)
+                           now=date.today, category_filter=category_filter)
 
 # =============================
 # ADMIN MANAGEMENT
@@ -1056,7 +1180,7 @@ def change_admin_password():
         new_pass = request.form['new_password']
 
         cur = mysql.connection.cursor()
-        cur.execute("SELECT * FROM admins WHERE username=%s", (session['user'],))
+        cur.execute("SELECT * FROM admins WHERE username=%s", (session['admin_user'],))
         admin = cur.fetchone()
 
         if admin and check_password_hash(admin[2], old_pass):
@@ -1095,7 +1219,7 @@ def change_admin_password():
 
 @app.route('/cashier_login', methods=['GET', 'POST'])
 def cashier_login():
-    if 'user' in session and session.get('role') == 'cashier':
+    if 'cashier_user' in session and session.get('role') == 'cashier':
         return redirect(url_for('cashier_dashboard'))
 
     if request.method == 'POST':
@@ -1350,13 +1474,88 @@ def search_by_name():
         })
     return jsonify(result)
 
+@app.route('/api/product/<int:product_id>')
+@admin_required
+def api_get_product(product_id):
+    cur = mysql.connection.cursor()
+    cur.execute("SELECT id, product_name, barcode, category_id, product_type, price, stock, expiration_date FROM products WHERE id = %s", (product_id,))
+    row = cur.fetchone()
+    cur.close()
+    
+    if row:
+        return jsonify({
+            'success': True,
+            'product': {
+                'id': row[0],
+                'product_name': row[1],
+                'barcode': row[2],
+                'category_id': row[3],
+                'product_type': row[4],
+                'price': float(row[5]) if row[5] else 0,
+                'stock': row[6],
+                'expiration_date': str(row[7]) if row[7] else None
+            }
+        })
+    return jsonify({'success': False})
+
+@app.route('/api/update_product', methods=['POST'])
+@admin_required
+def api_update_product():
+    data = request.get_json()
+    product_id = data.get('id')
+    product_name = data.get('product_name')
+    barcode = data.get('barcode')
+    category = data.get('category')
+    price = data.get('price')
+    stock = data.get('stock')
+    expiration_date = data.get('expiration_date')
+    
+    if not product_name or not barcode or not category:
+        return jsonify({'success': False, 'message': 'All fields are required'})
+    
+    try:
+        price = float(price) if price else 0
+        stock = int(stock) if stock else 0
+    except ValueError:
+        return jsonify({'success': False, 'message': 'Invalid price or stock value'})
+    
+    cur = mysql.connection.cursor()
+    
+    cur.execute("SELECT id FROM categories WHERE category_name=%s", (category,))
+    cat_result = cur.fetchone()
+    category_id = cat_result[0] if cat_result else None
+    
+    cur.execute("""
+        UPDATE products 
+        SET product_name=%s, barcode=%s, category_id=%s, product_type=%s, price=%s, stock=%s, expiration_date=%s
+        WHERE id=%s
+    """, (product_name, barcode, category_id, category, price, stock, expiration_date, product_id))
+    
+    mysql.connection.commit()
+    
+    ip_address = request.remote_addr
+    if request.headers.get('X-Forwarded-For'):
+        ip_address = request.headers.get('X-Forwarded-For')
+    
+    try:
+        cur.execute("""
+            INSERT INTO admin_activity (admin_id, action, ip_address, details)
+            VALUES (%s, %s, %s, %s)
+        """, (session.get('admin_id'), 'Edit Product', ip_address, f'Edited product: {product_name}'))
+        mysql.connection.commit()
+    except:
+        pass
+    
+    cur.close()
+    return jsonify({'success': True, 'message': 'Product updated successfully!'})
+
 @app.route('/get_product/<barcode>')
 @cashier_required
 def get_product(barcode):
     cur = mysql.connection.cursor()
 
     cur.execute("""
-        SELECT id, product_name, price, stock, barcode
+        SELECT id, product_name, price, stock, barcode, expiration_date
         FROM products
         WHERE barcode = %s AND stock > 0
         LIMIT 1
@@ -1366,6 +1565,7 @@ def get_product(barcode):
     cur.close()
 
     if row:
+        expiry = row[5].strftime('%m/%d/%Y') if row[5] else 'N/A'
         return jsonify({
             "success": True,
             "product": {
@@ -1373,7 +1573,8 @@ def get_product(barcode):
                 "name": row[1],
                 "price": float(row[2]),
                 "stock": row[3],
-                "barcode": row[4]
+                "barcode": row[4],
+                "expiry": expiry
             }
         })
 
@@ -1382,117 +1583,156 @@ def get_product(barcode):
 @app.route('/complete_sale', methods=['POST'])
 @cashier_required
 def complete_sale():
-    data = request.get_json()
-    items = data.get('items', [])
+    print("DEBUG: complete_sale called")
+    try:
+        if not request.is_json:
+            print("DEBUG: Not JSON request")
+            return jsonify({'success': False, 'message': 'Invalid request format'})
+        data = request.get_json()
+        print("DEBUG: data received:", data)
+        if not data:
+            return jsonify({'success': False, 'message': 'No data received'})
+        items = data.get('items', [])
+    except Exception as e:
+        print("DEBUG: Parse error:", str(e))
+        return jsonify({'success': False, 'message': f'Parse Error: {str(e)}'})
     
     if not items:
         return jsonify({'success': False, 'message': 'No items in cart'})
     
-    cur = mysql.connection.cursor()
-    
-    # Separate items by type
-    medical_items = []
-    non_medical_items = []
-    
+    # Validate items structure
     for item in items:
-        cur.execute("SELECT product_type FROM products WHERE id = %s", (item['id'],))
-        result = cur.fetchone()
-        product_type = result[0] if result else 'Non-Medical'
-        
-        if product_type == 'Medical':
-            medical_items.append(item)
-        else:
-            non_medical_items.append(item)
+        if 'id' not in item or 'quantity' not in item:
+            return jsonify({'success': False, 'message': 'Invalid item data'})
     
-    receipt_numbers = []
-    receipt_items = []
-    total_amount = 0
+    try:
+        cur = mysql.connection.cursor()
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'Cannot connect to DB: {str(e)}'})
     
-    # Process Medical items - create separate sale record
-    if medical_items:
-        receipt_number = f"REC-{datetime.now().strftime('%Y%m%d')}-{random.randint(1000, 9999)}"
-        receipt_numbers.append(receipt_number)
-        medical_total = sum(item['price'] * item['quantity'] for item in medical_items)
-        total_amount += medical_total
-        
-        cur.execute("""
-            INSERT INTO sales (receipt_number, cashier_id, total_amount, sale_status, product_type, sale_date)
-            VALUES (%s, %s, %s, 'Completed', 'Medical', NOW())
-        """, (receipt_number, session['cashier_id'], medical_total))
-        
-        sale_id = cur.lastrowid
-        
-        for item in medical_items:
-            cur.execute("""
-                INSERT INTO sale_items (sale_id, product_id, quantity, price)
-                VALUES (%s, %s, %s, %s)
-            """, (sale_id, item['id'], item['quantity'], item['price']))
-            
-            cur.execute("""
-                UPDATE products SET stock = stock - %s WHERE id = %s
-            """, (item['quantity'], item['id']))
-            
-            cur.execute("""
-                INSERT INTO stock_movements (product_id, movement_type, quantity, reason)
-                VALUES (%s, 'OUT', %s, 'Sale')
-            """, (item['id'], item['quantity']))
-            
-            receipt_items.append({
-                'name': item['name'],
-                'quantity': item['quantity'],
-                'price': item['price'],
-                'subtotal': item['price'] * item['quantity']
-            })
+    try:
+        # Check products table
+        cur.execute("DESCRIBE products")
+    except Exception as e:
+        cur.close()
+        return jsonify({'success': False, 'message': f'Table error: {str(e)}'})
+    try:
     
-    # Process Non-Medical items - create separate sale record
-    if non_medical_items:
-        receipt_number = f"REC-{datetime.now().strftime('%Y%m%d')}-{random.randint(1000, 9999)}"
-        receipt_numbers.append(receipt_number)
-        non_medical_total = sum(item['price'] * item['quantity'] for item in non_medical_items)
-        total_amount += non_medical_total
-        
-        cur.execute("""
-            INSERT INTO sales (receipt_number, cashier_id, total_amount, sale_status, product_type, sale_date)
-            VALUES (%s, %s, %s, 'Completed', 'Non-Medical', NOW())
-        """, (receipt_number, session['cashier_id'], non_medical_total))
-        
-        sale_id = cur.lastrowid
-        
-        for item in non_medical_items:
-            cur.execute("""
-                INSERT INTO sale_items (sale_id, product_id, quantity, price)
-                VALUES (%s, %s, %s, %s)
-            """, (sale_id, item['id'], item['quantity'], item['price']))
-            
-            cur.execute("""
-                UPDATE products SET stock = stock - %s WHERE id = %s
-            """, (item['quantity'], item['id']))
-            
-            cur.execute("""
-                INSERT INTO stock_movements (product_id, movement_type, quantity, reason)
-                VALUES (%s, 'OUT', %s, 'Sale')
-            """, (item['id'], item['quantity']))
-            
-            receipt_items.append({
-                'name': item['name'],
-                'quantity': item['quantity'],
-                'price': item['price'],
-                'subtotal': item['price'] * item['quantity']
-            })
+        # Separate items by type
+        medical_items = []
+        non_medical_items = []
     
-    mysql.connection.commit()
-    cur.close()
+        for item in items:
+            cur.execute("SELECT product_type FROM products WHERE id = %s", (item['id'],))
+            result = cur.fetchone()
+            product_type = result[0] if result else 'Non-Medical'
+        
+            if product_type == 'Medical':
+                medical_items.append(item)
+            else:
+                non_medical_items.append(item)
     
-    # Return main receipt number (first one) for display
-    main_receipt = receipt_numbers[0] if receipt_numbers else 'N/A'
+        receipt_numbers = []
+        receipt_items = []
+        total_amount = 0
     
-    return jsonify({
-        'success': True,
-        'receipt_number': main_receipt,
-        'total': total_amount,
-        'items': receipt_items,
-        'date': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    })
+        # Process Medical items - create separate sale record
+        if medical_items:
+            receipt_number = f"REC-{datetime.now().strftime('%Y%m%d')}-{random.randint(1000, 9999)}"
+            receipt_numbers.append(receipt_number)
+            medical_total = sum(item['price'] * item['quantity'] for item in medical_items)
+            total_amount += medical_total
+        
+            cur.execute("""
+                INSERT INTO sales (receipt_number, cashier_id, total_amount, sale_status, product_type, sale_date)
+                VALUES (%s, %s, %s, 'Completed', 'Medical', NOW())
+            """, (receipt_number, session['cashier_id'], medical_total))
+        
+            sale_id = cur.lastrowid
+        
+            for item in medical_items:
+                cur.execute("""
+                    INSERT INTO sale_items (sale_id, product_id, quantity, price)
+                    VALUES (%s, %s, %s, %s)
+                """, (sale_id, item['id'], item['quantity'], item['price']))
+            
+                cur.execute("""
+                    UPDATE products SET stock = stock - %s WHERE id = %s
+                """, (item['quantity'], item['id']))
+
+                # Keep product with zero stock for historical records
+                # Auto-delete removed to preserve sales history and avoid FK issues
+            
+                cur.execute("""
+                    INSERT INTO stock_movements (product_id, movement_type, quantity, reason)
+                    VALUES (%s, 'OUT', %s, 'Sale')
+                """, (item['id'], item['quantity']))
+            
+                receipt_items.append({
+                    'name': item['name'],
+                    'quantity': item['quantity'],
+                    'price': item['price'],
+                    'subtotal': item['price'] * item['quantity']
+                })
+    
+        # Process Non-Medical items - create separate sale record
+        if non_medical_items:
+            receipt_number = f"REC-{datetime.now().strftime('%Y%m%d')}-{random.randint(1000, 9999)}"
+            receipt_numbers.append(receipt_number)
+            non_medical_total = sum(item['price'] * item['quantity'] for item in non_medical_items)
+            total_amount += non_medical_total
+        
+            cur.execute("""
+                INSERT INTO sales (receipt_number, cashier_id, total_amount, sale_status, product_type, sale_date)
+                VALUES (%s, %s, %s, 'Completed', 'Non-Medical', NOW())
+            """, (receipt_number, session['cashier_id'], non_medical_total))
+        
+            sale_id = cur.lastrowid
+        
+            for item in non_medical_items:
+                cur.execute("""
+                    INSERT INTO sale_items (sale_id, product_id, quantity, price)
+                    VALUES (%s, %s, %s, %s)
+                """, (sale_id, item['id'], item['quantity'], item['price']))
+            
+                cur.execute("""
+                    UPDATE products SET stock = stock - %s WHERE id = %s
+                """, (item['quantity'], item['id']))
+
+                # Keep product with zero stock for historical records
+                # Auto-delete removed to preserve sales history and avoid FK issues
+            
+                cur.execute("""
+                    INSERT INTO stock_movements (product_id, movement_type, quantity, reason)
+                    VALUES (%s, 'OUT', %s, 'Sale')
+                """, (item['id'], item['quantity']))
+            
+                receipt_items.append({
+                    'name': item['name'],
+                    'quantity': item['quantity'],
+                    'price': item['price'],
+                    'subtotal': item['price'] * item['quantity']
+                })
+    
+        mysql.connection.commit()
+        cur.close()
+    
+        # Return main receipt number (first one) for display
+        main_receipt = receipt_numbers[0] if receipt_numbers else 'N/A'
+    
+        return jsonify({
+            'success': True,
+            'receipt_number': main_receipt,
+            'total': total_amount,
+            'items': receipt_items,
+            'date': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        })
+    except Exception as e:
+        try:
+            mysql.connection.rollback()
+        except:
+            pass
+        return jsonify({'success': False, 'message': f'Error: {str(e)}'})
 
 # =============================
 # LOGOUT

@@ -1,0 +1,18 @@
+RUN THIS IN PHPMYADMIN TO FIX BARCODE:
+
+1. Go to phpMyAdmin
+2. Click on "pharmacon" database  
+3. Click on "SQL" tab
+4. Run these commands (one at a time):
+
+-- Fix column name first (if not done)
+ALTER TABLE products CHANGE COLUMN type product_type VARCHAR(50) DEFAULT 'medical';
+
+-- Remove UNIQUE constraint from barcode
+ALTER TABLE products DROP INDEX barcode;
+
+5. Refresh and try adding product again.
+
+Now you can:
+- Leave barcode empty
+- Use same barcode for same product (will add stock instead of creating new)
