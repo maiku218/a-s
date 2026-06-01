@@ -1,0 +1,555 @@
+==================================================
+STEP-BY-STEP GUIDE: HOW THE 4 PILLARS OF OOP WORK IN YOUR SYSTEM
+==================================================
+
+Project: Pharmacon - Pharmacy Management System
+Files: app.py (routes), models.py (domain models), services.py (business logic)
+Date: 2026-06-01
+
+==================================================
+OVERVIEW
+==================================================
+
+Your system now uses THREE main files working together:
+
+  app.py      = Flask routes (the "controller" - handles HTTP requests)
+  models.py   = Domain classes (Product, User, Admin, Cashier, StockMovement)
+  services.py = Business logic (AuthService, ProductRepository, SalesService)
+
+All 4 pillars are present. Here is how each file uses them.
+
+==================================================
+HOW THE 3 FILES WORK TOGETHER
+==================================================
+
+STEP 1: User visits the website
+  -> Browser sends HTTP request to Flask
+  -> app.py route catches the request (e.g., @app.route('/admin_login'))
+
+STEP 2: Route calls a Service
+  -> app.py calls auth_service.login() OR product_repository.save()
+  -> The Service contains the business logic (no SQL in the route!)
+
+STEP 3: Service uses Models
+  -> Services create User, Product, StockMovement objects
+  -> Models enforce business rules (validation, encapsulation)
+
+STEP 4: Service talks to the Database
+  -> Services run SQL queries internally
+  -> Routes never see raw SQL or database connections
+
+STEP 5: Response returned to user
+  -> Service returns a simple result (True/False, dict)
+  -> Route sends the response back to the browser
+
+
+VISUAL FLOW EXAMPLE (Adding a Product):
+
+  User fills form
+       |
+       v
+  app.py: /add_product_oop route catches POST request
+       |
+       v
+  app.py: Creates a Product object
+       |    product = Product(name="Paracetamol", price=10.00, stock=100, ...)
+       |    [PILLAR 1: ENCAPSULATION - Product controls its own state]
+       |
+       v
+  app.py: Creates a StockMovement object
+       |    movement = StockMovement(..., 'IN', 100, 'Stock Addition')
+       |
+       v
+  app.py: Calls product_repository.link_stock_movement(product, movement)
+       |    [PILLAR 3: POLYMORPHISM - Factory picks StockInProcessor]
+       |    [PILLAR 4: ABSTRACTION - Route doesn't know about SQL]
+       |
+       v
+  app.py: Calls product_repository.save(product)
+       |    [PILLAR 4: ABSTRACTION - SQL is hidden inside ProductRepository]
+       |
+       v
+  Database: Product saved, stock movement logged
+       |
+       v
+  app.py: Shows success message to user
+
+==================================================
+PILLAR 1: ENCAPSULATION (in models.py)
+==================================================
+
+WHAT IT IS:
+  Putting data and methods together in a class, and hiding the internal
+  data so only the class itself can change it directly.
+
+WHY WE USE IT:
+  Prevents invalid data. Example: Nobody can set product price to negative
+  number because the Product class checks it first.
+
+HOW IT WORKS IN YOUR CODE:
+
+  In models.py (lines 97-209):
+
+    class Product:
+        def __init__(self, ...):
+            self._price = Decimal(str(price))   # PRIVATE - underscore prefix
+            self._stock = int(stock)             # PRIVATE
+
+        @property
+        def price(self):
+            return self._price                   # READ: anyone can read
+
+        @price.setter
+        def price(self, value):
+            if value < 0:
+                raise ValueError("Price cannot be negative!")  # VALIDATE
+            self._price = value                 # WRITE: only if valid
+
+  HOW TO USE IT:
+
+    In app.py (line ~1850):
+        product = Product(name="Paracetamol", price=10.00, stock=100)
+        product.price = -50          # ERROR! ValueError raised
+        product.stock = -10          # ERROR! ValueError raised
+        print(product.price)         # OK! Returns 10.00
+
+  MORE EXAMPLES IN YOUR CODE:
+    1. StockMovement (models.py lines 42-94): _movement_type is private,
+       only is_inbound() or is_outbound() can check it safely.
+    2. Cashier.status (models.py lines 308-316): Status can only be
+       'Active' or 'Inactive', nothing else is allowed.
+
+==================================================
+PILLAR 2: INHERITANCE (in models.py)
+==================================================
+
+WHAT IT IS:
+  A child class can copy all the features of a parent class and add
+  its own new features. This avoids repeating the same code.
+
+WHY WE USE IT:
+  Admin and Cashier both need username, password, and verify_password().
+  Instead of writing it twice, we write it once in User, and both
+  Admin and Cashier inherit from it.
+
+HOW IT WORKS IN YOUR CODE:
+
+  In models.py (lines 216-352):
+
+    class User:                           # PARENT CLASS
+        def __init__(self, username, password_hash):
+            self._username = username
+            self._password_hash = password_hash
+
+        def verify_password(self, password):
+            return check_password_hash(self._password_hash, password)
+
+    class Admin(User):                    # CHILD CLASS - inherits from User
+        def _log_login(self, mysql, request):
+            # Admin-specific code (logs to admin_activity table)
+
+    class Cashier(User):                  # CHILD CLASS - inherits from User
+        def log_logout(self, mysql):
+            # Cashier-specific code (logs to cashier_activity table)
+
+  WHAT IS INHERITED:
+    Admin gets: _username, _password_hash, verify_password(), and ALL User methods
+    Cashier gets: _username, _password_hash, verify_password(), and ALL User methods
+
+  HOW TO USE IT:
+
+    In app.py or services.py:
+        admin = Admin(1, "admin", "Admin User", hashed_password)
+        print(admin.username)              # Inherited from User
+        print(admin.verify_password("abc")) # Inherited from User
+        admin._log_login(mysql, request)    # Admin's own method
+
+        cashier = Cashier(2, "juan", "Juan Dela Cruz", hashed_pw)
+        print(cashier.username)            # Inherited from User
+        cashier.log_logout(mysql)           # Cashier's own method
+
+  BENEFIT:
+    If we add a new feature to User (e.g., last_login timestamp),
+    both Admin and Cashier automatically get it. No need to change them!
+
+==================================================
+PILLAR 3: POLYMORPHISM (in models.py + services.py)
+==================================================
+
+WHAT IT IS:
+  Same method name, different behavior depending on which class calls it.
+  Like a universal remote - same buttons, works on different TVs.
+
+WHY WE USE IT:
+  We want to call user.authenticate() for both Admin and Cashier, but
+  they do different things. Admin logs to admin_activity, Cashier logs
+  to cashier_activity. Polymorphism lets us use one simple call.
+
+HOW IT WORKS IN YOUR CODE:
+
+  Example 1: authenticate() method (models.py lines 254-323)
+
+    class Admin(User):
+        def authenticate(self, password, mysql, request):
+            if self.verify_password(password):
+                self._log_login(mysql, request)  # Logs to admin_activity
+                return True, self
+            return False, None
+
+    class Cashier(User):
+        def authenticate(self, password, mysql, request):
+            if self.verify_password(password):
+                self._log_login(mysql, request)  # Logs to cashier_activity
+                return True, self
+            return False, None
+
+  HOW SERVICES USE IT (services.py lines 51-66):
+
+    def login(self, username, password, request, mysql, user_type):
+        user = self._fetch_user(username, user_type, mysql)
+        user_from_db = self._hydrate_user(user, user_type, mysql)
+        
+        # SAME METHOD CALL for both Admin and Cashier:
+        success, result_user = user_from_db.authenticate(password, mysql, request)
+        
+        return success, result_user
+
+    Notice: The service does NOT check "if admin: do this, if cashier: do that"
+    It just calls .authenticate() and lets the object handle itself!
+
+  Example 2: Stock Movement Processors (models.py lines 358-413)
+
+    class StockMovementProcessor:
+        def process(self, product):
+            raise NotImplementedError  # Child classes must override
+
+    class StockInProcessor(StockMovementProcessor):
+        def process(self, product):
+            product.apply_movement(quantity, StockMovement.IN)  # ADDS stock
+            self._record_movement(product)
+
+    class StockOutProcessor(StockMovementProcessor):
+        def process(self, product):
+            product.apply_movement(quantity, StockMovement.OUT) # REMOVES stock
+            self._record_movement(product)
+
+  Factory function (models.py line 407):
+
+    def get_movement_processor(movement, mysql):
+        if movement.is_inbound():
+            return StockInProcessor(movement, mysql)
+        elif movement.is_outbound():
+            return StockOutProcessor(movement, mysql)
+
+  HOW TO USE IT (in app.py or services.py):
+    movement = StockMovement(1, 10, 'IN', 50, 'Stock Addition')
+    processor = get_movement_processor(movement, mysql)
+    processor.process(product)  # Calls StockInProcessor.process()
+                                # Same call, different behavior!
+
+==================================================
+PILLAR 4: ABSTRACTION (in models.py + services.py)
+==================================================
+
+WHAT IT IS:
+  Hiding complex details behind a simple interface. Users only see WHAT
+  something does, not HOW it does it.
+
+WHY WE USE IT:
+  Routes in app.py should NOT know about SQL queries, database connections,
+  or table structures. They should just call simple methods like
+  "save this product" or "login this user".
+
+HOW IT WORKS IN YOUR CODE:
+
+  Example 1: ProductRepository hides SQL (models.py + services.py)
+
+    THE INTERFACE (what routes see):
+        product_repository.save(product)           # Simple!
+        product_repository.find_by_id(5)           # Simple!
+        product_repository.count_low_stock()       # Simple!
+
+    THE HIDDEN IMPLEMENTATION (what routes DON'T see):
+        def save(self, product: Product):
+            cur = self.mysql.connection.cursor()
+            cur.execute("""
+                INSERT INTO products (product_name, barcode, ...)
+                VALUES (%s, %s, ...)
+            """, (product.name, product.barcode, ...))
+            self.mysql.connection.commit()
+            cur.close()
+
+    HOW TO USE IT (in app.py):
+        # Route doesn't write any SQL!
+        product = Product(name="Paracetamol", price=10.00, stock=100)
+        product_repository.save(product)  # SQL is hidden inside
+
+  Example 2: AuthService hides login logic (services.py lines 15-135)
+
+    THE INTERFACE:
+        success, user = auth_service.login(username, password, request, mysql, 'admin')
+
+    THE HIDDEN IMPLEMENTATION:
+        - Connects to database
+        - Checks if user exists
+        - Creates default admin if needed
+        - Verifies password hash
+        - Logs login activity
+        - Returns User object
+
+    HOW TO USE IT (in app.py):
+        # Route just calls one simple method:
+        success, user = auth_service.login(username, password, request, mysql, 'admin')
+        if success:
+            session.update(auth_service.get_session_data(user))
+
+        All the SQL and session logic is hidden inside AuthService!
+
+  Example 3: ISalesService interface (services.py lines 35-41)
+
+    THE INTERFACE:
+        result = sales_service.process_sale(items, cashier)
+
+    THE HIDDEN IMPLEMENTATION:
+        - Validates items
+        - Separates medical/non-medical
+        - Creates sales records
+        - Updates stock
+        - Logs stock movements
+        - Generates receipt
+
+    HOW TO USE IT (in app.py):
+        # Route calls ONE method:
+        result = sales_service.process_sale(items, cashier)
+        return jsonify(result)
+
+        The route has NO idea how sales are processed. All complexity
+        is hidden inside SalesService!
+
+==================================================
+COMPLETE CODE FLOW EXAMPLE
+==================================================
+
+Example: Admin adds a new product
+
+1. USER: Opens browser, goes to /add_product, fills form, clicks Submit
+
+2. APP.PY (lines ~1850):
+   @app.route('/add_product_oop', methods=['POST'])
+   @admin_required
+   def add_product_oop():
+       # Gets form data
+       product = Product(
+           name=request.form.get('product_name'),
+           price=float(request.form.get('price', 0)),
+           stock=int(request.form.get('stock', 0)),
+           ...
+       )
+       # [PILLAR 1: ENCAPSULATION]
+       # Product constructor validates: name cannot be empty, price cannot be negative
+
+3. APP.PY:
+       movement = StockMovement(0, barcode, StockMovement.IN, stock, 'Stock Addition')
+       product_repository.link_stock_movement(product, movement)
+       # [PILLAR 3: POLYMORPHISM]
+       # Factory checks if IN or OUT, returns StockInProcessor automatically
+       # StockInProcessor.process() adds stock and logs movement
+
+4. APP.PY:
+       product_repository.save(product)
+       # [PILLAR 4: ABSTRACTION]
+       # Route doesn't know about SQL INSERT queries
+       # ProductRepository handles all database operations
+
+5. APP.PY:
+       flash("Product registered successfully!", "success")
+       return redirect(url_for('add_product'))
+       # [PILLAR 2: INHERITANCE]
+       # Admin class inherits from User, so admin_required decorator
+       # can check session['role'] == 'admin'
+
+==================================================
+COMPLETE CODE FLOW EXAMPLE 2
+==================================================
+
+Example: Cashier processes a sale
+
+1. USER: Cashier scans items, clicks "Pay", system sends JSON to /complete_sale_oop
+
+2. APP.PY (lines ~1870):
+   @app.route('/complete_sale_oop', methods=['POST'])
+   @cashier_required
+   def complete_sale_oop():
+       # Gets cart items from JSON
+       data = request.get_json()
+       items = data.get('items', [])
+
+3. APP.PY:
+       # Look up product details in database
+       enriched_items = []
+       for item in items:
+           row = cur.fetchone()
+           enriched_items.append({
+               'id': item['id'],
+               'name': row[0],
+               'product_type': row[1],
+               'price': row[2],
+               'quantity': item['quantity']
+           })
+
+4. APP.PY:
+       # Create Cashier object
+       cashier = Cashier(
+           user_id=session['cashier_id'],
+           username=session['cashier_user'],
+           full_name='Cashier',
+           password_hash=''
+       )
+       # [PILLAR 2: INHERITANCE]
+       # Cashier inherits from User, so it has .id, .username, etc.
+
+5. APP.PY:
+       # Call SalesService - ONE simple method
+       result = sales_service.process_sale(enriched_items, cashier)
+       return jsonify(result)
+       # [PILLAR 4: ABSTRACTION]
+       # Route doesn't handle stock updates, receipt generation, etc.
+       # SalesService hides ALL that complexity!
+
+6. SERVICES.PY (inside SalesService.process_sale):
+       # Separate items by type
+       medical_items = []
+       non_medical_items = []
+       for item in items:
+           if product_type == 'Medical':
+               medical_items.append(item)   # Different processing
+           else:
+               non_medical_items.append(item) # Different processing
+       # [PILLAR 3: POLYMORPHISM]
+       # Same method handles different product types differently
+
+       # Create sale records, update stock, log movements...
+       for item in medical_items:
+           cur.execute("INSERT INTO sales ... WHERE product_type='Medical'")
+       for item in non_medical_items:
+           cur.execute("INSERT INTO sales ... WHERE product_type='Non-Medical'")
+
+7. RESPONSE:
+       return jsonify({
+           'success': True,
+           'receipt_number': 'REC-20260601-1234',
+           'total': 500.00,
+           'items': [...],
+           'date': '2026-06-01 14:30:00'
+       })
+
+==================================================
+COMPLETE CODE FLOW EXAMPLE 3
+==================================================
+
+Example: Admin logs into the system
+
+1. USER: Goes to /admin/login, enters username and password, clicks Login
+
+2. APP.PY (lines ~1900):
+   @app.route('/admin/login', methods=['GET', 'POST'])
+   def admin_login_oop():
+       if request.method == 'POST':
+           username = clean_input(request.form.get('username'))
+           password = clean_input(request.form.get('password'))
+
+3. APP.PY:
+       # Call AuthService.login() - ONE simple method
+       success, user = auth_service.login(username, password, request, mysql, 'admin')
+       # [PILLAR 4: ABSTRACTION]
+       # Route doesn't run SQL queries or check password hashes
+       # AuthService hides all that complexity
+
+4. SERVICES.PY (inside AuthService.login):
+       user = self._fetch_user(username, 'admin', mysql)
+       # Connects to database, runs: SELECT * FROM admins WHERE username=%s
+
+       user_from_db = self._hydrate_user(user, 'admin', mysql)
+       # Converts database row into Admin object
+
+       success, result_user = user_from_db.authenticate(password, mysql, request)
+       # [PILLAR 3: POLYMORPHISM]
+       # Admin.authenticate() verifies password AND logs to admin_activity
+       # If it were Cashier, it would log to cashier_activity instead!
+
+5. MODELS.PY (inside Admin.authenticate):
+       def authenticate(self, password, mysql, request):
+           if not self.verify_password(password):
+               return False, None
+           self._log_login(mysql, request)
+           # Logs: INSERT INTO admin_activity (admin_id, action, ...)
+           return True, self
+
+6. BACK TO APP.PY:
+       if success and user:
+           session_data = auth_service.get_session_data(user)
+           session.update(session_data)
+           session.permanent = True
+           return redirect(url_for('admin_dashboard'))
+
+       flash("Invalid login credentials", "error")
+       return redirect(url_for('admin_login'))
+
+==================================================
+PRESENTATION SUMMARY (Talking Points)
+==================================================
+
+1. ENCAPSULATION in models.py:
+   "Ang product class nag-control sa iyang kaugalingong data. Dili maka-
+   change ang external code sa price stock diretso. Kinahanglan mo-pass
+   sa setter nga nag-validate. Para walay negative price o stock."
+
+2. INHERITANCE in models.py:
+   "May base class nga User. Admin ug Cashier mag-inherit niya. Share
+   nila ang parehas nga method nga verify_password(). Kung mag-update ta
+   sa User, naa dayon sa Admin ug Cashier. Less code duplication."
+
+3. POLYMORPHISM in models.py + services.py:
+   "Parehas nga method sa Admin ug Cashier nga authenticate(), pero lahi
+   ang ilang implementation. Mao na ang polymorphism - same interface,
+   different behavior. Cashier logs to cashier_activity, Admin logs to
+   admin_activity."
+
+4. ABSTRACTION in services.py:
+   "Gamit nato ang ProductRepository. Dili kinahanglan mohibal-an sa
+   route handler kung unsa ang SQL queries. I-call lang nila ang
+   save() o find_by_id(). Hidden na ang details."
+
+==================================================
+QUICK REFERENCE: WHERE EACH PILLAR IS IN THE CODE
+==================================================
+
+PILLAR 1: ENCAPSULATION
+  Location: models.py
+  Classes: Product, StockMovement, Cashier
+  Lines: Product (97-209), StockMovement (42-94), Cashier.status (308-316)
+
+PILLAR 2: INHERITANCE
+  Location: models.py
+  Classes: User -> Admin, User -> Cashier
+  Lines: User (216-244), Admin (246-295), Cashier (298-352)
+
+PILLAR 3: POLYMORPHISM
+  Location: models.py + services.py
+  Examples:
+    - Admin.authenticate() vs Cashier.authenticate() (models.py:254-323)
+    - StockInProcessor vs StockOutProcessor (models.py:369-404)
+    - SalesService.process_sale() handles Medical/Non-Medical (services.py:306-346)
+
+PILLAR 4: ABSTRACTION
+  Location: models.py + services.py
+  Examples:
+    - IRepository interface (models.py:20-35)
+    - IAuthService interface (services.py:15-31)
+    - ISalesService interface (services.py:35-41)
+    - ProductRepository hides SQL (services.py:138-277)
+    - AuthService hides login logic (services.py:48-135)
+
+==================================================
+END OF GUIDE
+==================================================

@@ -35,6 +35,13 @@ mysql = MySQL(app)
 # Low stock threshold
 LOW_STOCK_THRESHOLD = 10
 
+# OOP Imports and Service Instances
+from models import Product, StockMovement
+from services import AuthService, ProductRepository, SalesService
+auth_service = AuthService()
+product_repository = ProductRepository(mysql)
+sales_service = SalesService(mysql)
+
 def admin_required(f):
     from functools import wraps
     @wraps(f)
@@ -1820,6 +1827,120 @@ def logout():
     # If no role, just clear everything
     session.clear()
     return redirect(url_for('admin_login'))
+
+# =============================
+# OOP INTEGRATION: REFACTORED ROUTES
+# =============================
+
+# --- Example 1: Encapsulation via Product model ---
+@app.route('/add_product_oop', methods=['POST'])
+@admin_required
+def add_product_oop():
+    """Add product using OOP models and services."""
+    try:
+        product = Product(
+            product_id=0,
+            name=request.form.get('product_name', '').strip(),
+            barcode=request.form.get('barcode', '').strip(),
+            category_id=int(request.form.get('category', 0) or 0),
+            product_type=request.form.get('category', ''),
+            price=float(request.form.get('price', 0)),
+            stock=int(request.form.get('stock', 0)),
+            expiration_date=request.form.get('expiration_date') or None
+        )
+        movement = StockMovement(
+            product.id, request.form.get('barcode', ''),
+            StockMovement.IN,
+            product.stock,
+            'Stock Addition'
+        )
+        product_repository.link_stock_movement(product, movement)
+        product_repository.save(product)
+        flash("Product registered successfully via OOP!", "success")
+    except ValueError as e:
+        flash(f"Validation error: {str(e)}", "error")
+    except Exception as e:
+        mysql.connection.rollback()
+        flash(f"Database error: {str(e)}", "error")
+    return redirect(url_for('add_product'))
+
+# --- Example 2: Polymorphism via SalesService ---
+@app.route('/complete_sale_oop', methods=['POST'])
+@cashier_required
+def complete_sale_oop():
+    """Complete sale using SalesService (polymorphism + abstraction)."""
+    try:
+        data = request.get_json()
+        items = data.get('items', [])
+        if not items:
+            return jsonify({'success': False, 'message': 'No items in cart'})
+        cur = mysql.connection.cursor()
+        try:
+            enriched_items = []
+            for item in items:
+                cur.execute(
+                    "SELECT product_name, product_type, price FROM products WHERE id=%s",
+                    (item['id'],)
+                )
+                row = cur.fetchone()
+                if row:
+                    enriched_items.append({
+                        'id': item['id'],
+                        'name': row[0],
+                        'product_type': row[1],
+                        'price': row[2],
+                        'quantity': item['quantity']
+                    })
+        finally:
+            cur.close()
+        cashier = Cashier(
+            user_id=session['cashier_id'],
+            username=session['cashier_user'],
+            full_name='Cashier',
+            password_hash=''
+        )
+        result = sales_service.process_sale(enriched_items, cashier)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'Error: {str(e)}'})
+
+# --- Example 3: Polymorphism via AuthService (Admin login) ---
+@app.route('/admin/login', methods=['GET', 'POST'])
+def admin_login_oop():
+    """Admin login using AuthService (polymorphic authentication)."""
+    if request.method == 'POST':
+        username = clean_input(request.form.get('username'))
+        password = clean_input(request.form.get('password'))
+        if not username or not password:
+            flash("All fields are required", "error")
+            return redirect(url_for('admin_login'))
+        success, user = auth_service.login(username, password, request, mysql, 'admin')
+        if success and user:
+            session_data = auth_service.get_session_data(user)
+            session.update(session_data)
+            session.permanent = True
+            return redirect(url_for('admin_dashboard'))
+        flash("Invalid login credentials", "error")
+    return render_template('admin_login.html')
+
+# --- Example 4: Polymorphism via AuthService (Cashier login) ---
+@app.route('/cashier/login', methods=['GET', 'POST'])
+def cashier_login_oop():
+    """Cashier login using AuthService (same interface, different behavior)."""
+    if request.method == 'POST':
+        username = clean_input(request.form.get('username'))
+        password = clean_input(request.form.get('password'))
+        if not username or not password:
+            flash("All fields are required", "error")
+            return redirect(url_for('cashier_login'))
+        success, user = auth_service.login(username, password, request, mysql, 'cashier')
+        if success and user:
+            session_data = auth_service.get_session_data(user)
+            session.update(session_data)
+            session.permanent = True
+            return redirect(url_for('cashier_dashboard'))
+        flash("Invalid login credentials", "error")
+    return render_template('cashier_login.html')
 
 # =============================
 # RUN APP
