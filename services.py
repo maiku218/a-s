@@ -1,4 +1,4 @@
-from abc import abstractmethod
+from abc import ABC, abstractmethod
 from typing import Optional, List, Dict
 import random
 from datetime import datetime

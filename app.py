@@ -946,10 +946,10 @@ def non_medical_sales():
 @admin_required
 def out_of_stock():
     cur = mysql.connection.cursor()
-    cur.execute("SELECT * FROM products WHERE stock = 0")
+    cur.execute("SELECT * FROM products WHERE stock <= %s", (LOW_STOCK_THRESHOLD,))
     products = cur.fetchall()
     
-    cur.execute("SELECT COUNT(*) FROM products WHERE stock = 0")
+    cur.execute("SELECT COUNT(*) FROM products WHERE stock <= %s", (LOW_STOCK_THRESHOLD,))
     low_stock_count = cur.fetchone()[0]
     
     cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date <= CURDATE() + INTERVAL 30 DAY AND expiration_date IS NOT NULL")
