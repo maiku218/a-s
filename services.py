@@ -8,9 +8,9 @@ from models import (
     StockMovementProcessor
 )
 
-# ================================================
-# ABSTRACTION: Service interfaces
-# ================================================
+
+
+
 
 class IAuthService(ABC):
     """Abstraction: defines the contract for authentication."""
@@ -41,9 +41,9 @@ class ISalesService(ABC):
         ...
 
 
-# ================================================
-# IMPLEMENTATIONS (Inheritance + Polymorphism)
-# ================================================
+
+
+
 
 class AuthService(IAuthService):
     """Polymorphism: different login/logout behavior for admin vs cashier."""
@@ -52,7 +52,7 @@ class AuthService(IAuthService):
               user_type: str = 'admin') -> tuple[bool, Optional[User]]:
         user = self._fetch_user(username, user_type, mysql)
         if not user:
-            # Create default admin if none exists (admin-specific logic)
+            
             if user_type == 'admin':
                 user = self._create_default_admin(mysql)
             if not user:
@@ -88,7 +88,7 @@ class AuthService(IAuthService):
             }
         return {}
 
-    # --- Private methods (Encapsulation) ---
+    
     def _fetch_user(self, username: str, user_type: str, mysql):
         cur = mysql.connection.cursor()
         try:

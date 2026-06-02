@@ -6,9 +6,9 @@ from decimal import Decimal
 from werkzeug.security import generate_password_hash, check_password_hash
 
 
-# ================================================
-# PILLAR 4: ABSTRACTION
-# ================================================
+
+
+
 
 class IEntity(ABC):
     @property
@@ -35,9 +35,9 @@ class IRepository(ABC):
         ...
 
 
-# ================================================
-# PILLAR 1: ENCAPSULATION (3 examples)
-# ================================================
+
+
+
 
 class StockMovement:
     """Example 1 of Encapsulation: all fields are private (_movement_type, _quantity, _reason).
@@ -51,7 +51,7 @@ class StockMovement:
                  quantity: int, reason: str):
         self._id = movement_id
         self._product_id = product_id
-        self._movement_type = movement_type  # validated through constructor
+        self._movement_type = movement_type  
         self._quantity = quantity
         self._reason = reason
 
@@ -111,12 +111,12 @@ class Product(IEntity):
         self._stock = int(stock)
         self._expiration_date = expiration_date
 
-    # --- IEntity ---
+    
     @property
     def id(self) -> int:
         return self._id
 
-    # --- Read-only properties for data that should not be reassigned externally ---
+    
     @property
     def barcode(self) -> str:
         return self._barcode
@@ -143,7 +143,7 @@ class Product(IEntity):
             raise ValueError("Product name cannot be empty.")
         self._name = value.strip()
 
-    # --- Example 2: encapsulated price with validation ---
+    
     @property
     def price(self) -> Decimal:
         return self._price
@@ -154,7 +154,7 @@ class Product(IEntity):
             raise ValueError("Price cannot be negative or null.")
         self._price = Decimal(str(value))
 
-    # --- Example 3: encapsulated stock with business rule ---
+    
     @property
     def stock(self) -> int:
         return self._stock
@@ -209,9 +209,9 @@ class Product(IEntity):
         )
 
 
-# ================================================
-# PILLAR 2: INHERITANCE (3 examples)
-# ================================================
+
+
+
 
 class User(IEntity):
     """Base User class. Admin and Cashier INHERIT from this."""
@@ -351,9 +351,9 @@ class Cashier(User):
             cur.close()
 
 
-# ================================================
-# PILLAR 3: POLYMORPHISM (3 examples)
-# ================================================
+
+
+
 
 class StockMovementProcessor:
     """Example 1 of Polymorphism: different processors handle stock differently."""
@@ -363,7 +363,7 @@ class StockMovementProcessor:
         self.mysql = mysql
 
     def process(self, product: Product):
-        raise NotImplementedError  # subclasses must override
+        raise NotImplementedError  
 
 
 class StockInProcessor(StockMovementProcessor):
