@@ -1,0 +1,127 @@
+PAANO I-SETUP ANG "start_pos" PARA SA CASHIER (FULL SCREEN)
+===========================================================
+
+GUSTO MONG FLOW ( automatic pag-open ng computer ):
+  1. Bumukas ang computer -> awtomatikong tumakbo ang start_pos
+  2. Una: magbukas ang XAMPP ( para buhay ang database / MySQL )
+  3. Tapos: magbukas ang VS Code at AWTOMATIKONG mag-start ang website
+     ( python app.py ) sa  http://127.0.0.1:5000
+  4. Dire-diretso sa cashier login page sa FULL SCREEN ( kiosk mode )
+
+Walang manual na pipindutin ang cashier. Sunod-sunod na steps:
+
+
+STEP 1 - I-install ang mga kailangan ( isang beses lang )
+---------------------------------------------------------
+  a. Windows
+  b. XAMPP        -> https://www.apachefriends.org/   ( MySQL database )
+  c. Python 3     -> https://www.python.org/downloads/
+        sa install, LAGYAN NG TIK ang "Add Python to PATH"
+  d. VS Code      -> https://code.visualstudio.com/
+        sa install, LAGYAN NG TIK ang "Add to PATH"
+  e. Microsoft Edge -> https://www.microsoft.com/edge
+
+
+STEP 2 - Ilagay ang project sa tamang folder
+--------------------------------------------
+Project dapat nasa:
+  C:\xampp\htdocs\pharmacon
+
+  - Sa loob ng "pharmacon" dapat may "app.py"
+
+
+STEP 3 - Gawing VS Code ang mag-start ng website ( isang beses lang )
+---------------------------------------------------------------------
+Gagawa tayo ng .vscode/tasks.json para pagbukas ng project sa VS Code,
+awtomatikong tumakbo ang python app.py.
+
+File:  C:\xampp\htdocs\pharmacon\.vscode\tasks.json
+( ginawa na ito para sa iyo, i-check lang kung nandoon )
+
+  {
+    "version": "2.0.0",
+    "tasks": [
+      {
+        "label": "Start Website (pharmacon)",
+        "type": "shell",
+        "command": "python",
+        "args": ["app.py"],
+        "options": { "cwd": "${workspaceFolder}" },
+        "presentation": { "reveal": "always", "panel": "new" },
+        "runOptions": { "runOn": "folderOpen" }
+      }
+    ]
+  }
+
+ONE-TIME APPROVE ( mahalaga! ):
+  - Buksan ang VS Code manually, tapos File > Open Folder >
+    piliin  C:\xampp\htdocs\pharmacon
+  - Sa unang pagbukas, lalabas sa baba ang tanong:
+    "Allow automatic tasks in folder?"  -> piliin ALLOW / OO
+  - Kung hindi lumabas, pindutin  Ctrl + Shift + P, i-type:
+    "Tasks: Manage Automatic Tasks" -> Allow Automatic Tasks in Folder
+  - Siguraduhin ding TRUSTED ang workspace ( kung may tanong, piliin Trust )
+
+
+STEP 4 - I-rename ang file para maging .bat
+-------------------------------------------
+  - I-right-click ang "start_pos.txt" > Rename > "start_pos.bat"
+  - Kung may tanong tungkol sa extension -> OO / Yes
+  - Right-click > Properties -> Type: Windows Batch File
+
+
+STEP 5 - I-TEST muna nang manual
+--------------------------------
+  - I-double-click ang "start_pos.bat"
+  - Uunahin niyang buksan ang XAMPP Control Panel
+  - Magbubukas ang VS Code at awtomatikong tatawag ang app.py
+    ( makikita mo sa terminal ng VS Code ang "Running on http://..." )
+  - Magbubukas ang Edge sa FULL SCREEN sa cashier login page
+  - Kung hindi nagbukas, tingnan ang TROUBLESHOOTING
+
+
+STEP 6 - PA-GAWING AWTOMATIKO PAG-OPEN NG COMPUTER
+--------------------------------------------------
+Para hindi na kailangang i-double-click, gagana agad pag-log in:
+
+PAMAAN A ( Startup folder - pinakamadali ):
+  - Win + R, i-type:  shell:startup , Enter
+  - I-copy ang "start_pos.bat" dito ( o gumawa ng shortcut )
+
+PAMAAN B ( Task Scheduler - mas reliable para sa kiosk ):
+  - Win, i-type:  Task Scheduler , Enter
+  - Create Basic Task > pangalan: "Cashier Start"
+  - Trigger: "When I log on"
+  - Action: "Start a program" > Browse > piliin start_pos.bat
+  - Finish
+
+
+STEP 7 - Paano isara ang full screen ( kiosk )
+----------------------------------------------
+Walang close button ang kiosk mode. Para isara:
+  - Alt + F4  -> isara ang Edge
+  - o  Ctrl + Shift + Esc -> Task Manager -> End task sa Edge
+  - o  Win + D -> ipakita ang desktop
+
+
+TROUBLESHOOTING
+---------------
+  - "python is not recognized"
+        -> hindi naka-PATH ang Python. I-reinstall at lagyan ng tik ang
+           "Add Python to PATH". O gamitin ang buong path sa tasks.json:
+           "command": "C:\\Python311\\python.exe"
+
+  - VS Code ayaw mag-start ng website
+        -> baka hindi ka nag-ALLOW ng automatic tasks ( Step 3 ).
+           Pindutin Ctrl+Shift+P > "Tasks: Manage Automatic Tasks" >
+           Allow. Siguraduhin ding TRUSTED ang folder.
+
+  - Blank page / hindi nagbukas ang Edge
+        -> dagdagan ang "timeout /t 20" sa start_pos.bat ( hal. 30 )
+           para mas mahaba ang hintay sa VS Code + python.
+
+  - XAMPP port conflict ( 80 / 3306 )
+        -> isara muna ang ibang server ( Skype, IIS ) bago i-run.
+
+  - Port 5000 ayaw
+        -> baguhin ang port sa app.py at sa URL sa start_pos.bat.
