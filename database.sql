@@ -102,7 +102,7 @@ CREATE TABLE IF NOT EXISTS sale_items (
 
 -- Insert default admin (username: admin, password: admin123)
 INSERT INTO admins (username, password, full_name) 
-VALUES ('admin', 'scrypt:32768:8:1$rJfOriv0msJHOVQT$00f8266d42bd6a0b3d79d169bf1e83c468b54300170fb5fbc2d83fd6780326ef612b61310f4d54fb955fabe72d240a538739f0559a1674036faa3cb6b118090d', 'System Administrator');
+VALUES ('admin', 'pbkdf2:sha256:600000$azTbU7sExjOzKtbr$392d9a3215fd515a6f540498d6c47b386a404b52adad96ce9d419cdde1513482', 'System Administrator');
 
 -- Insert sample categories
 INSERT INTO categories (category_name, description) VALUES 

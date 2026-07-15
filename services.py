@@ -61,6 +61,8 @@ class AuthService(IAuthService):
         user_from_db = self._hydrate_user(user, user_type, mysql)
         if not user_from_db:
             return False, None
+        if isinstance(user_from_db, Cashier) and user_from_db.status.lower() != 'active':
+            return False, None
 
         success, result_user = user_from_db.authenticate(password, mysql, request)
         return success, result_user
@@ -127,8 +129,8 @@ class AuthService(IAuthService):
                          row[3] if len(row) > 3 else 'Administrator',
                          password_hash)
         else:
-            status = row[4] if len(row) > 4 else 'Active'
-            return Cashier(row[0], row[1], row[2], password_hash, status)
+            return Cashier(row[0], row[2], row[1], password_hash,
+                           row[4] if len(row) > 4 else 'Active')
 
     def _generate_password(self, password: str) -> str:
         from werkzeug.security import generate_password_hash

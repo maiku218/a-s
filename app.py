@@ -17,7 +17,7 @@ app.config['SESSION_COOKIE_NAME'] = 'pharmacon_session'
 # Add datetime to template context
 @app.context_processor
 def inject_datetime():
-    return dict(datetime=datetime)
+    return dict(datetime=datetime, LOW_STOCK_THRESHOLD=LOW_STOCK_THRESHOLD)
 
 def clean_input(value):
     if not value:
@@ -67,6 +67,23 @@ def cashier_required(f):
             if is_api:
                 return jsonify({'success': False, 'message': 'Session expired. Please login again.'}), 401
             return redirect(url_for('cashier_login'))
+
+        cur = mysql.connection.cursor()
+        try:
+            cur.execute("SELECT status FROM cashiers WHERE id=%s", (session['cashier_id'],))
+            cashier_status = cur.fetchone()
+        finally:
+            cur.close()
+
+        if not cashier_status or (cashier_status[0] or 'active').lower() != 'active':
+            session.pop('cashier_user', None)
+            session.pop('cashier_id', None)
+            session.pop('role', None)
+            if is_api:
+                return jsonify({'success': False, 'message': 'Cashier account is inactive. Please login with an active account.'}), 401
+            flash("Cashier account is inactive. Contact the administrator.", "error")
+            return redirect(url_for('cashier_login'))
+
         return f(*args, **kwargs)
     return decorated_function
 
@@ -945,21 +962,30 @@ def non_medical_sales():
 @app.route('/out_of_stock')
 @admin_required
 def out_of_stock():
+    category_filter = request.args.get('category', 'all')
+
     cur = mysql.connection.cursor()
-    cur.execute("SELECT * FROM products WHERE stock = 0")
+
+    if category_filter == 'Medical':
+        cur.execute("SELECT * FROM products WHERE stock <= %s AND product_type = 'Medical' ORDER BY stock ASC", (LOW_STOCK_THRESHOLD,))
+    elif category_filter == 'Non-Medical':
+        cur.execute("SELECT * FROM products WHERE stock <= %s AND product_type = 'Non-Medical' ORDER BY stock ASC", (LOW_STOCK_THRESHOLD,))
+    else:
+        cur.execute("SELECT * FROM products WHERE stock <= %s ORDER BY stock ASC", (LOW_STOCK_THRESHOLD,))
     products = cur.fetchall()
-    
-    cur.execute("SELECT COUNT(*) FROM products WHERE stock = 0")
+
+    cur.execute("SELECT COUNT(*) FROM products WHERE stock <= %s", (LOW_STOCK_THRESHOLD,))
     low_stock_count = cur.fetchone()[0]
-    
+
     cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date <= CURDATE() + INTERVAL 30 DAY AND expiration_date IS NOT NULL")
     expiring_count = cur.fetchone()[0]
-    
+
     cur.close()
     return render_template('inventory_out_of_stock.html', products=products,
                            low_stock_count=low_stock_count,
                            expiring_count=expiring_count,
-                           active_main='inventory', active_sub='out_of_stock')
+                           active_main='inventory', active_sub='out_of_stock',
+                           category_filter=category_filter)
 
 @app.route('/expiring_medical')
 @admin_required
@@ -1242,31 +1268,36 @@ def cashier_login():
         cashier = cur.fetchone()
         cur.close()
 
-        if cashier and check_password_hash(cashier[3], password):
-            session['cashier_user'] = cashier[1]
-            session['cashier_id'] = cashier[0]
-            session['role'] = 'cashier'
-            session.permanent = True  # Session persists on refresh
-            
-            cur = mysql.connection.cursor()
-            
-            # Get IP address
-            ip_address = request.remote_addr
-            if request.headers.get('X-Forwarded-For'):
-                ip_address = request.headers.get('X-Forwarded-For')
-            
-            # Log cashier login with IP address
-            cur.execute("""
-                INSERT INTO cashier_activity (cashier_id, login_time, ip_address)
-                VALUES (%s, NOW(), %s)
-            """, (cashier[0], ip_address))
-            mysql.connection.commit()
-            cur.close()
-            
-            return redirect(url_for('cashier_dashboard'))
-        else:
+        if not cashier or not check_password_hash(cashier[3], password):
             flash("Invalid login credentials", "error")
             return redirect(url_for('cashier_login'))
+
+        cashier_status = ((cashier[4] or 'active') if len(cashier) > 4 else 'active').lower()
+        if cashier_status != 'active':
+            flash("Cashier account is inactive. Contact the administrator.", "error")
+            return redirect(url_for('cashier_login'))
+
+        session['cashier_user'] = cashier[1]
+        session['cashier_id'] = cashier[0]
+        session['role'] = 'cashier'
+        session.permanent = True  # Session persists on refresh
+
+        cur = mysql.connection.cursor()
+
+        # Get IP address
+        ip_address = request.remote_addr
+        if request.headers.get('X-Forwarded-For'):
+            ip_address = request.headers.get('X-Forwarded-For')
+
+        # Log cashier login with IP address
+        cur.execute("""
+            INSERT INTO cashier_activity (cashier_id, login_time, ip_address)
+            VALUES (%s, NOW(), %s)
+        """, (cashier[0], ip_address))
+        mysql.connection.commit()
+        cur.close()
+
+        return redirect(url_for('cashier_dashboard'))
 
     return render_template('cashier_login.html')
 
@@ -1451,6 +1482,7 @@ def api_products():
     return jsonify(result)
 
 @app.route('/api/search_by_name')
+@cashier_required
 def search_by_name():
     """API to search product by name for auto-fill"""
     query = request.args.get('q', '')
@@ -1590,162 +1622,157 @@ def get_product(barcode):
 @app.route('/complete_sale', methods=['POST'])
 @cashier_required
 def complete_sale():
-    print("DEBUG: complete_sale called")
+    if not request.is_json:
+        return jsonify({'success': False, 'message': 'Invalid request format'})
+
+    data = request.get_json()
+    if not data:
+        return jsonify({'success': False, 'message': 'No data received'})
+
+    items = data.get('items', [])
+    tendered = data.get('tendered', 0)
+
     try:
-        if not request.is_json:
-            print("DEBUG: Not JSON request")
-            return jsonify({'success': False, 'message': 'Invalid request format'})
-        data = request.get_json()
-        print("DEBUG: data received:", data)
-        if not data:
-            return jsonify({'success': False, 'message': 'No data received'})
-        items = data.get('items', [])
-        tendered = data.get('tendered', 0)
-        try:
-            tendered = float(tendered)
-        except (TypeError, ValueError):
-            return jsonify({'success': False, 'message': 'Invalid tendered amount'})
-    except Exception as e:
-        print("DEBUG: Parse error:", str(e))
-        return jsonify({'success': False, 'message': f'Parse Error: {str(e)}'})
-    
+        tendered = float(tendered)
+    except (TypeError, ValueError):
+        return jsonify({'success': False, 'message': 'Invalid tendered amount'})
+
     if not items:
         return jsonify({'success': False, 'message': 'No items in cart'})
-    
-    # Validate items structure
+
+    quantity_by_product = {}
     for item in items:
-        if 'id' not in item or 'quantity' not in item:
+        if not isinstance(item, dict):
             return jsonify({'success': False, 'message': 'Invalid item data'})
-    
-    total_amount = sum(item['price'] * item['quantity'] for item in items)
+        try:
+            product_id = int(item.get('id'))
+            quantity = int(item.get('quantity'))
+        except (TypeError, ValueError):
+            return jsonify({'success': False, 'message': 'Invalid item data'})
 
-    if tendered < total_amount:
-        return jsonify({'success': False, 'message': 'Amount tendered is less than total'})
+        if product_id <= 0 or quantity <= 0:
+            return jsonify({'success': False, 'message': 'Invalid item data'})
 
+        quantity_by_product[product_id] = quantity_by_product.get(product_id, 0) + quantity
+
+    product_ids = list(quantity_by_product.keys())
+    placeholders = ','.join(['%s'] * len(product_ids))
+
+    cur = mysql.connection.cursor()
     try:
-        cur = mysql.connection.cursor()
-    except Exception as e:
-        return jsonify({'success': False, 'message': f'Cannot connect to DB: {str(e)}'})
-    
-    try:
-        # Check products table
-        cur.execute("DESCRIBE products")
-    except Exception as e:
-        cur.close()
-        return jsonify({'success': False, 'message': f'Table error: {str(e)}'})
-    try:
-    
-        # Separate items by type
+        cur.execute(f"""
+            SELECT id, product_name, product_type, price, stock
+            FROM products
+            WHERE id IN ({placeholders})
+        """, tuple(product_ids))
+        products = {row[0]: row for row in cur.fetchall()}
+
+        if len(products) != len(product_ids):
+            return jsonify({'success': False, 'message': 'One or more products no longer exist'})
+
         medical_items = []
         non_medical_items = []
-    
-        for item in items:
-            cur.execute("SELECT product_type FROM products WHERE id = %s", (item['id'],))
-            result = cur.fetchone()
-            product_type = result[0] if result else 'Non-Medical'
-        
-            if product_type == 'Medical':
-                medical_items.append(item)
-            else:
-                non_medical_items.append(item)
-    
-        receipt_numbers = []
         receipt_items = []
-        total_amount = 0
-    
-        # Process Medical items - create separate sale record
-        if medical_items:
-            receipt_number = f"REC-{datetime.now().strftime('%Y%m%d')}-{random.randint(1000, 9999)}"
-            receipt_numbers.append(receipt_number)
-            medical_total = sum(item['price'] * item['quantity'] for item in medical_items)
-            total_amount += medical_total
-        
-            cur.execute("""
-                INSERT INTO sales (receipt_number, cashier_id, total_amount, sale_status, product_type, sale_date)
-                VALUES (%s, %s, %s, 'Completed', 'Medical', NOW())
-            """, (receipt_number, session['cashier_id'], medical_total))
-        
-            sale_id = cur.lastrowid
-        
-            for item in medical_items:
-                cur.execute("""
-                    INSERT INTO sale_items (sale_id, product_id, quantity, price)
-                    VALUES (%s, %s, %s, %s)
-                """, (sale_id, item['id'], item['quantity'], item['price']))
-            
-                cur.execute("""
-                    UPDATE products SET stock = stock - %s WHERE id = %s
-                """, (item['quantity'], item['id']))
+        total_amount = 0.0
 
-                # Keep product with zero stock for historical records
-                # Auto-delete removed to preserve sales history and avoid FK issues
-            
-                cur.execute("""
-                    INSERT INTO stock_movements (product_id, movement_type, quantity, reason)
-                    VALUES (%s, 'OUT', %s, 'Sale')
-                """, (item['id'], item['quantity']))
-            
-                receipt_items.append({
-                    'name': item['name'],
-                    'quantity': item['quantity'],
-                    'price': item['price'],
-                    'subtotal': item['price'] * item['quantity']
-                })
-    
-        # Process Non-Medical items - create separate sale record
-        if non_medical_items:
-            receipt_number = f"REC-{datetime.now().strftime('%Y%m%d')}-{random.randint(1000, 9999)}"
-            receipt_numbers.append(receipt_number)
-            non_medical_total = sum(item['price'] * item['quantity'] for item in non_medical_items)
-            total_amount += non_medical_total
-        
-            cur.execute("""
-                INSERT INTO sales (receipt_number, cashier_id, total_amount, sale_status, product_type, sale_date)
-                VALUES (%s, %s, %s, 'Completed', 'Non-Medical', NOW())
-            """, (receipt_number, session['cashier_id'], non_medical_total))
-        
-            sale_id = cur.lastrowid
-        
-            for item in non_medical_items:
-                cur.execute("""
-                    INSERT INTO sale_items (sale_id, product_id, quantity, price)
-                    VALUES (%s, %s, %s, %s)
-                """, (sale_id, item['id'], item['quantity'], item['price']))
-            
-                cur.execute("""
-                    UPDATE products SET stock = stock - %s WHERE id = %s
-                """, (item['quantity'], item['id']))
+        for product_id, requested_quantity in quantity_by_product.items():
+            row = products[product_id]
+            name = row[1]
+            product_type = row[2] or 'Non-Medical'
+            product_type_key = product_type.lower()
+            price = float(row[3])
+            stock = int(row[4])
 
-                # Keep product with zero stock for historical records
-                # Auto-delete removed to preserve sales history and avoid FK issues
-            
-                cur.execute("""
-                    INSERT INTO stock_movements (product_id, movement_type, quantity, reason)
-                    VALUES (%s, 'OUT', %s, 'Sale')
-                """, (item['id'], item['quantity']))
-            
-                receipt_items.append({
-                    'name': item['name'],
-                    'quantity': item['quantity'],
-                    'price': item['price'],
-                    'subtotal': item['price'] * item['quantity']
+            if price < 0:
+                return jsonify({'success': False, 'message': f'Invalid price for {name}'})
+
+            if stock < requested_quantity:
+                return jsonify({
+                    'success': False,
+                    'message': f'Not enough stock for {name}. Available: {stock}'
                 })
-    
-        mysql.connection.commit()
-        cur.close()
-    
-        # Return main receipt number (first one) for display
-        main_receipt = receipt_numbers[0] if receipt_numbers else 'N/A'
+
+            subtotal = round(price * requested_quantity, 2)
+            total_amount += subtotal
+            receipt_items.append({
+                'name': name,
+                'quantity': requested_quantity,
+                'price': price,
+                'subtotal': subtotal
+            })
+
+            if product_type_key == 'medical':
+                medical_items.append(row[:1] + (requested_quantity, price))
+            else:
+                non_medical_items.append(row[:1] + (requested_quantity, price))
 
         if tendered < total_amount:
             return jsonify({'success': False, 'message': 'Amount tendered is less than total'})
 
+        receipt_numbers = []
+
+        if medical_items:
+            receipt_number = f"REC-{datetime.now().strftime('%Y%m%d')}-{random.randint(1000, 9999)}"
+            receipt_numbers.append(receipt_number)
+            medical_total = round(sum(item[2] * item[1] for item in medical_items), 2)
+
+            cur.execute("""
+                INSERT INTO sales (receipt_number, cashier_id, total_amount, sale_status, product_type, sale_date)
+                VALUES (%s, %s, %s, 'Completed', 'Medical', NOW())
+            """, (receipt_number, session['cashier_id'], medical_total))
+
+            sale_id = cur.lastrowid
+
+            for product_id, quantity, price in medical_items:
+                cur.execute("""
+                    INSERT INTO sale_items (sale_id, product_id, quantity, price)
+                    VALUES (%s, %s, %s, %s)
+                """, (sale_id, product_id, quantity, price))
+
+                cur.execute("""
+                    UPDATE products SET stock = stock - %s WHERE id = %s
+                """, (quantity, product_id))
+
+                cur.execute("""
+                    INSERT INTO stock_movements (product_id, movement_type, quantity, reason)
+                    VALUES (%s, 'OUT', %s, 'Sale')
+                """, (product_id, quantity))
+
+        if non_medical_items:
+            receipt_number = f"REC-{datetime.now().strftime('%Y%m%d')}-{random.randint(1000, 9999)}"
+            receipt_numbers.append(receipt_number)
+            non_medical_total = round(sum(item[2] * item[1] for item in non_medical_items), 2)
+
+            cur.execute("""
+                INSERT INTO sales (receipt_number, cashier_id, total_amount, sale_status, product_type, sale_date)
+                VALUES (%s, %s, %s, 'Completed', 'Non-Medical', NOW())
+            """, (receipt_number, session['cashier_id'], non_medical_total))
+
+            sale_id = cur.lastrowid
+
+            for product_id, quantity, price in non_medical_items:
+                cur.execute("""
+                    INSERT INTO sale_items (sale_id, product_id, quantity, price)
+                    VALUES (%s, %s, %s, %s)
+                """, (sale_id, product_id, quantity, price))
+
+                cur.execute("""
+                    UPDATE products SET stock = stock - %s WHERE id = %s
+                """, (quantity, product_id))
+
+                cur.execute("""
+                    INSERT INTO stock_movements (product_id, movement_type, quantity, reason)
+                    VALUES (%s, 'OUT', %s, 'Sale')
+                """, (product_id, quantity))
+
+        mysql.connection.commit()
+        main_receipt = receipt_numbers[0] if receipt_numbers else 'N/A'
         change = round(tendered - total_amount, 2)
 
         return jsonify({
             'success': True,
             'receipt_number': main_receipt,
-            'total': total_amount,
+            'total': round(total_amount, 2),
             'tendered': round(tendered, 2),
             'change': change,
             'items': receipt_items,
@@ -1758,6 +1785,8 @@ def complete_sale():
         except:
             pass
         return jsonify({'success': False, 'message': f'Error: {str(e)}'})
+    finally:
+        cur.close()
 
 # =============================
 # LOGOUT
@@ -1770,7 +1799,10 @@ def setup_remote_db():
     try:
         cur = mysql.connection.cursor()
         # Create user for remote access with all privileges
-        cur.execute("CREATE USER IF NOT EXISTS 'root'@'%' IDENTIFIED BY ''")
+        try:
+            cur.execute("CREATE USER IF NOT EXISTS 'root'@'%' IDENTIFIED BY ''")
+        except Exception:
+            mysql.connection.rollback()
         cur.execute("GRANT ALL PRIVILEGES ON *.* TO 'root'@'%' WITH GRANT OPTION")
         cur.execute("FLUSH PRIVILEGES")
         cur.close()

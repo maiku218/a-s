@@ -1,102 +1,70 @@
 {% extends 'admin_dashboard.html' %}
+{% block page_title %}Sales Dashboard{% endblock %}
 
 {% block content %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
-<div class="content-card" style="padding: 20px;">
+<div class="card">
+    <div class="page-header">
+        <h1 class="page-title">Sales Dashboard</h1>
+        <p class="page-subtitle">Overview of all sales performance</p>
+    </div>
 
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px;">
-        <div>
-            <h1 style="margin: 0; letter-spacing: 1px; color: #2c3e50; font-size: 24px;">Sales Dashboard</h1>
-            <p style="margin: 5px 0 0 0; opacity: 0.7; color: #34495e;">Overview of all sales performance</p>
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-label">Today</div>
+            <div class="stat-value" style="color: var(--accent);">₱{{ "%.2f"|format(daily_sales) }}</div>
+            <div class="stat-meta"><span style="color: var(--accent);">M: ₱{{ "%.2f"|format(daily_medical_sales) }}</span> &nbsp; <span style="color: var(--success);">NM: ₱{{ "%.2f"|format(daily_nonmedical_sales) }}</span></div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">This Week</div>
+            <div class="stat-value" style="color: var(--success);">₱{{ "%.2f"|format(weekly_sales) }}</div>
+            <div class="stat-meta"><span style="color: var(--accent);">M: ₱{{ "%.2f"|format(weekly_medical_sales) }}</span> &nbsp; <span style="color: var(--success);">NM: ₱{{ "%.2f"|format(weekly_nonmedical_sales) }}</span></div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">This Month</div>
+            <div class="stat-value" style="color: var(--primary);">₱{{ "%.2f"|format(monthly_sales) }}</div>
+            <div class="stat-meta"><span style="color: var(--accent);">M: ₱{{ "%.2f"|format(monthly_medical_sales) }}</span> &nbsp; <span style="color: var(--success);">NM: ₱{{ "%.2f"|format(monthly_nonmedical_sales) }}</span></div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">This Year</div>
+            <div class="stat-value" style="color: #7c3aed;">₱{{ "%.2f"|format(yearly_sales) }}</div>
+            <div class="stat-meta"><span style="color: var(--accent);">M: ₱{{ "%.2f"|format(yearly_medical_sales) }}</span> &nbsp; <span style="color: var(--success);">NM: ₱{{ "%.2f"|format(yearly_nonmedical_sales) }}</span></div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Overall</div>
+            <div class="stat-value" style="color: #db2777;">₱{{ "%.2f"|format(overall_sales) }}</div>
+            <div class="stat-meta"><span style="color: var(--accent);">M: ₱{{ "%.2f"|format(overall_medical_sales) }}</span> &nbsp; <span style="color: var(--success);">NM: ₱{{ "%.2f"|format(overall_nonmedical_sales) }}</span></div>
         </div>
     </div>
 
-    <!-- Sales Summary Cards -->
-    <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 15px; margin-bottom: 30px;">
-        
-        <div class="glass" style="padding: 20px; text-align: center; border-radius: 16px;">
-            <div style="font-size: 12px; color: #94a3b8; font-weight: 600; text-transform: uppercase;">Today</div>
-            <div style="font-size: 24px; font-weight: 900; color: #fb923c; margin: 10px 0;">₱{{ "%.2f"|format(daily_sales) }}</div>
-            <div style="font-size: 11px; color: #94a3b8;">
-                <span style="color: #fb923c;">M: ₱{{ "%.2f"|format(daily_medical_sales) }}</span><br>
-                <span style="color: #4ade80;">NM: ₱{{ "%.2f"|format(daily_nonmedical_sales) }}</span>
-            </div>
-        </div>
-
-        <div class="glass" style="padding: 20px; text-align: center; border-radius: 16px;">
-            <div style="font-size: 12px; color: #94a3b8; font-weight: 600; text-transform: uppercase;">This Week</div>
-            <div style="font-size: 24px; font-weight: 900; color: #4ade80; margin: 10px 0;">₱{{ "%.2f"|format(weekly_sales) }}</div>
-            <div style="font-size: 11px; color: #94a3b8;">
-                <span style="color: #fb923c;">M: ₱{{ "%.2f"|format(weekly_medical_sales) }}</span><br>
-                <span style="color: #4ade80;">NM: ₱{{ "%.2f"|format(weekly_nonmedical_sales) }}</span>
-            </div>
-        </div>
-
-        <div class="glass" style="padding: 20px; text-align: center; border-radius: 16px;">
-            <div style="font-size: 12px; color: #94a3b8; font-weight: 600; text-transform: uppercase;">This Month</div>
-            <div style="font-size: 24px; font-weight: 900; color: #60a5fa; margin: 10px 0;">₱{{ "%.2f"|format(monthly_sales) }}</div>
-            <div style="font-size: 11px; color: #94a3b8;">
-                <span style="color: #fb923c;">M: ₱{{ "%.2f"|format(monthly_medical_sales) }}</span><br>
-                <span style="color: #4ade80;">NM: ₱{{ "%.2f"|format(monthly_nonmedical_sales) }}</span>
-            </div>
-        </div>
-
-        <div class="glass" style="padding: 20px; text-align: center; border-radius: 16px;">
-            <div style="font-size: 12px; color: #94a3b8; font-weight: 600; text-transform: uppercase;">This Year</div>
-            <div style="font-size: 24px; font-weight: 900; color: #a78bfa; margin: 10px 0;">₱{{ "%.2f"|format(yearly_sales) }}</div>
-            <div style="font-size: 11px; color: #94a3b8;">
-                <span style="color: #fb923c;">M: ₱{{ "%.2f"|format(yearly_medical_sales) }}</span><br>
-                <span style="color: #4ade80;">NM: ₱{{ "%.2f"|format(yearly_nonmedical_sales) }}</span>
-            </div>
-        </div>
-
-        <div class="glass" style="padding: 20px; text-align: center; border-radius: 16px;">
-            <div style="font-size: 12px; color: #94a3b8; font-weight: 600; text-transform: uppercase;">Overall</div>
-            <div style="font-size: 24px; font-weight: 900; color: #f472b6; margin: 10px 0;">₱{{ "%.2f"|format(overall_sales) }}</div>
-            <div style="font-size: 11px; color: #94a3b8;">
-                <span style="color: #fb923c;">M: ₱{{ "%.2f"|format(overall_medical_sales) }}</span><br>
-                <span style="color: #4ade80;">NM: ₱{{ "%.2f"|format(overall_nonmedical_sales) }}</span>
-            </div>
-        </div>
-
-    </div>
-
-    <!-- Charts Row -->
     <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 20px;">
-        
-        <!-- Daily Sales Chart -->
-        <div class="glass" style="padding: 25px; border-radius: 16px;">
-            <h3 style="margin: 0 0 20px 0; font-size: 16px; color: white;">Daily Sales - Medical vs Non-Medical (Last 30 Days)</h3>
+        <div class="card" style="padding: 24px;">
+            <h3 style="font-size: 16px; font-weight: 700; margin-bottom: 20px;">Daily Sales - Medical vs Non-Medical (Last 30 Days)</h3>
             <canvas id="salesChart" height="150"></canvas>
-            <div style="margin-top: 15px; text-align: center;">
-                <span style="color: #fb923c; font-weight: 600;">● Medical</span>
-                <span style="margin-left: 20px; color: #4ade80; font-weight: 600;">● Non-Medical</span>
+            <div style="margin-top: 15px; display: flex; gap: 20px; justify-content: center;">
+                <span style="color: var(--accent); font-weight: 600;">● Medical</span>
+                <span style="color: var(--success); font-weight: 600;">● Non-Medical</span>
             </div>
         </div>
 
-        <!-- Popular Products -->
-        <div class="glass" style="padding: 25px; border-radius: 16px;">
-            <h3 style="margin: 0 0 20px 0; font-size: 16px; color: white;">Top Selling Products</h3>
+        <div class="card" style="padding: 24px;">
+            <h3 style="font-size: 16px; font-weight: 700; margin-bottom: 20px;">Top Selling Products</h3>
             <div style="max-height: 250px; overflow-y: auto;">
                 {% for p in popular %}
-                <div style="display: flex; justify-content: space-between; padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.1);">
+                <div style="display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--border);">
                     <div>
                         <div style="font-weight: 600; font-size: 14px;">{{ p[0] }}</div>
-                        <div style="font-size: 12px; color: #94a3b8;">{{ p[1] }} sold</div>
+                        <div style="font-size: 12px; color: var(--text-secondary);">{{ p[1] }} sold</div>
                     </div>
-                    <div style="text-align: right;">
-                        <div style="font-weight: 900; color: #4ade80;">₱{{ "%.2f"|format(p[2]) }}</div>
-                    </div>
+                    <div style="font-weight: 800; color: var(--success);">₱{{ "%.2f"|format(p[2]) }}</div>
                 </div>
                 {% else %}
-                <p style="text-align: center; color: #94a3b8; padding: 20px;">No sales data yet</p>
+                <p class="table-empty">No sales data yet</p>
                 {% endfor %}
             </div>
         </div>
-
     </div>
-
 </div>
 
 <script>
@@ -106,48 +74,18 @@ new Chart(ctx, {
     data: {
         labels: {{ medical_labels | tojson }},
         datasets: [
-            {
-                label: 'Medical Sales (₱)',
-                data: {{ medical_values | tojson }},
-                borderColor: '#fb923c',
-                backgroundColor: 'rgba(251,146,60,0.1)',
-                tension: 0.4,
-                fill: true
-            },
-            {
-                label: 'Non-Medical Sales (₱)',
-                data: {{ nonmedical_values | tojson }},
-                borderColor: '#4ade80',
-                backgroundColor: 'rgba(74,222,128,0.1)',
-                tension: 0.4,
-                fill: true
-            }
+            { label: 'Medical Sales (₱)', data: {{ medical_values | tojson }}, borderColor: '#f97316', backgroundColor: 'rgba(249,115,22,0.08)', tension: 0.4, fill: true },
+            { label: 'Non-Medical Sales (₱)', data: {{ nonmedical_values | tojson }}, borderColor: '#22c55e', backgroundColor: 'rgba(34,197,94,0.08)', tension: 0.4, fill: true }
         ]
     },
     options: {
         responsive: true,
-        plugins: {
-            legend: { labels: { color: 'white' } }
-        },
+        plugins: { legend: { labels: { color: '#64748b', usePointStyle: true } } },
         scales: {
-            x: {
-                ticks: { color: 'white' },
-                grid: { color: 'rgba(255,255,255,0.05)' }
-            },
-            y: {
-                ticks: { color: 'white', callback: function(value) { return '₱' + value; } },
-                grid: { color: 'rgba(255,255,255,0.05)' }
-            }
+            x: { ticks: { color: '#94a3b8' }, grid: { color: '#f1f5f9' } },
+            y: { ticks: { color: '#94a3b8', callback: v => '₱' + v }, grid: { color: '#f1f5f9' } }
         }
     }
 });
 </script>
-
-<style>
-.glass {
-    background: rgba(255,255,255,0.07);
-    backdrop-filter: blur(15px);
-    border: 1px solid rgba(255,255,255,0.12);
-}
-</style>
 {% endblock %}

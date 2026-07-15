@@ -333,6 +333,8 @@ class Cashier(User):
                 VALUES (%s, NOW(), %s)
             """, (self._id, ip_address))
             mysql.connection.commit()
+        except Exception:
+            mysql.connection.rollback()
         finally:
             cur.close()
 
