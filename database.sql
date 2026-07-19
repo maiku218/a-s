@@ -86,6 +86,8 @@ CREATE TABLE IF NOT EXISTS sales (
     sale_status VARCHAR(20) DEFAULT 'Completed',
     product_type VARCHAR(20) DEFAULT 'medical',
     sale_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    receipt_printed TINYINT(1) DEFAULT 0,
+    printed_at TIMESTAMP NULL DEFAULT NULL,
     FOREIGN KEY (cashier_id) REFERENCES cashiers(id)
 );
 
@@ -133,5 +135,4 @@ INSERT INTO store_settings (setting_key, setting_value) VALUES
 ('receipt_footer', 'Thank you for your purchase!\nPlease come again.'),
 ('store_name', 'PharmaCon'),
 ('store_address', ''),
-('store_contact', ''),
-('receipt_logo', '');
+('store_contact', '');

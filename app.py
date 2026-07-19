@@ -1378,7 +1378,7 @@ def cashier_dashboard():
 def cashier_history():
     cur = mysql.connection.cursor()
 
-    # Get daily sales (last 30 days for chart)
+    # Get daily sales (today only for chart)
     cur.execute("""
         SELECT DATE(sale_date) as sale_day,
                IFNULL(SUM(total_amount),0) as total_sales,
@@ -1386,7 +1386,7 @@ def cashier_history():
         FROM sales
         WHERE cashier_id = %s
         AND sale_status = 'Completed'
-        AND DATE(sale_date) >= CURDATE() - INTERVAL 30 DAY
+        AND DATE(sale_date) = CURDATE()
         GROUP BY DATE(sale_date)
         ORDER BY sale_day ASC
     """, (session['cashier_id'],))
@@ -2032,7 +2032,6 @@ def receipt_customization():
             receipt_footer = request.form.get('receipt_footer', '').strip()
             store_address = request.form.get('store_address', '').strip()
             store_contact = request.form.get('store_contact', '').strip()
-            receipt_logo = request.form.get('receipt_logo', '').strip()
 
             settings_to_update = [
                 ('receipt_header', receipt_header),
@@ -2040,7 +2039,6 @@ def receipt_customization():
                 ('receipt_footer', receipt_footer),
                 ('store_address', store_address),
                 ('store_contact', store_contact),
-                ('receipt_logo', receipt_logo),
             ]
 
             for key, value in settings_to_update:
@@ -2072,6 +2070,32 @@ def receipt_customization():
                            expiring_count=expiring_count,
                            active_main='management',
                            active_sub='receipt_customization')
+
+# =============================
+# RECEIPT PRINT CONFIRMATION
+# =============================
+
+@app.route('/api/mark_receipt_printed', methods=['POST'])
+@cashier_required
+def mark_receipt_printed():
+    try:
+        data = request.get_json()
+        receipt_number = data.get('receipt_number')
+        if not receipt_number:
+            return jsonify({'success': False, 'message': 'Receipt number is required'}), 400
+
+        cur = mysql.connection.cursor()
+        cur.execute("""
+            UPDATE sales 
+            SET receipt_printed = 1, printed_at = NOW()
+            WHERE receipt_number = %s AND cashier_id = %s
+        """, (receipt_number, session['cashier_id']))
+        mysql.connection.commit()
+        cur.close()
+
+        return jsonify({'success': True, 'message': 'Receipt marked as printed'})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
 
 # =============================
 # BACKUP & RESTORE
@@ -2217,10 +2241,15 @@ if __name__ == '__main__':
                 ('receipt_footer', 'Thank you for your purchase!\\nPlease come again.'),
                 ('store_name', 'PharmaCon'),
                 ('store_address', ''),
-                ('store_contact', ''),
-                ('receipt_logo', '')
+                ('store_contact', '')
                 ON DUPLICATE KEY UPDATE setting_value = setting_value
             """)
+            cur.execute("SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'sales' AND column_name = 'receipt_printed'")
+            if cur.fetchone()[0] == 0:
+                cur.execute("ALTER TABLE sales ADD COLUMN receipt_printed TINYINT(1) DEFAULT 0")
+            cur.execute("SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'sales' AND column_name = 'printed_at'")
+            if cur.fetchone()[0] == 0:
+                cur.execute("ALTER TABLE sales ADD COLUMN printed_at TIMESTAMP NULL DEFAULT NULL")
             mysql.connection.commit()
             cur.close()
         except Exception as e:

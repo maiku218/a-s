@@ -8,6 +8,7 @@
     </p>
 
     <form method="POST" enctype="multipart/form-data">
+        <input type="hidden" name="receipt_logo_existing" value="{{ settings.receipt_logo or '' }}">
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
             <div class="form-group">
                 <label style="font-weight: 600; margin-bottom: 8px; display: block;">Store Name (Header)</label>
@@ -34,10 +35,8 @@
                 <textarea name="receipt_footer" rows="2" class="form-control" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px;">{{ settings.receipt_footer or 'Thank you for your purchase!\nPlease come again.' }}</textarea>
             </div>
             <div class="form-group" style="grid-column: 1 / -1;">
-                <label style="font-weight: 600; margin-bottom: 8px; display: block;">Receipt Logo (Image URL or Base64)</label>
-                <input type="text" name="receipt_logo" value="{{ settings.receipt_logo or '' }}" 
-                       class="form-control" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px;" placeholder="Paste image URL or base64 data">
-                <small style="color: #666;">Leave empty to use default text header. For best results, use a small PNG (max 200px wide).</small>
+                <label style="font-weight: 600; margin-bottom: 8px; display: block;">Receipt Footer Message</label>
+                <textarea name="receipt_footer" rows="2" class="form-control" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px;">{{ settings.receipt_footer or 'Thank you for your purchase!\nPlease come again.' }}</textarea>
             </div>
         </div>
 

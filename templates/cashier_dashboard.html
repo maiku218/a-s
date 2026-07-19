@@ -123,6 +123,17 @@
         ::-webkit-scrollbar { width: 6px; height: 6px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+        /* Modal Buttons */
+        .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 10px 18px; border-radius: var(--radius); font-size: 14px; font-weight: 600; cursor: pointer; border: 1px solid transparent; transition: all 0.15s; }
+        .btn-primary { background: var(--accent); color: white; border-color: var(--accent); }
+        .btn-primary:hover { background: var(--accent-dark); }
+        .btn-secondary { background: var(--surface); color: var(--text); border-color: var(--border); }
+        .btn-secondary:hover { background: var(--bg); }
+        .btn-success { background: var(--success); color: white; border-color: var(--success); }
+        .btn-success:hover { background: #16a34a; }
+        .btn-success { background: var(--success); color: white; border-color: var(--success); }
+        .btn-success:hover { background: #16a34a; }
     </style>
 </head>
 <body>
@@ -237,7 +248,9 @@
                 <div class="receipt-footer" id="modal-receipt-footer">Thank you for your purchase!<br>Please come again.</div>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-primary" onclick="closeReceipt()">Close</button>
+                <button class="btn btn-primary" onclick="printReceiptOnly()">Print</button>
+                <button class="btn btn-success" onclick="confirmPrint()">Mark as Printed</button>
+                <button class="btn btn-secondary" onclick="closeReceipt(event)">Close</button>
             </div>
         </div>
     </div>
@@ -245,13 +258,12 @@
     <!-- Receipt Settings (from database) -->
     <script>
         const RECEIPT_SETTINGS = {
-            header: "{{ settings.receipt_header or 'PHARMACON' }}",
-            subtitle: "{{ settings.receipt_subtitle or 'A\'s PharmaHealth & Convenience' }}",
-            footer: "{{ settings.receipt_footer or 'Thank you for your purchase!\\nPlease come again.' | replace('\n', '\\n') }}",
-            storeName: "{{ settings.store_name or 'PharmaCon' }}",
-            storeAddress: "{{ settings.store_address or '' }}",
-            storeContact: "{{ settings.store_contact or '' }}",
-            logo: "{{ settings.receipt_logo or '' }}"
+            header: {{ (settings.receipt_header or 'PHARMACON') | tojson }},
+            subtitle: {{ (settings.receipt_subtitle or 'A\'s PharmaHealth & Convenience') | tojson }},
+            footer: {{ (settings.receipt_footer or 'Thank you for your purchase!\nPlease come again.') | tojson }},
+            storeName: {{ (settings.store_name or 'PharmaCon') | tojson }},
+            storeAddress: {{ (settings.store_address or '') | tojson }},
+            storeContact: {{ (settings.store_contact or '') | tojson }}
         };
     </script>
 
@@ -262,6 +274,9 @@
         
         let cart = [];
         let selectedProductData = null;
+        let currentReceiptNumber = null;
+        let currentData = null;
+        let receiptConfirmed = false;
 
         document.addEventListener('click', (event) => {
             if (!event.target.closest('#payment-modal') && !event.target.closest('#receipt-modal') && !event.target.closest('#selected-product') && !event.target.closest('.search-panel')) {
@@ -419,7 +434,7 @@
             document.getElementById('payment-modal').classList.remove('show');
             fetch('/complete_sale', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }, body: JSON.stringify({ items: cart, tendered: customerPaid }) })
                 .then(res => { if (res.status === 401) { alert('Session expired. Please login again.'); window.location.href = '/cashier_login'; return null; } return res.json(); })
-                .then(data => { if (!data) return; if (data.success) { showReceipt(data); printReceipt(data); cart = []; renderCart(); } else { alert('Error: ' + data.message); } })
+                .then(data => { if (!data) return; if (data.success) { showReceipt(data); cart = []; renderCart(); } else { alert('Error: ' + data.message); } })
                 .catch(error => { console.error('Error:', error); alert('Error completing sale: ' + error); });
         }
 
@@ -434,7 +449,11 @@
 
             document.getElementById('modal-receipt-title').innerText = RECEIPT_SETTINGS.header;
             document.getElementById('modal-receipt-subtitle').innerText = RECEIPT_SETTINGS.subtitle;
-            document.getElementById('modal-receipt-footer').innerHTML = RECEIPT_SETTINGS.footer.replace(/\\n/g, '<br>');
+            document.getElementById('modal-receipt-footer').innerHTML = RECEIPT_SETTINGS.footer.replace(/\n/g, '<br>');
+
+            currentReceiptNumber = data.receipt_number;
+            currentData = data;
+            receiptConfirmed = false;
 
             const itemsDiv = document.getElementById('receipt-items');
             itemsDiv.innerHTML = '';
@@ -444,7 +463,46 @@
             document.getElementById('receipt-modal').classList.add('show');
         }
 
-        function closeReceipt() { document.getElementById('receipt-modal').classList.remove('show'); }
+        function confirmPrint() {
+            if (!currentReceiptNumber || receiptConfirmed) {
+                closeReceipt();
+                return;
+            }
+            fetch('/api/mark_receipt_printed', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                body: JSON.stringify({ receipt_number: currentReceiptNumber })
+            })
+            .then(res => res.json())
+            .then(data => {
+                receiptConfirmed = true;
+                currentReceiptNumber = null;
+                closeReceipt();
+            })
+            .catch(err => {
+                console.error('Mark printed error:', err);
+                receiptConfirmed = false;
+                currentReceiptNumber = null;
+                closeReceipt();
+            });
+        }
+
+        function printReceiptOnly() {
+            if (currentData && !receiptConfirmed) {
+                printReceipt(currentData);
+            }
+        }
+
+        function closeReceipt(event) {
+            if (event) {
+                event.preventDefault();
+                event.stopPropagation();
+            }
+            receiptConfirmed = false;
+            currentReceiptNumber = null;
+            currentData = null;
+            document.getElementById('receipt-modal').classList.remove('show');
+        }
 
         function clearSearch() { scanner.value = ''; resultsDiv.style.display = 'none'; selectedProduct.classList.remove('show'); selectedProductData = null; scanner.focus(); }
 
@@ -461,9 +519,12 @@
             const change = Number(data.change || 0);
             const headerText = RECEIPT_SETTINGS.header;
             const subtitleText = RECEIPT_SETTINGS.subtitle;
-            const footerText = RECEIPT_SETTINGS.footer.replace(/\\n/g, '<br>');
-            const logoHtml = RECEIPT_SETTINGS.logo ? `<div style="text-align:center;margin-bottom:8px;"><img src="${RECEIPT_SETTINGS.logo}" style="max-width:150px;max-height:60px;"></div>` : '';
-            let receiptHTML = `<!DOCTYPE html><html><head><title>Receipt</title><style>@page { margin: 0; size: 58mm auto; } body { width: 58mm; margin: 0; padding: 8px; font-family: 'Courier New', monospace; font-size: 11px; line-height: 1.3; color: #000; } .center { text-align: center; } .bold { font-weight: bold; } .divider { border-bottom: 1px dashed #000; margin: 8px 0; } .flex-between { display: flex; justify-content: space-between; } .mt-10 { margin-top: 10px; } .mt-5 { margin-top: 5px; }</style></head><body>${logoHtml}<div class="center bold" style="font-size: 13px;">${headerText}</div><div class="center" style="font-size: 9px;">${subtitleText}</div><div class="divider"></div><div class="flex-between"><span>Receipt:</span><span>${receiptNumber}</span></div><div class="flex-between"><span>Date:</span><span>${dateStr}</span></div><div class="divider"></div><div>`;
+            const storeAddress = RECEIPT_SETTINGS.storeAddress || '';
+            const storeContact = RECEIPT_SETTINGS.storeContact || '';
+            const footerText = RECEIPT_SETTINGS.footer.replace(/\n/g, '<br>');
+            const addressHtml = storeAddress ? `<div class="center" style="font-size: 9px;">${storeAddress}</div>` : '';
+            const contactHtml = storeContact ? `<div class="center" style="font-size: 9px;">${storeContact}</div>` : '';
+            let receiptHTML = `<!DOCTYPE html><html><head><title>Receipt</title><style>@page { margin: 0; size: 58mm auto; } body { width: 58mm; margin: 0; padding: 8px; font-family: 'Courier New', monospace; font-size: 11px; line-height: 1.3; color: #000; } .center { text-align: center; } .bold { font-weight: bold; } .divider { border-bottom: 1px dashed #000; margin: 8px 0; } .flex-between { display: flex; justify-content: space-between; } .mt-10 { margin-top: 10px; } .mt-5 { margin-top: 5px; }</style></head><body><div class="center bold" style="font-size: 13px;">${headerText}</div><div class="center" style="font-size: 9px;">${subtitleText}</div>${addressHtml}${contactHtml}<div class="divider"></div><div class="flex-between"><span>Receipt:</span><span>${receiptNumber}</span></div><div class="flex-between"><span>Date:</span><span>${dateStr}</span></div><div class="divider"></div><div>`;
             data.items.forEach(item => {
                 receiptHTML += `<div class="flex-between"><span>${item.name.substring(0,20)}</span><span>₱${item.price.toFixed(2)}</span></div><div class="flex-between" style="font-size: 10px;"><span>${item.quantity} x ${item.price.toFixed(2)}</span><span>₱${item.subtotal.toFixed(2)}</span></div>`;
             });
