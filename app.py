@@ -1725,7 +1725,7 @@ def complete_sale():
 
             cur.execute("""
                 INSERT INTO sales (receipt_number, cashier_id, total_amount, sale_status, product_type, sale_date)
-                VALUES (%s, %s, %s, 'Completed', 'Medical', NOW())
+                VALUES (%s, %s, %s, 'Pending', 'Medical', NOW())
             """, (receipt_number, session['cashier_id'], medical_total))
 
             sale_id = cur.lastrowid
@@ -1752,7 +1752,7 @@ def complete_sale():
 
             cur.execute("""
                 INSERT INTO sales (receipt_number, cashier_id, total_amount, sale_status, product_type, sale_date)
-                VALUES (%s, %s, %s, 'Completed', 'Non-Medical', NOW())
+                VALUES (%s, %s, %s, 'Pending', 'Non-Medical', NOW())
             """, (receipt_number, session['cashier_id'], non_medical_total))
 
             sale_id = cur.lastrowid
@@ -2087,13 +2087,63 @@ def mark_receipt_printed():
         cur = mysql.connection.cursor()
         cur.execute("""
             UPDATE sales 
-            SET receipt_printed = 1, printed_at = NOW()
-            WHERE receipt_number = %s AND cashier_id = %s
+            SET receipt_printed = 1, printed_at = NOW(), sale_status = 'Completed'
+            WHERE receipt_number = %s AND cashier_id = %s AND sale_status = 'Pending'
         """, (receipt_number, session['cashier_id']))
         mysql.connection.commit()
         cur.close()
 
         return jsonify({'success': True, 'message': 'Receipt marked as printed'})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/cancel_pending_sale', methods=['POST'])
+@cashier_required
+def cancel_pending_sale():
+    try:
+        data = request.get_json()
+        receipt_number = data.get('receipt_number')
+        if not receipt_number:
+            return jsonify({'success': False, 'message': 'Receipt number is required'}), 400
+
+        cur = mysql.connection.cursor()
+        try:
+            cur.execute("""
+                SELECT id FROM sales 
+                WHERE receipt_number = %s AND cashier_id = %s AND sale_status = 'Pending'
+                LIMIT 1
+            """, (receipt_number, session['cashier_id']))
+            sale_row = cur.fetchone()
+            if not sale_row:
+                return jsonify({'success': True, 'message': 'No pending sale found'})
+
+            sale_id = sale_row[0]
+
+            cur.execute("""
+                SELECT product_id, quantity FROM sale_items WHERE sale_id = %s
+            """, (sale_id,))
+            items = cur.fetchall()
+
+            for product_id, quantity in items:
+                cur.execute("""
+                    UPDATE products SET stock = stock + %s WHERE id = %s
+                """, (quantity, product_id))
+
+                cur.execute("""
+                    DELETE FROM stock_movements 
+                    WHERE product_id = %s AND movement_type = 'OUT' 
+                    AND reason = 'Sale' AND movement_date >= (
+                        SELECT sale_date FROM sales WHERE id = %s
+                    )
+                    LIMIT 1
+                """, (product_id, sale_id))
+
+            cur.execute("DELETE FROM sale_items WHERE sale_id = %s", (sale_id,))
+            cur.execute("DELETE FROM sales WHERE id = %s", (sale_id,))
+            mysql.connection.commit()
+            return jsonify({'success': True, 'message': 'Pending sale cancelled'})
+        finally:
+            cur.close()
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
 

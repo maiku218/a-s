@@ -276,7 +276,7 @@
         let selectedProductData = null;
         let currentReceiptNumber = null;
         let currentData = null;
-        let receiptConfirmed = false;
+        let receiptMarkedPrinted = false;
 
         document.addEventListener('click', (event) => {
             if (!event.target.closest('#payment-modal') && !event.target.closest('#receipt-modal') && !event.target.closest('#selected-product') && !event.target.closest('.search-panel')) {
@@ -453,7 +453,7 @@
 
             currentReceiptNumber = data.receipt_number;
             currentData = data;
-            receiptConfirmed = false;
+            receiptMarkedPrinted = false;
 
             const itemsDiv = document.getElementById('receipt-items');
             itemsDiv.innerHTML = '';
@@ -463,8 +463,13 @@
             document.getElementById('receipt-modal').classList.add('show');
         }
 
+        function printReceiptOnly() {
+            if (!currentData || receiptMarkedPrinted) return;
+            printReceipt(currentData);
+        }
+
         function confirmPrint() {
-            if (!currentReceiptNumber || receiptConfirmed) {
+            if (!currentReceiptNumber || receiptMarkedPrinted) {
                 closeReceipt();
                 return;
             }
@@ -475,22 +480,18 @@
             })
             .then(res => res.json())
             .then(data => {
-                receiptConfirmed = true;
+                receiptMarkedPrinted = true;
                 currentReceiptNumber = null;
-                closeReceipt();
+                currentData = null;
+                document.getElementById('receipt-modal').classList.remove('show');
             })
             .catch(err => {
                 console.error('Mark printed error:', err);
-                receiptConfirmed = false;
+                receiptMarkedPrinted = false;
                 currentReceiptNumber = null;
-                closeReceipt();
+                currentData = null;
+                document.getElementById('receipt-modal').classList.remove('show');
             });
-        }
-
-        function printReceiptOnly() {
-            if (currentData && !receiptConfirmed) {
-                printReceipt(currentData);
-            }
         }
 
         function closeReceipt(event) {
@@ -498,7 +499,14 @@
                 event.preventDefault();
                 event.stopPropagation();
             }
-            receiptConfirmed = false;
+            if (currentReceiptNumber && !receiptMarkedPrinted) {
+                fetch('/api/cancel_pending_sale', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                    body: JSON.stringify({ receipt_number: currentReceiptNumber })
+                }).catch(err => console.error('Cancel pending sale error:', err));
+            }
+            receiptMarkedPrinted = false;
             currentReceiptNumber = null;
             currentData = null;
             document.getElementById('receipt-modal').classList.remove('show');
@@ -509,6 +517,7 @@
         function handleLogout() { if(confirm("Logout from system? Cart will be cleared.")) { window.location.href = "/cashier_logout"; } }
 
         function printReceipt(data) {
+            const receiptModal = document.getElementById('receipt-modal');
             const printFrame = document.createElement('iframe');
             printFrame.style.cssText = 'position:absolute;top:-9999px;left:-9999px;width:58mm;height:auto;';
             document.body.appendChild(printFrame);
@@ -529,10 +538,36 @@
                 receiptHTML += `<div class="flex-between"><span>${item.name.substring(0,20)}</span><span>₱${item.price.toFixed(2)}</span></div><div class="flex-between" style="font-size: 10px;"><span>${item.quantity} x ${item.price.toFixed(2)}</span><span>₱${item.subtotal.toFixed(2)}</span></div>`;
             });
             receiptHTML += `</div><div class="divider"></div><div class="flex-between bold" style="font-size: 13px;"><span>TOTAL</span><span>₱${data.total.toFixed(2)}</span></div><div class="flex-between" style="font-size: 11px;"><span>CUSTOMER PAID</span><span>₱${tendered.toFixed(2)}</span></div><div class="flex-between" style="font-size: 11px;"><span>CHANGE</span><span>₱${change.toFixed(2)}</span></div><div class="divider"></div><div class="center" style="font-size: 10px;">${footerText.replace(/<br>/g, '<br>')}</div><div class="center" style="font-size: 9px; margin-top: 5px;">--- END OF RECEIPT ---</div>`;
+
+            printFrame.onload = function() {
+                setTimeout(() => {
+                    try {
+                        printFrame.contentWindow.focus();
+                        printFrame.contentWindow.print();
+                    } catch (e) {
+                        console.error('Print error:', e);
+                    }
+                    setTimeout(() => {
+                        if (printFrame.parentNode) {
+                            document.body.removeChild(printFrame);
+                        }
+                        receiptModal.classList.add('show');
+                    }, 800);
+                }, 150);
+            };
+
             printFrame.contentDocument.open();
             printFrame.contentDocument.write(receiptHTML);
             printFrame.contentDocument.close();
-            printFrame.onload = function() { setTimeout(() => { printFrame.contentWindow.focus(); printFrame.contentWindow.print(); setTimeout(() => { document.body.removeChild(printFrame); }, 1000); }, 100); };
+
+            setTimeout(() => {
+                if (printFrame.parentNode && !printFrame.contentWindow) {
+                    if (printFrame.parentNode) {
+                        document.body.removeChild(printFrame);
+                    }
+                    receiptModal.classList.add('show');
+                }
+            }, 3000);
         }
     </script>
 </body>

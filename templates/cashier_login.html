@@ -88,6 +88,14 @@
         .alert-error { background: rgba(239, 68, 68, 0.2); border: 1px solid #ef4444; color: #fca5a5; }
         .alert-success { background: rgba(34, 197, 94, 0.2); border: 1px solid #22c55e; color: #86efac; }
 
+        .admin-link {
+            display: inline-block;
+            margin-top: 20px;
+            color: #94a3b8;
+            font-size: 14px;
+            cursor: pointer;
+            text-decoration: underline;
+        }
     </style>
 </head>
 <body>
@@ -110,6 +118,7 @@
             <input type="password" name="password" placeholder="Password" required>
             <button type="submit">Start Shift</button>
         </form>
+        <a href="{{ url_for('admin_login') }}" class="admin-link">Login as Admin</a>
     </div>
 </div>
 

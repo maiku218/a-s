@@ -356,7 +356,7 @@ class SalesService(ISalesService):
         cur.execute("""
             INSERT INTO sales (receipt_number, cashier_id, total_amount,
                                sale_status, product_type, sale_date)
-            VALUES (%s, %s, %s, 'Completed', %s, NOW())
+            VALUES (%s, %s, %s, 'Pending', %s, NOW())
         """, (receipt_number, cashier_id, sale_total, product_type))
         sale_id = cur.lastrowid
 
