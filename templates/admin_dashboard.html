@@ -169,8 +169,10 @@
 <div class="notification-container" style="position: fixed; top: 16px; right: 16px; z-index: 1000;">
     <button class="notification-btn" onclick="toggleNotifications()" title="Notifications">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
-        {% if low_stock_count + expiring_count > 0 %}
-        <span class="notification-badge">{{ low_stock_count + expiring_count }}</span>
+        {% set ls = low_stock_count | default(0) %}
+        {% set ex = expiring_count | default(0) %}
+        {% if ls + ex > 0 %}
+        <span class="notification-badge">{{ ls + ex }}</span>
         {% endif %}
     </button>
     <div class="notification-dropdown" id="notificationDropdown">
@@ -242,6 +244,8 @@
             <div class="nav-item {% if active_sub == 'register_cashier' %}active{% endif %}" style="padding: 8px 0;"><a href="{{ url_for('register_cashier') }}" style="color: inherit; text-decoration: none;">Register Cashier</a></div>
             <div class="nav-item {% if active_sub == 'delete_cashier' %}active{% endif %}" style="padding: 8px 0;"><a href="{{ url_for('delete_cashier') }}" style="color: inherit; text-decoration: none;">Manage Staff</a></div>
             <div class="nav-item {% if active_sub == 'change_admin_password' %}active{% endif %}" style="padding: 8px 0;"><a href="{{ url_for('change_admin_password') }}" style="color: inherit; text-decoration: none;">Security Settings</a></div>
+            <div class="nav-item {% if active_sub == 'receipt_customization' %}active{% endif %}" style="padding: 8px 0;"><a href="/receipt_customization" style="color: inherit; text-decoration: none;">Receipt Customization</a></div>
+            <div class="nav-item {% if active_sub == 'backup_restore' %}active{% endif %}" style="padding: 8px 0;"><a href="/backup_restore" style="color: inherit; text-decoration: none;">Database Backup / Restore</a></div>
         </div>
     </nav>
     <div class="sidebar-footer">

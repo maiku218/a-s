@@ -1,0 +1,84 @@
+{% extends 'admin_dashboard.html' %}
+
+{% block content %}
+<div class="content-card">
+    <h1 style="margin: 0 0 10px 0;">Receipt Customization</h1>
+    <p style="color: #666; font-size: 14px; margin-bottom: 25px;">
+        Customize the appearance of your thermal receipts. Changes are saved automatically.
+    </p>
+
+    <form method="POST" enctype="multipart/form-data">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+            <div class="form-group">
+                <label style="font-weight: 600; margin-bottom: 8px; display: block;">Store Name (Header)</label>
+                <input type="text" name="receipt_header" value="{{ settings.receipt_header or 'PHARMACON' }}" 
+                       class="form-control" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px;">
+            </div>
+            <div class="form-group">
+                <label style="font-weight: 600; margin-bottom: 8px; display: block;">Store Tagline (Subtitle)</label>
+                <input type="text" name="receipt_subtitle" value="{{ settings.receipt_subtitle or 'A\'s PharmaHealth & Convenience' }}" 
+                       class="form-control" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px;">
+            </div>
+            <div class="form-group">
+                <label style="font-weight: 600; margin-bottom: 8px; display: block;">Store Address</label>
+                <input type="text" name="store_address" value="{{ settings.store_address or '' }}" 
+                       class="form-control" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px;" placeholder="Enter store address">
+            </div>
+            <div class="form-group">
+                <label style="font-weight: 600; margin-bottom: 8px; display: block;">Store Contact</label>
+                <input type="text" name="store_contact" value="{{ settings.store_contact or '' }}" 
+                       class="form-control" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px;" placeholder="Phone / Email">
+            </div>
+            <div class="form-group" style="grid-column: 1 / -1;">
+                <label style="font-weight: 600; margin-bottom: 8px; display: block;">Receipt Footer Message</label>
+                <textarea name="receipt_footer" rows="2" class="form-control" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px;">{{ settings.receipt_footer or 'Thank you for your purchase!\nPlease come again.' }}</textarea>
+            </div>
+            <div class="form-group" style="grid-column: 1 / -1;">
+                <label style="font-weight: 600; margin-bottom: 8px; display: block;">Receipt Logo (Image URL or Base64)</label>
+                <input type="text" name="receipt_logo" value="{{ settings.receipt_logo or '' }}" 
+                       class="form-control" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px;" placeholder="Paste image URL or base64 data">
+                <small style="color: #666;">Leave empty to use default text header. For best results, use a small PNG (max 200px wide).</small>
+            </div>
+        </div>
+
+        <div style="margin-top: 25px; display: flex; gap: 10px;">
+            <button type="submit" class="btn-primary">Save Settings</button>
+            <a href="/" class="btn-secondary" style="text-decoration: none; padding: 10px 20px; background: #6b7280; color: white; border-radius: 6px;">Cancel</a>
+        </div>
+    </form>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div style="margin-top: 15px; padding: 12px; border-radius: 6px; background: {% if category == 'success' %}#d1fae5{% else %}#fee2e2{% endif %}; color: {% if category == 'success' %}#065f46{% else %}#991b1b{% endif %};">
+            {{ message }}
+          </div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+</div>
+
+<style>
+.form-control:focus {
+    outline: none;
+    border-color: var(--orange);
+    box-shadow: 0 0 0 3px rgba(251, 146, 60, 0.1);
+}
+.btn-primary {
+    padding: 10px 20px;
+    background: var(--orange);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-weight: 600;
+    cursor: pointer;
+}
+.btn-primary:hover {
+    background: #ea580c;
+}
+.btn-secondary {
+    display: inline-flex;
+    align-items: center;
+}
+</style>
+{% endblock %}

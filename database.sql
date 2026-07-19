@@ -118,3 +118,20 @@ UPDATE products SET product_type = 'Non-Medical' WHERE product_type = 'non_medic
 -- This ensures sales are properly categorized in reports
 UPDATE sales SET product_type = 'Medical' WHERE product_type = 'medical';
 UPDATE sales SET product_type = 'Non-Medical' WHERE product_type = 'non_medical';
+
+-- Store Settings (receipt customization, store info)
+CREATE TABLE IF NOT EXISTS store_settings (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    setting_key VARCHAR(100) NOT NULL UNIQUE,
+    setting_value TEXT,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+INSERT INTO store_settings (setting_key, setting_value) VALUES
+('receipt_header', 'PHARMACON'),
+('receipt_subtitle', 'A\\'s PharmaHealth & Convenience'),
+('receipt_footer', 'Thank you for your purchase!\nPlease come again.'),
+('store_name', 'PharmaCon'),
+('store_address', ''),
+('store_contact', ''),
+('receipt_logo', '');

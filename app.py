@@ -1,8 +1,12 @@
-from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
+from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify, send_file
 from flask_mysqldb import MySQL
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime
 import random
+import os
+import subprocess
+import tempfile
+from io import BytesIO
 
 app = Flask(__name__)
 app.secret_key = "simple_secret_key"
@@ -1361,10 +1365,13 @@ def cashier_dashboard():
     recent_sales = cur.fetchall()
     cur.close()
 
+    settings = get_store_settings(mysql)
+
     return render_template('cashier_dashboard.html', 
                            recent_sales=recent_sales,
                            today_total=today_total,
-                           today_count=today_count)
+                           today_count=today_count,
+                           settings=settings)
 
 @app.route('/cashier_history')
 @cashier_required
@@ -1993,8 +2000,229 @@ def cashier_login_oop():
     return render_template('cashier_login.html')
 
 # =============================
-# RUN APP
+# STORE SETTINGS & UTILITIES
 # =============================
 
+def get_store_settings(mysql):
+    cur = mysql.connection.cursor()
+    try:
+        cur.execute("SELECT setting_key, setting_value FROM store_settings")
+        rows = cur.fetchall()
+        settings = {row[0]: row[1] for row in rows}
+        return settings
+    finally:
+        cur.close()
+
+def get_setting(mysql, key, default=''):
+    settings = get_store_settings(mysql)
+    return settings.get(key, default)
+
+# =============================
+# RECEIPT CUSTOMIZATION
+# =============================
+
+@app.route('/receipt_customization', methods=['GET', 'POST'])
+@admin_required
+def receipt_customization():
+    cur = mysql.connection.cursor()
+    try:
+        if request.method == 'POST':
+            receipt_header = request.form.get('receipt_header', '').strip()
+            receipt_subtitle = request.form.get('receipt_subtitle', '').strip()
+            receipt_footer = request.form.get('receipt_footer', '').strip()
+            store_address = request.form.get('store_address', '').strip()
+            store_contact = request.form.get('store_contact', '').strip()
+            receipt_logo = request.form.get('receipt_logo', '').strip()
+
+            settings_to_update = [
+                ('receipt_header', receipt_header),
+                ('receipt_subtitle', receipt_subtitle),
+                ('receipt_footer', receipt_footer),
+                ('store_address', store_address),
+                ('store_contact', store_contact),
+                ('receipt_logo', receipt_logo),
+            ]
+
+            for key, value in settings_to_update:
+                cur.execute("""
+                    INSERT INTO store_settings (setting_key, setting_value)
+                    VALUES (%s, %s)
+                    ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)
+                """, (key, value))
+
+            mysql.connection.commit()
+            flash("Receipt settings saved successfully!", "success")
+
+        cur.execute("SELECT setting_key, setting_value FROM store_settings")
+        rows = cur.fetchall()
+        settings = {row[0]: row[1] for row in rows}
+    finally:
+        cur.close()
+
+    cur = mysql.connection.cursor()
+    cur.execute("SELECT COUNT(*) FROM products WHERE stock <= %s", (LOW_STOCK_THRESHOLD,))
+    low_stock_count = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date <= CURDATE() + INTERVAL 30 DAY AND expiration_date IS NOT NULL")
+    expiring_count = cur.fetchone()[0]
+    cur.close()
+
+    return render_template('receipt_customization.html',
+                           settings=settings,
+                           low_stock_count=low_stock_count,
+                           expiring_count=expiring_count,
+                           active_main='management',
+                           active_sub='receipt_customization')
+
+# =============================
+# BACKUP & RESTORE
+# =============================
+
+@app.route('/backup_restore')
+@admin_required
+def backup_restore():
+    cur = mysql.connection.cursor()
+    cur.execute("SELECT COUNT(*) FROM products WHERE stock <= %s", (LOW_STOCK_THRESHOLD,))
+    low_stock_count = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date <= CURDATE() + INTERVAL 30 DAY AND expiration_date IS NOT NULL")
+    expiring_count = cur.fetchone()[0]
+    cur.close()
+
+    return render_template('backup_restore.html',
+                           low_stock_count=low_stock_count,
+                           expiring_count=expiring_count,
+                           active_main='management',
+                           active_sub='backup_restore')
+
+@app.route('/backup_database', methods=['POST'])
+@admin_required
+def backup_database():
+    try:
+        db_name = app.config['MYSQL_DB']
+        db_user = app.config['MYSQL_USER']
+        db_pass = app.config['MYSQL_PASSWORD']
+        db_host = app.config['MYSQL_HOST']
+
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f"pharmacon_backup_{timestamp}.sql"
+
+        mysqldump_path = r"C:\xampp\mysql\bin\mysqldump.exe"
+        if not os.path.exists(mysqldump_path):
+            mysqldump_path = "mysqldump"
+
+        cmd = [
+            mysqldump_path,
+            f"--host={db_host}",
+            f"--user={db_user}",
+            db_name
+        ]
+        if db_pass:
+            cmd.append(f"--password={db_pass}")
+
+        result = subprocess.run(cmd, capture_output=True, text=True)
+
+        if result.returncode != 0:
+            flash(f"Backup failed: {result.stderr}", "error")
+            return redirect(url_for('backup_restore'))
+
+        sql_dump = result.stdout
+        if sql_dump is None:
+            sql_dump = ""
+        mem = BytesIO()
+        mem.write(sql_dump.encode('utf-8'))
+        mem.seek(0)
+
+        try:
+            return send_file(
+                mem,
+                as_attachment=True,
+                download_name=filename,
+                mimetype='application/sql'
+            )
+        except TypeError:
+            return send_file(
+                mem,
+                as_attachment=True,
+                attachment_filename=filename,
+                mimetype='application/sql'
+            )
+    except Exception as e:
+        flash(f"Backup error: {str(e)}", "error")
+        return redirect(url_for('backup_restore'))
+
+@app.route('/restore_database', methods=['POST'])
+@admin_required
+def restore_database():
+    try:
+        if 'backup_file' not in request.files:
+            flash("No file uploaded", "error")
+            return redirect(url_for('backup_restore'))
+
+        file = request.files['backup_file']
+        if file.filename == '':
+            flash("No file selected", "error")
+            return redirect(url_for('backup_restore'))
+
+        if not file.filename.endswith('.sql'):
+            flash("Please upload a .sql file", "error")
+            return redirect(url_for('backup_restore'))
+
+        db_name = app.config['MYSQL_DB']
+        db_user = app.config['MYSQL_USER']
+        db_pass = app.config['MYSQL_PASSWORD']
+        db_host = app.config['MYSQL_HOST']
+
+        mysql_path = r"C:\xampp\mysql\bin\mysql.exe"
+        if not os.path.exists(mysql_path):
+            mysql_path = "mysql"
+
+        sql_content = file.read().decode('utf-8')
+
+        cmd = [
+            mysql_path,
+            f"--host={db_host}",
+            f"--user={db_user}",
+            db_name
+        ]
+        if db_pass:
+            cmd.append(f"--password={db_pass}")
+
+        result = subprocess.run(cmd, input=sql_content, capture_output=True, text=True)
+
+        if result.returncode != 0:
+            flash(f"Restore failed: {result.stderr}", "error")
+        else:
+            flash("Database restored successfully!", "success")
+
+    except Exception as e:
+        flash(f"Restore error: {str(e)}", "error")
+
+    return redirect(url_for('backup_restore'))
+
 if __name__ == '__main__':
+    with app.app_context():
+        try:
+            cur = mysql.connection.cursor()
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS store_settings (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    setting_key VARCHAR(100) NOT NULL UNIQUE,
+                    setting_value TEXT,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+                )
+            """)
+            cur.execute("""
+                INSERT INTO store_settings (setting_key, setting_value) VALUES
+                ('receipt_header', 'PHARMACON'),
+                ('receipt_subtitle', 'A\\'s PharmaHealth & Convenience'),
+                ('receipt_footer', 'Thank you for your purchase!\\nPlease come again.'),
+                ('store_name', 'PharmaCon'),
+                ('store_address', ''),
+                ('store_contact', ''),
+                ('receipt_logo', '')
+                ON DUPLICATE KEY UPDATE setting_value = setting_value
+            """)
+            mysql.connection.commit()
+            cur.close()
+        except Exception as e:
+            print(f"Store settings init error: {e}")
     app.run(debug=True)

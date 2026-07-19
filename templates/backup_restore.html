@@ -1,0 +1,86 @@
+{% extends 'admin_dashboard.html' %}
+
+{% block content %}
+<div class="content-card">
+    <h1 style="margin: 0 0 10px 0;">Database Backup & Restore</h1>
+    <p style="color: #666; font-size: 14px; margin-bottom: 25px;">
+        Create a backup of your pharmacy database or restore from a previous backup file.
+    </p>
+
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 25px;">
+        <!-- Backup Section -->
+        <div style="padding: 25px; background: #f8fafc; border-radius: 12px; border: 1px solid #e2e8f0;">
+            <h2 style="margin: 0 0 15px 0; font-size: 18px; color: #1e1e2f;">Create Backup</h2>
+            <p style="color: #666; font-size: 13px; margin-bottom: 20px;">
+                Download a complete SQL dump of the <strong>pharmacon</strong> database. This includes all tables, data, and settings.
+            </p>
+            <form method="POST" action="/backup_database">
+                <button type="submit" class="btn-primary" style="width: 100%; justify-content: center;">
+                    Download Backup (.sql)
+                </button>
+            </form>
+        </div>
+
+        <!-- Restore Section -->
+        <div style="padding: 25px; background: #f8fafc; border-radius: 12px; border: 1px solid #e2e8f0;">
+            <h2 style="margin: 0 0 15px 0; font-size: 18px; color: #1e1e2f;">Restore Database</h2>
+            <p style="color: #666; font-size: 13px; margin-bottom: 20px;">
+                Upload a previously saved <strong>.sql</strong> backup file. <strong style="color: #dc2626;">Warning:</strong> This will replace all current data.
+            </p>
+            <form method="POST" action="/restore_database" enctype="multipart/form-data">
+                <div class="form-group" style="margin-bottom: 15px;">
+                    <input type="file" name="backup_file" accept=".sql" required 
+                           style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px;">
+                </div>
+                <button type="submit" class="btn-danger" style="width: 100%; justify-content: center;" onclick="return confirm('Are you sure? This will overwrite all current data.')">
+                    Upload & Restore
+                </button>
+            </form>
+        </div>
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div style="margin-top: 20px; padding: 12px; border-radius: 6px; background: {% if category == 'success' %}#d1fae5{% else %}#fee2e2{% endif %}; color: {% if category == 'success' %}#065f46{% else %}#991b1b{% endif %};">
+            {{ message }}
+          </div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+</div>
+
+<style>
+.btn-primary {
+    padding: 10px 20px;
+    background: var(--orange);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-weight: 600;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    text-decoration: none;
+}
+.btn-primary:hover {
+    background: #ea580c;
+}
+.btn-danger {
+    padding: 10px 20px;
+    background: #dc2626;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-weight: 600;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+.btn-danger:hover {
+    background: #b91c1c;
+}
+</style>
+{% endblock %}
