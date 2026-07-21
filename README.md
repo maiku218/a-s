@@ -1,4 +1,4 @@
-# PharmaCon - Pharmacy Management System
+# PharmaCon - Automated Inventory Management System
 
 PharmaCon is an integrated web-based pharmacy management and point-of-sale system designed to streamline day-to-day operations of a retail pharmacy. It provides two distinct user roles — Admin and Cashier — each with role-specific access and responsibilities.
 
