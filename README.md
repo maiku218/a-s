@@ -1,18 +1,4 @@
-# pharmacon
-========================================
-         PHARMACON SYSTEM README
-========================================
-
-PROJECT NAME  : PharmaCon
-LANGUAGE      : Python (Flask Framework)
-DATABASE      : MySQL
-PURPOSE       : Pharmacy Management System with Point-of-Sale (POS) capabilities
-
-========================================
-         SYSTEM PURPOSE
-========================================
-
-PharmaCon is an integrated web-based pharmacy management and point-of-sale
+Pharmancon is an integrated web-based pharmacy management and point-of-sale
 system designed to streamline day-to-day operations of a retail pharmacy.
 It provides two distinct user roles — Admin and Cashier — each with
 role-specific access and responsibilities.
