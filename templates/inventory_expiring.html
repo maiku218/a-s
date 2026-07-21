@@ -1,60 +1,62 @@
 {% extends 'admin_dashboard.html' %}
+{% block page_title %}Inventory - Expiring{% endblock %}
 
 {% block content %}
-<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-
-<div class="content-card" style="padding: 30px;">
-    <a href="{{ url_for('admin_dashboard') }}" style="display: inline-block; margin-bottom: 20px; color: var(--orange); text-decoration: none; font-weight: 600;">← Back to Dashboard</a>
-    
-    <h1 style="margin: 0 0 10px 0; color: #1e1e2f;">Expiring Products</h1>
-    <p style="color: #666; margin-bottom: 20px;">Products expiring within 30 days.</p>
-    
-    <div style="margin-bottom: 20px;">
-        <label style="font-weight: 600; margin-right: 10px;">Filter by Category:</label>
-        <a href="{{ url_for('expiring_medical', category='all') }}" style="padding: 8px 16px; margin-right: 5px; border-radius: 6px; text-decoration: none; {% if category_filter == 'all' or not category_filter %}background: #fb923c; color: white;{% else %}background: #f3f4f6; color: #666;{% endif %}">All</a>
-        <a href="{{ url_for('expiring_medical', category='Medical') }}" style="padding: 8px 16px; margin-right: 5px; border-radius: 6px; text-decoration: none; {% if category_filter == 'Medical' %}background: #fb923c; color: white;{% else %}background: #f3f4f6; color: #666;{% endif %}">Medical</a>
-        <a href="{{ url_for('expiring_medical', category='Non-Medical') }}" style="padding: 8px 16px; border-radius: 6px; text-decoration: none; {% if category_filter == 'Non-Medical' %}background: #fb923c; color: white;{% else %}background: #f3f4f6; color: #666;{% endif %}">Non-Medical</a>
+<div class="card">
+    <div class="page-header">
+        <a href="{{ url_for('admin_dashboard') }}" class="back-link">← Back to Dashboard</a>
+        <h1 class="page-title">Expiring Products</h1>
+        <p class="page-subtitle">Products expiring within 30 days.</p>
     </div>
-    
+
+    <div style="margin-bottom: 20px;">
+        <label class="form-label" style="margin-right: 10px;">Filter by Category:</label>
+        <a href="{{ url_for('expiring_medical', category='all') }}" class="btn btn-sm {% if category_filter == 'all' or not category_filter %}btn-primary{% else %}btn-secondary{% endif %}" style="margin-right: 6px;">All</a>
+        <a href="{{ url_for('expiring_medical', category='Medical') }}" class="btn btn-sm {% if category_filter == 'Medical' %}btn-primary{% else %}btn-secondary{% endif %}" style="margin-right: 6px;">Medical</a>
+        <a href="{{ url_for('expiring_medical', category='Non-Medical') }}" class="btn btn-sm {% if category_filter == 'Non-Medical' %}btn-primary{% else %}btn-secondary{% endif %}">Non-Medical</a>
+    </div>
+
     {% if products %}
-    <table style="width: 100%; border-collapse: collapse; margin-top: 20px;">
-        <thead>
-            <tr style="border-bottom: 2px solid #eee;">
-                <th style="text-align: left; padding: 12px; color: #666;">Product Name</th>
-                <th style="text-align: left; padding: 12px; color: #666;">Category</th>
-                <th style="text-align: left; padding: 12px; color: #666;">Barcode</th>
-                <th style="text-align: left; padding: 12px; color: #666;">Price</th>
-                <th style="text-align: left; padding: 12px; color: #666;">Expiration Date</th>
-                <th style="text-align: left; padding: 12px; color: #666;">Status</th>
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>Product Name</th>
+                    <th>Category</th>
+                    <th>Barcode</th>
+                    <th>Price</th>
+                    <th>Expiration Date</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for p in products %}
+            <tr>
+                <td><strong>{{ p[1] }}</strong></td>
+                <td>
+                    {% if p[4] == 'Medical' %}
+                    <span class="badge badge-info">Medical</span>
+                    {% else %}
+                    <span class="badge badge-success">Non-Medical</span>
+                    {% endif %}
+                </td>
+                <td>{{ p[2] }}</td>
+                <td>₱{{ p[5] }}</td>
+                <td>{{ p[7] }}</td>
+                <td>
+                    {% if p[7] and p[7] <= now() %}
+                    <span class="badge badge-danger">EXPIRED</span>
+                    {% else %}
+                    <span class="badge badge-warning">Expiring Soon</span>
+                    {% endif %}
+                </td>
             </tr>
-        </thead>
-        <tbody>
-        {% for p in products %}
-        <tr style="border-bottom: 1px solid #eee;">
-            <td style="padding: 12px;"><strong>{{ p[1] }}</strong></td>
-            <td style="padding: 12px;">
-                {% if p[6] == 'Medical' %}
-                <span style="padding: 2px 8px; border-radius: 4px; font-size: 11px; background: #dbeafe; color: #1d4ed8;">Medical</span>
-                {% else %}
-                <span style="padding: 2px 8px; border-radius: 4px; font-size: 11px; background: #dcfce7; color: #15803d;">Non-Medical</span>
-                {% endif %}
-            </td>
-            <td style="padding: 12px;">{{ p[2] }}</td>
-            <td style="padding: 12px;">₱{{ p[5] }}</td>
-            <td style="padding: 12px;">{{ p[7] }}</td>
-            <td style="padding: 12px;">
-                {% if p[7] and p[7] <= now() %}
-                <span style="padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: bold; background: #fee2e2; color: #dc2626;">EXPIRED</span>
-                {% else %}
-                <span style="padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: bold; background: #fef3c7; color: #d97706;">Expiring Soon</span>
-                {% endif %}
-            </td>
-        </tr>
-        {% endfor %}
-        </tbody>
-    </table>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
     {% else %}
-    <p style="color: #666; margin-top: 20px;">No expiring products found.</p>
+    <p style="color: var(--text-secondary); margin-top: 20px;">No expiring products found.</p>
     {% endif %}
 </div>
 {% endblock %}

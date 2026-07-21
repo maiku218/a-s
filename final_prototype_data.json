@@ -1,0 +1,74 @@
+{
+  "products": [
+    {
+      "id": 1,
+      "name": "Paracetamol 500mg",
+      "barcode": "1001",
+      "type": "Medical",
+      "price": 5.0,
+      "stock": 25,
+      "expiration_date": "2027-01-15"
+    },
+    {
+      "id": 2,
+      "name": "Vitamin C 1000mg",
+      "barcode": "1002",
+      "type": "Medical",
+      "price": 8.5,
+      "stock": 8,
+      "expiration_date": "2026-08-20"
+    },
+    {
+      "id": 3,
+      "name": "Alcohol 70%",
+      "barcode": "1003",
+      "type": "Non-Medical",
+      "price": 35.0,
+      "stock": 12,
+      "expiration_date": "2028-05-01"
+    },
+    {
+      "id": 4,
+      "name": "pulbos",
+      "barcode": "123456789",
+      "type": "Non-Medical",
+      "price": 13.0,
+      "stock": 19,
+      "expiration_date": "2030-07-29"
+    }
+  ],
+  "cashiers": [
+    {
+      "username": "cashier",
+      "password": "cashier123",
+      "full_name": "Demo Cashier"
+    }
+  ],
+  "sales": [
+    {
+      "id": 1,
+      "date": "2026-06-19 23:13:59",
+      "items": [
+        {
+          "product_id": 4,
+          "name": "pulbos",
+          "barcode": "123456789",
+          "price": 13.0,
+          "quantity": 4,
+          "subtotal": 52.0
+        },
+        {
+          "product_id": 4,
+          "name": "pulbos",
+          "barcode": "123456789",
+          "price": 13.0,
+          "quantity": 2,
+          "subtotal": 26.0
+        }
+      ],
+      "total": 78.0,
+      "tendered": 100.0,
+      "change": 22.0
+    }
+  ]
+}

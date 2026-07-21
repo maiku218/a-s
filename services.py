@@ -8,9 +8,9 @@ from models import (
     StockMovementProcessor
 )
 
-
-
-
+# ================================================
+# ABSTRACTION: Service interfaces
+# ================================================
 
 class IAuthService(ABC):
     """Abstraction: defines the contract for authentication."""
@@ -41,9 +41,9 @@ class ISalesService(ABC):
         ...
 
 
-
-
-
+# ================================================
+# IMPLEMENTATIONS (Inheritance + Polymorphism)
+# ================================================
 
 class AuthService(IAuthService):
     """Polymorphism: different login/logout behavior for admin vs cashier."""
@@ -52,7 +52,7 @@ class AuthService(IAuthService):
               user_type: str = 'admin') -> tuple[bool, Optional[User]]:
         user = self._fetch_user(username, user_type, mysql)
         if not user:
-            
+            # Create default admin if none exists (admin-specific logic)
             if user_type == 'admin':
                 user = self._create_default_admin(mysql)
             if not user:
@@ -60,6 +60,8 @@ class AuthService(IAuthService):
 
         user_from_db = self._hydrate_user(user, user_type, mysql)
         if not user_from_db:
+            return False, None
+        if isinstance(user_from_db, Cashier) and user_from_db.status.lower() != 'active':
             return False, None
 
         success, result_user = user_from_db.authenticate(password, mysql, request)
@@ -88,7 +90,7 @@ class AuthService(IAuthService):
             }
         return {}
 
-    
+    # --- Private methods (Encapsulation) ---
     def _fetch_user(self, username: str, user_type: str, mysql):
         cur = mysql.connection.cursor()
         try:
@@ -127,8 +129,8 @@ class AuthService(IAuthService):
                          row[3] if len(row) > 3 else 'Administrator',
                          password_hash)
         else:
-            status = row[4] if len(row) > 4 else 'Active'
-            return Cashier(row[0], row[1], row[2], password_hash, status)
+            return Cashier(row[0], row[2], row[1], password_hash,
+                           row[4] if len(row) > 4 else 'Active')
 
     def _generate_password(self, password: str) -> str:
         from werkzeug.security import generate_password_hash
@@ -354,7 +356,7 @@ class SalesService(ISalesService):
         cur.execute("""
             INSERT INTO sales (receipt_number, cashier_id, total_amount,
                                sale_status, product_type, sale_date)
-            VALUES (%s, %s, %s, 'Completed', %s, NOW())
+            VALUES (%s, %s, %s, 'Pending', %s, NOW())
         """, (receipt_number, cashier_id, sale_total, product_type))
         sale_id = cur.lastrowid
 

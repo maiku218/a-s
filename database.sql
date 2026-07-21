@@ -86,6 +86,8 @@ CREATE TABLE IF NOT EXISTS sales (
     sale_status VARCHAR(20) DEFAULT 'Completed',
     product_type VARCHAR(20) DEFAULT 'medical',
     sale_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    receipt_printed TINYINT(1) DEFAULT 0,
+    printed_at TIMESTAMP NULL DEFAULT NULL,
     FOREIGN KEY (cashier_id) REFERENCES cashiers(id)
 );
 
@@ -102,7 +104,7 @@ CREATE TABLE IF NOT EXISTS sale_items (
 
 -- Insert default admin (username: admin, password: admin123)
 INSERT INTO admins (username, password, full_name) 
-VALUES ('admin', 'scrypt:32768:8:1$rJfOriv0msJHOVQT$00f8266d42bd6a0b3d79d169bf1e83c468b54300170fb5fbc2d83fd6780326ef612b61310f4d54fb955fabe72d240a538739f0559a1674036faa3cb6b118090d', 'System Administrator');
+VALUES ('admin', 'pbkdf2:sha256:600000$azTbU7sExjOzKtbr$392d9a3215fd515a6f540498d6c47b386a404b52adad96ce9d419cdde1513482', 'System Administrator');
 
 -- Insert sample categories
 INSERT INTO categories (category_name, description) VALUES 
@@ -118,3 +120,19 @@ UPDATE products SET product_type = 'Non-Medical' WHERE product_type = 'non_medic
 -- This ensures sales are properly categorized in reports
 UPDATE sales SET product_type = 'Medical' WHERE product_type = 'medical';
 UPDATE sales SET product_type = 'Non-Medical' WHERE product_type = 'non_medical';
+
+-- Store Settings (receipt customization, store info)
+CREATE TABLE IF NOT EXISTS store_settings (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    setting_key VARCHAR(100) NOT NULL UNIQUE,
+    setting_value TEXT,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+INSERT INTO store_settings (setting_key, setting_value) VALUES
+('receipt_header', 'PHARMACON'),
+('receipt_subtitle', 'A\\'s PharmaHealth & Convenience'),
+('receipt_footer', 'Thank you for your purchase!\nPlease come again.'),
+('store_name', 'PharmaCon'),
+('store_address', ''),
+('store_contact', '');
