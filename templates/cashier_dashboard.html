@@ -73,6 +73,10 @@
         .search-item-meta { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
         .search-item-price { font-weight: 700; color: var(--success); font-size: 14px; }
         .search-item-stock.low { color: var(--danger); }
+        .search-item.expired { background: #fef2f2; }
+        .search-item.expired .search-item-name { color: #991b1b; }
+        .search-item.expired .search-item-meta { color: #b91c1c; }
+        .search-item.expired .search-item-price { color: #ef4444; }
 
         /* Selected Product */
         .selected-product { display: none; margin-top: 12px; padding: 14px 18px; background: #f0fdf4; border: 2px solid var(--success); border-radius: var(--radius); }
@@ -124,12 +128,29 @@
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
 
+        /* Notification */
+        .notification-btn { position: relative; }
+        .notification-badge { position: absolute; top: -2px; right: -2px; min-width: 18px; height: 18px; background: var(--danger); color: white; font-size: 10px; font-weight: 700; border-radius: 50%; display: flex; align-items: center; justify-content: center; padding: 0 4px; }
+        .notification-dropdown { display: none; position: absolute; top: calc(100% + 8px); right: 0; width: 320px; max-height: 400px; overflow-y: auto; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); z-index: 200; }
+        .notification-dropdown.show { display: block; }
+        .notification-header { padding: 12px 16px; border-bottom: 1px solid var(--border); font-weight: 700; font-size: 14px; }
+        .notification-section { padding: 10px 16px; border-bottom: 1px solid var(--border); }
+        .notification-section-title { font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--text-muted); margin-bottom: 6px; letter-spacing: 0.5px; }
+        .notification-item { padding: 8px 10px; border-radius: var(--radius); cursor: pointer; transition: background 0.15s; border-left: 3px solid transparent; }
+        .notification-item:hover { background: var(--bg); }
+        .notification-item.low-stock { border-left-color: var(--danger); }
+        .notification-item.expiring { border-left-color: var(--warning); }
+        .notification-item.expired { border-left-color: #ef4444; background: #fef2f2; }
+        .notification-item-title { font-weight: 600; font-size: 13px; }
+        .notification-item-detail { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+        .no-notifications { padding: 24px; text-align: center; color: var(--text-muted); font-size: 13px; }
+
         /* Modal Buttons */
         .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 10px 18px; border-radius: var(--radius); font-size: 14px; font-weight: 600; cursor: pointer; border: 1px solid transparent; transition: all 0.15s; }
         .btn-primary { background: var(--accent); color: white; border-color: var(--accent); }
         .btn-primary:hover { background: var(--accent-dark); }
-        .btn-secondary { background: var(--surface); color: var(--text); border-color: var(--border); }
-        .btn-secondary:hover { background: var(--bg); }
+        .btn-secondary { background: #64748b; color: white; border-color: #64748b; }
+        .btn-secondary:hover { background: #475569; border-color: #475569; }
         .btn-success { background: var(--success); color: white; border-color: var(--success); }
         .btn-success:hover { background: #16a34a; }
         .btn-success { background: var(--success); color: white; border-color: var(--success); }
@@ -141,11 +162,26 @@
     <header class="header">
         <div class="brand">PHARMA<span>CON</span></div>
         <div class="header-actions">
+            <div style="position: relative;">
+                <button class="notification-btn" onclick="toggleCashierNotifications()" title="Notifications" style="background: none; border: none; cursor: pointer; padding: 8px; border-radius: var(--radius); color: var(--text-secondary);">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+                    <span id="cashier-notif-badge" class="notification-badge" style="display: none; position: absolute; top: 0; right: 0;"></span>
+                </button>
+                <div class="notification-dropdown" id="cashierNotificationDropdown" style="position: absolute; top: calc(100% + 8px); right: 0; width: 320px;">
+                    <div class="notification-header">
+                        <span>Notifications</span>
+                    </div>
+                    <div id="cashierNotificationList">
+                        <div class="no-notifications">Loading...</div>
+                    </div>
+                </div>
+            </div>
             <div class="status-pill">
                 <div class="status-dot"></div>
                 <span class="status-text">System Ready</span>
             </div>
             <span style="font-size: 14px; color: var(--text-secondary);">Cashier: <b style="color: var(--text);">{{ session['cashier_user'] }}</b></span>
+            <a href="{{ url_for('cashier_change_password') }}" style="font-size: 13px; color: var(--accent); text-decoration: underline; margin-left: 8px;">Change Password</a>
         </div>
     </header>
 
@@ -268,6 +304,74 @@
     </script>
 
     <script>
+        function toggleCashierNotifications() {
+            const dropdown = document.getElementById('cashierNotificationDropdown');
+            dropdown.classList.toggle('show');
+            if (dropdown.classList.contains('show')) {
+                loadCashierNotifications();
+            }
+        }
+
+        function loadCashierNotifications() {
+            fetch('/api/cashier/notifications')
+                .then(res => res.json())
+                .then(data => {
+                    const list = document.getElementById('cashierNotificationList');
+                    const badge = document.getElementById('cashier-notif-badge');
+                    let html = '';
+                    let count = 0;
+
+                    if (data.low_stock.length > 0) {
+                        count += data.low_stock.length;
+                        html += '<div class="notification-section"><div class="notification-section-title">Low Stock</div>';
+                        data.low_stock.forEach(item => {
+                            html += `<div class="notification-item low-stock" onclick="window.location.href='/out_of_stock'"><div class="notification-item-title">${item.name}</div><div class="notification-item-detail">Stock: ${item.stock} | Barcode: ${item.barcode}</div></div>`;
+                        });
+                        html += '</div>';
+                    }
+
+                    if (data.expiring.length > 0) {
+                        count += data.expiring.length;
+                        html += '<div class="notification-section"><div class="notification-section-title">Expiring Soon</div>';
+                        data.expiring.forEach(item => {
+                            html += `<div class="notification-item expiring" onclick="window.location.href='/expiring_medical'"><div class="notification-item-title">${item.name}</div><div class="notification-item-detail">Expires: ${item.expiry} | Barcode: ${item.barcode}</div></div>`;
+                        });
+                        html += '</div>';
+                    }
+
+                    if (data.expired.length > 0) {
+                        count += data.expired.length;
+                        html += '<div class="notification-section"><div class="notification-section-title" style="color:#ef4444;">Expired</div>';
+                        data.expired.forEach(item => {
+                            html += `<div class="notification-item" style="border-left-color:#ef4444; background:#fef2f2;" onclick="window.location.href='/expiring_medical'"><div class="notification-item-title" style="color:#991b1b;">${item.name}</div><div class="notification-item-detail">Expired on: ${item.expiry} | Barcode: ${item.barcode}</div></div>`;
+                        });
+                        html += '</div>';
+                    }
+
+                    if (!html) {
+                        html = '<div class="no-notifications">No notifications</div>';
+                    }
+
+                    list.innerHTML = html;
+                    if (count > 0) {
+                        badge.style.display = 'flex';
+                        badge.innerText = count;
+                    } else {
+                        badge.style.display = 'none';
+                    }
+                });
+        }
+
+        document.addEventListener('click', function(e) {
+            const container = document.querySelector('.header-actions');
+            if (container && !container.contains(e.target)) {
+                const dropdown = document.getElementById('cashierNotificationDropdown');
+                if (dropdown) dropdown.classList.remove('show');
+            }
+        });
+    </script>
+
+    <script>
         const scanner = document.getElementById('barcode-scanner');
         const resultsDiv = document.getElementById('search-results');
         const selectedProduct = document.getElementById('selected-product');
@@ -304,8 +408,13 @@
                             const div = document.createElement('div');
                             div.className = 'search-item';
                             const stockClass = item.stock <= 5 ? 'low' : '';
-                            div.innerHTML = `<div><div class="search-item-name">${item.name}</div><div class="search-item-meta ${stockClass}">${item.barcode} | Stock: ${item.stock} | Exp: ${item.expiry || 'N/A'}</div></div><div class="search-item-price">₱${item.price.toFixed(2)}</div>`;
-                            div.onclick = () => { selectProduct(item); };
+                            const expiredClass = item.is_expired ? 'expired' : '';
+                            div.innerHTML = `<div><div class="search-item-name ${expiredClass}">${item.name}${item.is_expired ? ' [EXPIRED]' : ''}</div><div class="search-item-meta ${stockClass} ${expiredClass}">${item.barcode} | Stock: ${item.stock} | Exp: ${item.expiry || 'N/A'}</div></div><div class="search-item-price">₱${item.price.toFixed(2)}</div>`;
+                            if (item.is_expired) {
+                                div.onclick = () => { alert(`EXPIRED PRODUCT ALERT!\n\n${item.name}\nExpired on: ${item.expiry}\n\nThis product has passed its expiration date and cannot be sold.`); };
+                            } else {
+                                div.onclick = () => { selectProduct(item); };
+                            }
                             resultsDiv.appendChild(div);
                         });
                         resultsDiv.style.display = 'block';
@@ -321,6 +430,16 @@
         });
 
         function selectProduct(product) {
+            if (product.is_expired) {
+                alert(`EXPIRED PRODUCT ALERT!\n\n${product.name}\nExpired on: ${product.expiry}\n\nThis product has passed its expiration date and cannot be sold.`);
+                selectedProductData = null;
+                document.getElementById('sel-name').innerText = 'Product Name';
+                document.getElementById('sel-details').innerText = 'Price: ₱0.00 | Stock: 0';
+                document.getElementById('sel-qty').value = 1;
+                selectedProduct.classList.remove('show');
+                scanner.focus();
+                return;
+            }
             selectedProductData = product;
             document.getElementById('sel-name').innerText = product.name;
             document.getElementById('sel-details').innerText = `Price: ₱${product.price.toFixed(2)} | Stock: ${product.stock} | Exp: ${product.expiry || 'N/A'}`;
@@ -340,6 +459,15 @@
         }
 
         function showScannedDisplay(product) {
+            if (product.is_expired) {
+                alert(`EXPIRED PRODUCT ALERT!\n\n${product.name}\nExpired on: ${product.expiry}\n\nThis product has passed its expiration date and cannot be sold.`);
+                selectedProductData = null;
+                document.getElementById('sel-name').innerText = 'Product Name';
+                document.getElementById('sel-details').innerText = 'Price: ₱0.00 | Stock: 0';
+                document.getElementById('sel-qty').value = 1;
+                scanner.focus();
+                return;
+            }
             selectedProductData = product;
             document.getElementById('sel-name').innerText = product.name;
             document.getElementById('sel-details').innerText = `Price: ₱${product.price.toFixed(2)} | Stock: ${product.stock} | Exp: ${product.expiry || 'N/A'}`;
@@ -353,6 +481,15 @@
 
         function addSelectedToCart() {
             if (!selectedProductData) return;
+            
+            if (selectedProductData.is_expired) {
+                alert(`EXPIRED PRODUCT ALERT!\n\n${selectedProductData.name}\nExpired on: ${selectedProductData.expiry}\n\nThis product has passed its expiration date and cannot be sold.`);
+                selectedProduct.classList.remove('show');
+                selectedProductData = null;
+                scanner.focus();
+                return;
+            }
+            
             const qty = parseInt(document.getElementById('sel-qty').value);
             const availableStock = selectedProductData.stock;
             const existingIndex = cart.findIndex(item => item.id === selectedProductData.id);
@@ -377,6 +514,10 @@
                 .then(data => {
                     if(data.success) {
                         const product = data.product;
+                        if (product.is_expired) {
+                            alert(`EXPIRED PRODUCT ALERT!\n\n${product.name}\nExpired on: ${product.expiry}\n\nThis product has passed its expiration date and cannot be sold.`);
+                            return;
+                        }
                         const availableStock = product.stock;
                         const existingIndex = cart.findIndex(item => item.id === product.id);
                         let currentCartQty = 0;

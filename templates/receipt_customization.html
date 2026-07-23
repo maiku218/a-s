@@ -34,15 +34,11 @@
                 <label style="font-weight: 600; margin-bottom: 8px; display: block;">Receipt Footer Message</label>
                 <textarea name="receipt_footer" rows="2" class="form-control" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px;">{{ settings.receipt_footer or 'Thank you for your purchase!\nPlease come again.' }}</textarea>
             </div>
-            <div class="form-group" style="grid-column: 1 / -1;">
-                <label style="font-weight: 600; margin-bottom: 8px; display: block;">Receipt Footer Message</label>
-                <textarea name="receipt_footer" rows="2" class="form-control" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px;">{{ settings.receipt_footer or 'Thank you for your purchase!\nPlease come again.' }}</textarea>
-            </div>
         </div>
 
         <div style="margin-top: 25px; display: flex; gap: 10px;">
-            <button type="submit" class="btn-primary">Save Settings</button>
-            <a href="/" class="btn-secondary" style="text-decoration: none; padding: 10px 20px; background: #6b7280; color: white; border-radius: 6px;">Cancel</a>
+            <button type="submit" class="btn btn-primary">Save Settings</button>
+            <a href="/" class="btn btn-secondary" style="text-decoration: none;">Cancel</a>
         </div>
     </form>
 
@@ -62,22 +58,6 @@
     outline: none;
     border-color: var(--orange);
     box-shadow: 0 0 0 3px rgba(251, 146, 60, 0.1);
-}
-.btn-primary {
-    padding: 10px 20px;
-    background: var(--orange);
-    color: white;
-    border: none;
-    border-radius: 6px;
-    font-weight: 600;
-    cursor: pointer;
-}
-.btn-primary:hover {
-    background: #ea580c;
-}
-.btn-secondary {
-    display: inline-flex;
-    align-items: center;
 }
 </style>
 {% endblock %}

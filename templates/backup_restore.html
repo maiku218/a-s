@@ -15,7 +15,7 @@
                 Download a complete SQL dump of the <strong>pharmacon</strong> database. This includes all tables, data, and settings.
             </p>
             <form method="POST" action="/backup_database">
-                <button type="submit" class="btn-primary" style="width: 100%; justify-content: center;">
+                <button type="submit" class="btn btn-primary" style="width: 100%; justify-content: center;">
                     Download Backup (.sql)
                 </button>
             </form>
@@ -32,8 +32,8 @@
                     <input type="file" name="backup_file" accept=".sql" required 
                            style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px;">
                 </div>
-                <button type="submit" class="btn-danger" style="width: 100%; justify-content: center;" onclick="return confirm('Are you sure? This will overwrite all current data.')">
-                    Upload & Restore
+                <button type="submit" class="btn btn-danger" style="width: 100%; justify-content: center;" onclick="return confirm('Are you sure? This will overwrite all current data.')">
+                    Upload &amp; Restore
                 </button>
             </form>
         </div>
@@ -49,38 +49,4 @@
       {% endif %}
     {% endwith %}
 </div>
-
-<style>
-.btn-primary {
-    padding: 10px 20px;
-    background: var(--orange);
-    color: white;
-    border: none;
-    border-radius: 6px;
-    font-weight: 600;
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    text-decoration: none;
-}
-.btn-primary:hover {
-    background: #ea580c;
-}
-.btn-danger {
-    padding: 10px 20px;
-    background: #dc2626;
-    color: white;
-    border: none;
-    border-radius: 6px;
-    font-weight: 600;
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-}
-.btn-danger:hover {
-    background: #b91c1c;
-}
-</style>
 {% endblock %}

@@ -113,11 +113,11 @@ def admin_login():
             return redirect(url_for('admin_login'))
 
         cur = mysql.connection.cursor()
-        cur.execute("SELECT * FROM admins WHERE username=%s", (username,))
+        cur.execute("SELECT id, username, password FROM admins WHERE username=%s", (username,))
         admin = cur.fetchone()
         cur.close()
 
-        # Create default admin if none exists
+        # Create default admin if none exists, or patch security fields if missing
         if not admin:
             cur = mysql.connection.cursor()
             cur.execute("SELECT COUNT(*) FROM admins")
@@ -125,17 +125,30 @@ def admin_login():
             cur.close()
             if count == 0:
                 hashed = generate_password_hash('admin123')
+                from werkzeug.security import generate_password_hash as gen_hash
+                answer_hashed = gen_hash('admin123')
                 cur = mysql.connection.cursor()
-                cur.execute("INSERT INTO admins (username, password, full_name) VALUES (%s, %s, %s)", ('admin', hashed, 'System Administrator'))
+                cur.execute("INSERT INTO admins (username, password, full_name, security_question, security_answer) VALUES (%s, %s, %s, %s, %s)", ('admin', hashed, 'System Administrator', 'What is the name of the owner?', 'pbkdf2:sha256:600000$BlhM6ndrgPIj0Eui$8c0c6511b8af1f42401c742e1da56b34bfb60e56d703087fcc4f013f2cc2ecae'))
                 mysql.connection.commit()
                 cur.close()
                 cur = mysql.connection.cursor()
-                cur.execute("SELECT * FROM admins WHERE username='admin'")
+                cur.execute("SELECT id, username, password FROM admins WHERE username='admin'")
                 admin = cur.fetchone()
                 cur.close()
             else:
                 flash("Invalid username or password", "error")
                 return redirect(url_for('admin_login'))
+        else:
+            cur = mysql.connection.cursor()
+            cur.execute("SELECT security_question, security_answer FROM admins WHERE id=%s", (admin[0],))
+            sq = cur.fetchone()
+            cur.close()
+            if not sq or not sq[0] or not sq[1]:
+                hashed_answer = generate_password_hash('generoso')
+                cur = mysql.connection.cursor()
+                cur.execute("UPDATE admins SET security_question=%s, security_answer=%s WHERE id=%s", ('What is the name of the owner?', hashed_answer, admin[0]))
+                mysql.connection.commit()
+                cur.close()
         
         if admin and (password == admin[2] or check_password_hash(admin[2], password)):
             session['admin_user'] = admin[1]
@@ -306,6 +319,48 @@ def get_notifications():
         'expiring': [{'id': p[0], 'name': p[1], 'expiry': str(p[2]), 'barcode': p[3]} for p in expiring]
     })
 
+@app.route('/api/cashier/notifications')
+@cashier_required
+def get_cashier_notifications():
+    cur = mysql.connection.cursor()
+    try:
+        cur.execute("""
+            SELECT id, product_name, stock, barcode
+            FROM products
+            WHERE stock <= %s
+            ORDER BY stock ASC
+            LIMIT 10
+        """, (LOW_STOCK_THRESHOLD,))
+        low_stock = cur.fetchall()
+
+        cur.execute("""
+            SELECT id, product_name, expiration_date, barcode
+            FROM products
+            WHERE expiration_date <= CURDATE() + INTERVAL 30 DAY
+              AND expiration_date IS NOT NULL
+            ORDER BY expiration_date ASC
+            LIMIT 10
+        """)
+        expiring = cur.fetchall()
+
+        cur.execute("""
+            SELECT id, product_name, expiration_date, barcode
+            FROM products
+            WHERE expiration_date < CURDATE()
+              AND expiration_date IS NOT NULL
+            ORDER BY expiration_date ASC
+            LIMIT 10
+        """)
+        expired = cur.fetchall()
+
+        return jsonify({
+            'low_stock': [{'id': p[0], 'name': p[1], 'stock': p[2], 'barcode': p[3]} for p in low_stock],
+            'expiring': [{'id': p[0], 'name': p[1], 'expiry': str(p[2]), 'barcode': p[3]} for p in expiring],
+            'expired': [{'id': p[0], 'name': p[1], 'expiry': str(p[2]), 'barcode': p[3]} for p in expired]
+        })
+    finally:
+        cur.close()
+
 # =============================
 # CATALOG
 # =============================
@@ -327,7 +382,7 @@ def all_products():
     return render_template('all_products.html', products=products,
                            low_stock_count=low_stock_count,
                            expiring_count=expiring_count,
-                           active_main='catalog', active_sub='all_products')
+                           active_main='inventory', active_sub='all_products')
 
 @app.route('/add_product', methods=['GET', 'POST'])
 @admin_required
@@ -373,7 +428,7 @@ def add_product():
                                categories=categories, 
                                low_stock_count=low_stock_count,
                                expiring_count=expiring_count,
-                               active_main='catalog', 
+                               active_main='inventory', 
                                active_sub='add_product')
         
         p_type = category_name  # 'Medical' or 'Non-Medical'
@@ -399,7 +454,7 @@ def add_product():
                                categories=categories, 
                                low_stock_count=low_stock_count,
                                expiring_count=expiring_count,
-                               active_main='catalog', 
+                               active_main='inventory', 
                                active_sub='add_product')
         
         expiry = request.form.get('expiration_date') or None  # From template: expiration_date
@@ -491,7 +546,7 @@ def add_product():
                                categories=categories, 
                                low_stock_count=low_stock_count,
                                expiring_count=expiring_count,
-                               active_main='catalog', 
+                               active_main='inventory', 
                                active_sub='add_product')
             
         except Exception as e:
@@ -531,7 +586,7 @@ def add_product():
                                categories=categories, 
                                low_stock_count=low_stock_count,
                                expiring_count=expiring_count,
-                               active_main='catalog', 
+                               active_main='inventory', 
                                active_sub='add_product')
     else:
         # GET request - load categories and counts
@@ -556,7 +611,7 @@ def add_product():
                                categories=categories, 
                                low_stock_count=low_stock_count,
                                expiring_count=expiring_count,
-                               active_main='catalog', 
+                               active_main='inventory', 
                                active_sub='add_product')
 
 @app.route('/delete_product/<int:id>', methods=['GET', 'POST'])
@@ -581,7 +636,7 @@ def delete_product(id):
         return render_template('confirm_delete_product.html', product=product,
                                low_stock_count=low_stock_count,
                                expiring_count=expiring_count,
-                               active_main='catalog', active_sub='all_products')
+                               active_main='inventory', active_sub='all_products')
     
     if request.method == 'POST':
         cur = mysql.connection.cursor()
@@ -687,7 +742,7 @@ def edit_product(id):
     return render_template('edit_product.html', product=product, categories=categories,
                          low_stock_count=low_stock_count,
                          expiring_count=expiring_count,
-                         active_main='catalog', active_sub='all_products')
+                         active_main='inventory', active_sub='all_products')
 
 # =============================
 # SALES
@@ -988,7 +1043,7 @@ def out_of_stock():
     return render_template('inventory_out_of_stock.html', products=products,
                            low_stock_count=low_stock_count,
                            expiring_count=expiring_count,
-                           active_main='inventory', active_sub='out_of_stock',
+                           active_main='alerts', active_sub='out_of_stock',
                            category_filter=category_filter)
 
 @app.route('/expiring_medical')
@@ -1022,7 +1077,7 @@ def expiring_medical():
     return render_template('inventory_expiring.html', products=products,
                            low_stock_count=low_stock_count,
                            expiring_count=expiring_count,
-                           active_main='inventory', active_sub='expiring_medical',
+                           active_main='alerts', active_sub='expiring_medical',
                            now=date.today, category_filter=category_filter)
 
 # =============================
@@ -1044,8 +1099,10 @@ def register_cashier():
         username = clean_input(request.form.get('username'))
         full_name = clean_input(request.form.get('full_name'))
         password = clean_input(request.form.get('password'))
+        security_question = clean_input(request.form.get('security_question'))
+        security_answer = clean_input(request.form.get('security_answer'))
 
-        if username == "" or full_name == "" or password == "":
+        if username == "" or full_name == "" or password == "" or security_question == "" or security_answer == "":
             flash("All fields are required", "error")
             return redirect(url_for('register_cashier'))
 
@@ -1056,11 +1113,12 @@ def register_cashier():
             return redirect(url_for('register_cashier'))
 
         hashed_password = generate_password_hash(password)
+        hashed_answer = generate_password_hash(security_answer)
 
         cur.execute("""
-            INSERT INTO cashiers (full_name, username, password)
-            VALUES (%s, %s, %s)
-        """, (full_name, username, hashed_password))
+            INSERT INTO cashiers (full_name, username, password, security_question, security_answer)
+            VALUES (%s, %s, %s, %s, %s)
+        """, (full_name, username, hashed_password, security_question, hashed_answer))
 
         mysql.connection.commit()
         
@@ -1200,8 +1258,106 @@ def edit_cashier():
 
     return redirect(url_for('delete_cashier'))
 
-@app.route('/change_admin_password', methods=['GET','POST'])
+@app.route('/admin/change_password', methods=['GET','POST'])
 @admin_required
+def admin_change_password():
+    cur = mysql.connection.cursor()
+    cur.execute("SELECT COUNT(*) FROM products WHERE stock <= %s", (LOW_STOCK_THRESHOLD,))
+    low_stock_count = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date <= CURDATE() + INTERVAL 30 DAY AND expiration_date IS NOT NULL")
+    expiring_count = cur.fetchone()[0]
+    cur.close()
+    admin_id = session.get('admin_id')
+
+    if request.method == 'POST':
+        old_password = request.form.get('old_password', '').strip()
+        new_password = request.form.get('new_password', '').strip()
+        confirm_password = request.form.get('confirm_password', '').strip()
+
+        if not old_password or not new_password or not confirm_password:
+            flash("All fields are required", "error")
+            return render_template('change_admin_password.html', low_stock_count=low_stock_count, expiring_count=expiring_count, active_main='management', active_sub='change_admin_password')
+
+        if new_password != confirm_password:
+            flash("New passwords do not match", "error")
+            return render_template('change_admin_password.html', low_stock_count=low_stock_count, expiring_count=expiring_count, active_main='management', active_sub='change_admin_password')
+
+        cur = mysql.connection.cursor()
+        cur.execute("SELECT id, password FROM admins WHERE id=%s", (admin_id,))
+        admin = cur.fetchone()
+
+        if not admin or not check_password_hash(admin[1], old_password):
+            flash("Current password is incorrect", "error")
+            cur.close()
+            return render_template('change_admin_password.html', low_stock_count=low_stock_count, expiring_count=expiring_count, active_main='management', active_sub='change_admin_password')
+
+        hashed = generate_password_hash(new_password)
+        cur.execute("UPDATE admins SET password=%s WHERE id=%s", (hashed, admin_id))
+        mysql.connection.commit()
+        
+        ip_address = request.remote_addr
+        if request.headers.get('X-Forwarded-For'):
+            ip_address = request.headers.get('X-Forwarded-For')
+        
+        try:
+            cur.execute("""INSERT INTO admin_activity (admin_id, action, ip_address, details) VALUES (%s, %s, %s, %s)""", (admin_id, 'Change Password', ip_address, 'Admin changed password from dashboard'))
+            mysql.connection.commit()
+        except:
+            pass
+        
+        cur.close()
+        flash("Password updated successfully", "success")
+        return redirect(url_for('admin_dashboard'))
+
+    return render_template('change_admin_password.html', low_stock_count=low_stock_count, expiring_count=expiring_count, active_main='management', active_sub='change_admin_password')
+
+@app.route('/cashier/change_password', methods=['GET', 'POST'])
+@cashier_required
+def cashier_change_password():
+    cashier_id = session.get('cashier_id')
+
+    if request.method == 'POST':
+        old_password = request.form.get('old_password', '').strip()
+        new_password = request.form.get('new_password', '').strip()
+        confirm_password = request.form.get('confirm_password', '').strip()
+
+        if not old_password or not new_password or not confirm_password:
+            flash("All fields are required", "error")
+            return render_template('change_cashier_password.html')
+
+        if new_password != confirm_password:
+            flash("New passwords do not match", "error")
+            return render_template('change_cashier_password.html')
+
+        cur = mysql.connection.cursor()
+        cur.execute("SELECT id, password FROM cashiers WHERE id=%s", (cashier_id,))
+        cashier = cur.fetchone()
+
+        if not cashier or not check_password_hash(cashier[1], old_password):
+            flash("Current password is incorrect", "error")
+            cur.close()
+            return render_template('change_cashier_password.html')
+
+        hashed = generate_password_hash(new_password)
+        cur.execute("UPDATE cashiers SET password=%s WHERE id=%s", (hashed, cashier_id))
+        mysql.connection.commit()
+        
+        try:
+            ip_address = request.remote_addr
+            if request.headers.get('X-Forwarded-For'):
+                ip_address = request.headers.get('X-Forwarded-For')
+            cur.execute("""INSERT INTO cashier_activity (cashier_id, login_time, ip_address) VALUES (%s, NOW(), %s)""", (cashier_id, ip_address))
+            mysql.connection.commit()
+        except:
+            pass
+        
+        cur.close()
+        flash("Password updated successfully", "success")
+        return redirect(url_for('cashier_dashboard'))
+
+    return render_template('change_cashier_password.html')
+
+@app.route('/change_admin_password', methods=['GET','POST'])
 def change_admin_password():
     cur = mysql.connection.cursor()
     
@@ -1212,43 +1368,120 @@ def change_admin_password():
     expiring_count = cur.fetchone()[0]
     cur.close()
     
+    security_question = None
+
     if request.method == 'POST':
-        old_pass = request.form['old_password']
-        new_pass = request.form['new_password']
+        step = request.form.get('step', '1')
+        username = request.form.get('username', '').strip()
+
+        if not username:
+            flash("Username is required", "error")
+            return redirect(url_for('change_admin_password'))
 
         cur = mysql.connection.cursor()
-        cur.execute("SELECT * FROM admins WHERE username=%s", (session['admin_user'],))
+        cur.execute("SELECT id, security_question, security_answer FROM admins WHERE username=%s", (username,))
         admin = cur.fetchone()
 
-        if admin and check_password_hash(admin[2], old_pass):
-            hashed = generate_password_hash(new_pass)
-            cur.execute("UPDATE admins SET password=%s WHERE username=%s", (hashed, session['admin_user']))
-            mysql.connection.commit()
-            
-            # Log admin activity
-            ip_address = request.remote_addr
-            if request.headers.get('X-Forwarded-For'):
-                ip_address = request.headers.get('X-Forwarded-For')
-            
-            try:
-                cur.execute("""
-                    INSERT INTO admin_activity (admin_id, action, ip_address, details)
-                    VALUES (%s, %s, %s, %s)
-                """, (session.get('admin_id'), 'Change Password', ip_address, 'Admin changed password'))
-                mysql.connection.commit()
-            except:
-                pass
-            
-            flash("Password updated successfully", "success")
-        else:
-            flash("Old password is incorrect", "error")
-        cur.close()
-        return redirect(url_for('change_admin_password'))
+        if not admin:
+            flash("Invalid username", "error")
+            cur.close()
+            return redirect(url_for('change_admin_password'))
 
-    return render_template('change_admin_password.html',
+        if step == '1':
+            security_question = admin[1] if len(admin) > 1 and admin[1] else None
+            if not security_question:
+                from werkzeug.security import generate_password_hash
+                hashed_answer = generate_password_hash('generoso')
+                cur.execute("UPDATE admins SET security_question=%s, security_answer=%s WHERE id=%s", ('What is the name of the owner?', hashed_answer, admin[0]))
+                mysql.connection.commit()
+                security_question = 'What is the name of the owner?'
+        elif step == '2':
+            security_answer = request.form.get('security_answer', '').strip()
+            new_pass = request.form.get('new_password', '').strip()
+
+            if not security_answer or not new_pass:
+                flash("All fields are required", "error")
+                cur.close()
+                return redirect(url_for('change_admin_password'))
+
+            stored_answer = admin[2] if len(admin) > 2 else None
+            if stored_answer and check_password_hash(stored_answer, security_answer):
+                hashed = generate_password_hash(new_pass)
+                cur.execute("UPDATE admins SET password=%s WHERE username=%s", (hashed, username))
+                mysql.connection.commit()
+                
+                ip_address = request.remote_addr
+                if request.headers.get('X-Forwarded-For'):
+                    ip_address = request.headers.get('X-Forwarded-For')
+                
+                try:
+                    cur.execute("""
+                        INSERT INTO admin_activity (admin_id, action, ip_address, details)
+                        VALUES (%s, %s, %s, %s)
+                    """, (admin[0], 'Change Password', ip_address, 'Admin changed password via forgot password'))
+                    mysql.connection.commit()
+                except:
+                    pass
+                
+                flash("Password updated successfully", "success")
+            else:
+                flash("Security answer is incorrect", "error")
+        cur.close()
+
+    return render_template('forgot_admin_password.html',
                            low_stock_count=low_stock_count,
                            expiring_count=expiring_count,
-                           active_main='management', active_sub='change_admin_password')
+                           security_question=security_question)
+
+@app.route('/change_cashier_password', methods=['GET', 'POST'])
+def change_cashier_password():
+    cur = mysql.connection.cursor()
+    try:
+        security_question = None
+
+        if request.method == 'POST':
+            step = request.form.get('step', '1')
+            username = request.form.get('username', '').strip()
+
+            if not username:
+                flash("Username is required", "error")
+                return redirect(url_for('change_cashier_password'))
+
+            cur.execute("SELECT id, password, security_question, security_answer FROM cashiers WHERE username=%s", (username,))
+            row = cur.fetchone()
+
+            if not row:
+                flash("Invalid username", "error")
+                return redirect(url_for('change_cashier_password'))
+
+            if step == '1':
+                security_question = row[2] if row[2] else None
+                if not security_question:
+                    from werkzeug.security import generate_password_hash
+                    hashed_answer = generate_password_hash('generoso')
+                    cur.execute("UPDATE cashiers SET security_question=%s, security_answer=%s WHERE id=%s", ('What is the name of the owner?', hashed_answer, row[0]))
+                    mysql.connection.commit()
+                    security_question = 'What is the name of the owner?'
+            elif step == '2':
+                security_answer = request.form.get('security_answer', '').strip()
+                new_password = request.form.get('new_password', '').strip()
+
+                if not security_answer or not new_password:
+                    flash("All fields are required", "error")
+                    return redirect(url_for('change_cashier_password'))
+
+                from werkzeug.security import check_password_hash, generate_password_hash
+                if check_password_hash(row[3], security_answer):
+                    hashed = generate_password_hash(new_password)
+                    cur.execute("UPDATE cashiers SET password=%s WHERE id=%s", (hashed, row[0]))
+                    mysql.connection.commit()
+                    flash("Password updated successfully", "success")
+                else:
+                    flash("Security answer is incorrect", "error")
+    finally:
+        cur.close()
+
+    return render_template('forgot_cashier_password.html', security_question=security_question)
 
 # =============================
 # CASHIER LOGIN
@@ -1268,7 +1501,7 @@ def cashier_login():
             return redirect(url_for('cashier_login'))
 
         cur = mysql.connection.cursor()
-        cur.execute("SELECT * FROM cashiers WHERE username=%s", (username,))
+        cur.execute("SELECT id, full_name, username, password, status FROM cashiers WHERE username=%s", (username,))
         cashier = cur.fetchone()
         cur.close()
 
@@ -1276,10 +1509,19 @@ def cashier_login():
             flash("Invalid login credentials", "error")
             return redirect(url_for('cashier_login'))
 
-        cashier_status = ((cashier[4] or 'active') if len(cashier) > 4 else 'active').lower()
+        cashier_status = ((cashier[4] or 'active')).lower()
         if cashier_status != 'active':
             flash("Cashier account is inactive. Contact the administrator.", "error")
             return redirect(url_for('cashier_login'))
+
+        cur = mysql.connection.cursor()
+        cur.execute("SELECT security_question, security_answer FROM cashiers WHERE id=%s", (cashier[0],))
+        sq = cur.fetchone()
+        if not sq or not sq[0] or not sq[1]:
+            hashed_answer = generate_password_hash('generoso')
+            cur.execute("UPDATE cashiers SET security_question=%s, security_answer=%s WHERE id=%s", ('What is the name of the owner?', hashed_answer, cashier[0]))
+            mysql.connection.commit()
+        cur.close()
 
         session['cashier_user'] = cashier[1]
         session['cashier_id'] = cashier[0]
@@ -1363,15 +1605,22 @@ def cashier_dashboard():
     """, (session['cashier_id'],))
 
     recent_sales = cur.fetchall()
-    cur.close()
 
     settings = get_store_settings(mysql)
+
+    cur.execute("SELECT COUNT(*) FROM products WHERE stock <= %s", (LOW_STOCK_THRESHOLD,))
+    low_stock_count = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date <= CURDATE() + INTERVAL 30 DAY AND expiration_date IS NOT NULL")
+    expiring_count = cur.fetchone()[0]
+    cur.close()
 
     return render_template('cashier_dashboard.html', 
                            recent_sales=recent_sales,
                            today_total=today_total,
                            today_count=today_count,
-                           settings=settings)
+                           settings=settings,
+                           low_stock_count=low_stock_count,
+                           expiring_count=expiring_count)
 
 @app.route('/cashier_history')
 @cashier_required
@@ -1455,13 +1704,15 @@ def search_product():
     result = []
     for p in products:
         expiry = p[5].strftime('%m/%d/%Y') if p[5] else 'N/A'
+        is_expired = p[5] is not None and p[5] < datetime.now().date()
         result.append({
             "id": p[0],
             "name": p[1],
             "price": float(p[2]),
             "stock": p[3],
             "barcode": p[4],
-            "expiry": expiry
+            "expiry": expiry,
+            "is_expired": is_expired
         })
 
     return jsonify(result)
@@ -1478,13 +1729,15 @@ def api_products():
     result = []
     for p in products:
         expiry = p[5].strftime('%m/%d/%Y') if p[5] else 'N/A'
+        is_expired = p[5] is not None and p[5] < datetime.now().date()
         result.append({
             "id": p[0],
             "name": p[1],
             "price": float(p[2]),
             "stock": p[3],
             "barcode": p[4],
-            "expiry": expiry
+            "expiry": expiry,
+            "is_expired": is_expired
         })
     return jsonify(result)
 
@@ -1612,6 +1865,7 @@ def get_product(barcode):
 
     if row:
         expiry = row[5].strftime('%m/%d/%Y') if row[5] else 'N/A'
+        is_expired = row[5] is not None and row[5] < datetime.now().date()
         return jsonify({
             "success": True,
             "product": {
@@ -1620,7 +1874,8 @@ def get_product(barcode):
                 "price": float(row[2]),
                 "stock": row[3],
                 "barcode": row[4],
-                "expiry": expiry
+                "expiry": expiry,
+                "is_expired": is_expired
             }
         })
 
@@ -1668,7 +1923,7 @@ def complete_sale():
     cur = mysql.connection.cursor()
     try:
         cur.execute(f"""
-            SELECT id, product_name, product_type, price, stock
+            SELECT id, product_name, product_type, price, stock, expiration_date
             FROM products
             WHERE id IN ({placeholders})
         """, tuple(product_ids))
@@ -1681,6 +1936,7 @@ def complete_sale():
         non_medical_items = []
         receipt_items = []
         total_amount = 0.0
+        expired_items = []
 
         for product_id, requested_quantity in quantity_by_product.items():
             row = products[product_id]
@@ -1689,6 +1945,7 @@ def complete_sale():
             product_type_key = product_type.lower()
             price = float(row[3])
             stock = int(row[4])
+            expiry_date = row[5]
 
             if price < 0:
                 return jsonify({'success': False, 'message': f'Invalid price for {name}'})
@@ -1698,6 +1955,10 @@ def complete_sale():
                     'success': False,
                     'message': f'Not enough stock for {name}. Available: {stock}'
                 })
+
+            if expiry_date is not None and expiry_date < datetime.now().date():
+                expired_items.append(name)
+                continue
 
             subtotal = round(price * requested_quantity, 2)
             total_amount += subtotal
@@ -1712,6 +1973,12 @@ def complete_sale():
                 medical_items.append(row[:1] + (requested_quantity, price))
             else:
                 non_medical_items.append(row[:1] + (requested_quantity, price))
+
+        if expired_items:
+            return jsonify({
+                'success': False,
+                'message': f'Cannot complete sale. The following products are expired: {", ".join(expired_items)}'
+            })
 
         if tendered < total_amount:
             return jsonify({'success': False, 'message': 'Amount tendered is less than total'})
@@ -2300,6 +2567,18 @@ if __name__ == '__main__':
             cur.execute("SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'sales' AND column_name = 'printed_at'")
             if cur.fetchone()[0] == 0:
                 cur.execute("ALTER TABLE sales ADD COLUMN printed_at TIMESTAMP NULL DEFAULT NULL")
+            cur.execute("SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'admins' AND column_name = 'security_question'")
+            if cur.fetchone()[0] == 0:
+                cur.execute("ALTER TABLE admins ADD COLUMN security_question VARCHAR(255)")
+            cur.execute("SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'admins' AND column_name = 'security_answer'")
+            if cur.fetchone()[0] == 0:
+                cur.execute("ALTER TABLE admins ADD COLUMN security_answer VARCHAR(255)")
+            cur.execute("SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'cashiers' AND column_name = 'security_question'")
+            if cur.fetchone()[0] == 0:
+                cur.execute("ALTER TABLE cashiers ADD COLUMN security_question VARCHAR(255)")
+            cur.execute("SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'cashiers' AND column_name = 'security_answer'")
+            if cur.fetchone()[0] == 0:
+                cur.execute("ALTER TABLE cashiers ADD COLUMN security_answer VARCHAR(255)")
             mysql.connection.commit()
             cur.close()
         except Exception as e:

@@ -58,15 +58,16 @@
         .card-subtitle { font-size: 14px; color: var(--text-secondary); margin-top: 4px; }
 
         /* Buttons */
-        .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 8px 16px; border-radius: var(--radius); font-size: 14px; font-weight: 500; cursor: pointer; border: 1px solid transparent; transition: all 0.15s; }
-        .btn-primary { background: var(--accent); color: white; border-color: var(--accent); }
+        .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 14px 26px; border-radius: var(--radius); font-size: 15px; font-weight: 700; cursor: pointer; border: 1px solid transparent; transition: all 0.15s; }
+        .btn-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
         .btn-primary:hover { background: var(--accent-dark); }
-        .btn-secondary { background: var(--surface); color: var(--text); border-color: var(--border); }
-        .btn-secondary:hover { background: var(--bg); }
-        .btn-danger { background: var(--danger); color: white; border-color: var(--danger); }
+        .btn-secondary { background: #64748b; color: #fff; border-color: #64748b; }
+        .btn-secondary:hover { background: #475569; border-color: #475569; }
+        .btn-danger { background: var(--danger); color: #fff; border-color: var(--danger); }
         .btn-danger:hover { background: #dc2626; }
-        .btn-success { background: var(--success); color: white; border-color: var(--success); }
-        .btn-sm { padding: 6px 12px; font-size: 13px; }
+        .btn-success { background: var(--success); color: #fff; border-color: var(--success); }
+        .btn-success:hover { background: #16a34a; }
+        .btn-sm { padding: 8px 16px; font-size: 13px; }
         .hamburger-btn { display: none; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: var(--radius); background: transparent; border: none; cursor: pointer; color: var(--text); }
         .hamburger-btn:hover { background: var(--bg); }
 
@@ -248,12 +249,12 @@
             <div class="nav-item {% if active_sub == 'cashier_logs' %}active{% endif %}" style="padding: 8px 0;"><a href="{{ url_for('cashier_logs') }}" style="color: inherit; text-decoration: none;">Cashier Logs</a></div>
         </div>
 
-        <div class="nav-section">Catalog</div>
-        <div class="nav-item {% if active_main == 'catalog' %}active{% endif %}" onclick="toggleMenu('catalog-menu')">
+        <div class="nav-section">Inventory</div>
+        <div class="nav-item {% if active_main == 'inventory' %}active{% endif %}" onclick="toggleMenu('inventory-menu')">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
-            Catalog
+            Inventory
         </div>
-        <div id="catalog-menu" style="display: {% if active_main == 'catalog' %}block{% else %}none{% endif %}; padding-left: 36px;">
+        <div id="inventory-menu" style="display: {% if active_main == 'inventory' %}block{% else %}none{% endif %}; padding-left: 36px;">
             <div class="nav-item {% if active_sub == 'all_products' %}active{% endif %}" style="padding: 8px 0;"><a href="{{ url_for('all_products') }}" style="color: inherit; text-decoration: none;">All Products</a></div>
             <div class="nav-item {% if active_sub == 'add_product' %}active{% endif %}" style="padding: 8px 0;"><a href="{{ url_for('add_product') }}" style="color: inherit; text-decoration: none;">Add Product</a></div>
         </div>
@@ -269,12 +270,12 @@
             <div class="nav-item {% if active_sub == 'non_medical_sales' %}active{% endif %}" style="padding: 8px 0;"><a href="{{ url_for('non_medical_sales') }}" style="color: inherit; text-decoration: none;">Non-Medical Sales</a></div>
         </div>
 
-        <div class="nav-section">Inventory</div>
-        <div class="nav-item {% if active_main == 'inventory' %}active{% endif %}" onclick="toggleMenu('inv-menu')">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 8z"/><path d="M3.3 7l8.7 5 8.7-5"/><path d="M12 22V12"/></svg>
-            Inventory
+        <div class="nav-section">Alerts</div>
+        <div class="nav-item {% if active_main == 'alerts' %}active{% endif %}" onclick="toggleMenu('alerts-menu')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+            Alerts
         </div>
-        <div id="inv-menu" style="display: {% if active_main == 'inventory' %}block{% else %}none{% endif %}; padding-left: 36px;">
+        <div id="alerts-menu" style="display: {% if active_main == 'alerts' %}block{% else %}none{% endif %}; padding-left: 36px;">
             <div class="nav-item {% if active_sub == 'out_of_stock' %}active{% endif %}" style="padding: 8px 0;"><a href="{{ url_for('out_of_stock') }}" style="color: inherit; text-decoration: none;">Low Stock Alerts</a></div>
             <div class="nav-item {% if active_sub == 'expiring_medical' %}active{% endif %}" style="padding: 8px 0;"><a href="{{ url_for('expiring_medical') }}" style="color: inherit; text-decoration: none;">Expiring Alerts</a></div>
         </div>
@@ -287,7 +288,7 @@
         <div id="admin-menu" style="display: {% if active_main == 'management' %}block{% else %}none{% endif %}; padding-left: 36px;">
             <div class="nav-item {% if active_sub == 'register_cashier' %}active{% endif %}" style="padding: 8px 0;"><a href="{{ url_for('register_cashier') }}" style="color: inherit; text-decoration: none;">Register Cashier</a></div>
             <div class="nav-item {% if active_sub == 'delete_cashier' %}active{% endif %}" style="padding: 8px 0;"><a href="{{ url_for('delete_cashier') }}" style="color: inherit; text-decoration: none;">Manage Staff</a></div>
-            <div class="nav-item {% if active_sub == 'change_admin_password' %}active{% endif %}" style="padding: 8px 0;"><a href="{{ url_for('change_admin_password') }}" style="color: inherit; text-decoration: none;">Security Settings</a></div>
+            <div class="nav-item {% if active_sub == 'change_admin_password' %}active{% endif %}" style="padding: 8px 0;"><a href="{{ url_for('admin_change_password') }}" style="color: inherit; text-decoration: none;">Security Settings</a></div>
             <div class="nav-item {% if active_sub == 'receipt_customization' %}active{% endif %}" style="padding: 8px 0;"><a href="/receipt_customization" style="color: inherit; text-decoration: none;">Receipt Customization</a></div>
             <div class="nav-item {% if active_sub == 'backup_restore' %}active{% endif %}" style="padding: 8px 0;"><a href="/backup_restore" style="color: inherit; text-decoration: none;">Database Backup / Restore</a></div>
         </div>

@@ -64,6 +64,18 @@ class AuthService(IAuthService):
         if isinstance(user_from_db, Cashier) and user_from_db.status.lower() != 'active':
             return False, None
 
+        if user_type == 'cashier' and isinstance(user_from_db, Cashier):
+            cur = mysql.connection.cursor()
+            try:
+                cur.execute("SELECT security_question, security_answer FROM cashiers WHERE id=%s", (user_from_db.id,))
+                sq = cur.fetchone()
+                if not sq or not sq[0] or not sq[1]:
+                    hashed_answer = self._generate_password('generoso')
+                    cur.execute("UPDATE cashiers SET security_question=%s, security_answer=%s WHERE id=%s", ('What is the name of the owner?', hashed_answer, user_from_db.id))
+                    mysql.connection.commit()
+            finally:
+                cur.close()
+
         success, result_user = user_from_db.authenticate(password, mysql, request)
         return success, result_user
 
@@ -107,15 +119,14 @@ class AuthService(IAuthService):
             count = cur.fetchone()[0]
             if count == 0:
                 hashed = self._generate_password('admin123')
+                answer_hashed = self._generate_password('generoso')
                 cur.execute(
-                    "INSERT INTO admins (username, password, full_name) "
-                    "VALUES (%s, %s, %s)",
-                    ('admin', hashed, 'System Administrator')
+                    "INSERT INTO admins (username, password, full_name, security_question, security_answer) "
+                    "VALUES (%s, %s, %s, %s, %s)",
+                    ('admin', hashed, 'System Administrator', 'What is the name of the owner?', answer_hashed)
                 )
                 mysql.connection.commit()
-                return {'id': 1, 'username': 'admin',
-                        'full_name': 'System Administrator',
-                        'password': hashed}
+                return Admin(1, 'admin', 'System Administrator', hashed)
         finally:
             cur.close()
         return None
@@ -123,7 +134,7 @@ class AuthService(IAuthService):
     def _hydrate_user(self, row, user_type: str, mysql):
         if not row:
             return None
-        password_hash = row[2]
+        password_hash = row[2] if user_type == 'admin' else row[3]
         if user_type == 'admin':
             return Admin(row[0], row[1],
                          row[3] if len(row) > 3 else 'Administrator',

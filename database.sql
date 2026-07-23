@@ -11,6 +11,8 @@ CREATE TABLE IF NOT EXISTS admins (
     username VARCHAR(100) NOT NULL UNIQUE,
     password VARCHAR(255) NOT NULL,
     full_name VARCHAR(100),
+    security_question VARCHAR(255),
+    security_answer VARCHAR(255),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -21,6 +23,8 @@ CREATE TABLE IF NOT EXISTS cashiers (
     username VARCHAR(100) NOT NULL UNIQUE,
     password VARCHAR(255) NOT NULL,
     status VARCHAR(20) DEFAULT 'active',
+    security_question VARCHAR(255),
+    security_answer VARCHAR(255),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -103,8 +107,8 @@ CREATE TABLE IF NOT EXISTS sale_items (
 );
 
 -- Insert default admin (username: admin, password: admin123)
-INSERT INTO admins (username, password, full_name) 
-VALUES ('admin', 'pbkdf2:sha256:600000$azTbU7sExjOzKtbr$392d9a3215fd515a6f540498d6c47b386a404b52adad96ce9d419cdde1513482', 'System Administrator');
+INSERT INTO admins (username, password, full_name, security_question, security_answer) 
+VALUES ('admin', 'pbkdf2:sha256:600000$azTbU7sExjOzKtbr$392d9a3215fd515a6f540498d6c47b386a404b52adad96ce9d419cdde1513482', 'System Administrator', 'What is the name of the owner?', 'pbkdf2:sha256:600000$BlhM6ndrgPIj0Eui$8c0c6511b8af1f42401c742e1da56b34bfb60e56d703087fcc4f013f2cc2ecae');
 
 -- Insert sample categories
 INSERT INTO categories (category_name, description) VALUES 
