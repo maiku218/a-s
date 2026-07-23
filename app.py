@@ -1390,7 +1390,6 @@ def change_admin_password():
         if step == '1':
             security_question = admin[1] if len(admin) > 1 and admin[1] else None
             if not security_question:
-                from werkzeug.security import generate_password_hash
                 hashed_answer = generate_password_hash('generoso')
                 cur.execute("UPDATE admins SET security_question=%s, security_answer=%s WHERE id=%s", ('What is the name of the owner?', hashed_answer, admin[0]))
                 mysql.connection.commit()
@@ -1457,7 +1456,6 @@ def change_cashier_password():
             if step == '1':
                 security_question = row[2] if row[2] else None
                 if not security_question:
-                    from werkzeug.security import generate_password_hash
                     hashed_answer = generate_password_hash('generoso')
                     cur.execute("UPDATE cashiers SET security_question=%s, security_answer=%s WHERE id=%s", ('What is the name of the owner?', hashed_answer, row[0]))
                     mysql.connection.commit()
@@ -1470,7 +1468,6 @@ def change_cashier_password():
                     flash("All fields are required", "error")
                     return redirect(url_for('change_cashier_password'))
 
-                from werkzeug.security import check_password_hash, generate_password_hash
                 if check_password_hash(row[3], security_answer):
                     hashed = generate_password_hash(new_password)
                     cur.execute("UPDATE cashiers SET password=%s WHERE id=%s", (hashed, row[0]))
