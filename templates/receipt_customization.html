@@ -45,7 +45,7 @@
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% if messages %}
         {% for category, message in messages %}
-          <div style="margin-top: 15px; padding: 12px; border-radius: 6px; background: {% if category == 'success' %}#d1fae5{% else %}#fee2e2{% endif %}; color: {% if category == 'success' %}#065f46{% else %}#991b1b{% endif %};">
+          <div class="alert {% if category == 'success' %}alert-success{% else %}alert-error{% endif %}">
             {{ message }}
           </div>
         {% endfor %}
@@ -58,6 +58,19 @@
     outline: none;
     border-color: var(--orange);
     box-shadow: 0 0 0 3px rgba(251, 146, 60, 0.1);
+}
+.alert {
+    margin-top: 15px;
+    padding: 12px;
+    border-radius: 6px;
+}
+.alert-success {
+    background: #d1fae5;
+    color: #065f46;
+}
+.alert-error {
+    background: #fee2e2;
+    color: #991b1b;
 }
 </style>
 {% endblock %}

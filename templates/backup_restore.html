@@ -42,7 +42,7 @@
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% if messages %}
         {% for category, message in messages %}
-          <div style="margin-top: 20px; padding: 12px; border-radius: 6px; background: {% if category == 'success' %}#d1fae5{% else %}#fee2e2{% endif %}; color: {% if category == 'success' %}#065f46{% else %}#991b1b{% endif %};">
+          <div class="alert {% if category == 'success' %}alert-success{% else %}alert-error{% endif %}" style="margin-top: 20px;">
             {{ message }}
           </div>
         {% endfor %}
