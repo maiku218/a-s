@@ -10,11 +10,20 @@
             <h1 class="page-title">All Products</h1>
             <p class="page-subtitle">View and manage all products in inventory</p>
         </div>
-        <a href="{{ url_for('add_product') }}" class="btn btn-primary">+ Add Product</a>
+        <div style="display: flex; gap: 12px; align-items: center;">
+            <form method="GET" action="{{ url_for('all_products') }}" style="display: flex; gap: 8px;">
+                <input type="text" name="search" placeholder="Search by name or barcode..." value="{{ search or '' }}" style="padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 14px; min-width: 220px;">
+                <button type="submit" class="btn btn-primary" style="padding: 10px 18px; font-size: 14px;">Search</button>
+                {% if search %}
+                <a href="{{ url_for('all_products') }}" class="btn btn-secondary" style="padding: 10px 18px; font-size: 14px;">Clear</a>
+                {% endif %}
+            </form>
+            <a href="{{ url_for('add_product') }}" class="btn btn-primary" id="tour-add-product-btn">+ Add Product</a>
+        </div>
     </div>
 
     {% if products %}
-    <div class="table-container" style="margin-top: 20px;">
+    <div class="table-container" id="tour-products-table" style="margin-top: 20px;">
         <table>
             <thead>
                 <tr>
@@ -47,10 +56,27 @@
                     <span class="badge badge-success">{{ p[6] }}</span>
                     {% endif %}
                 </td>
-                <td>{{ p[7] or '-' }}</td>
                 <td>
-                    <button onclick="openEditModal({{ p[0] }})" class="btn btn-primary btn-sm" style="margin-right: 6px;">Edit</button>
+                    {% set expiry_date = p[7] %}
+                    {% if expiry_date %}
+                        {% set days_left = (expiry_date - today).days %}
+                        {% if days_left < 0 %}
+                        <span class="badge badge-danger">EXPIRED</span>
+                        {% elif days_left <= 7 %}
+                        <span class="badge badge-danger">{{ days_left }}d left</span>
+                        {% elif days_left <= 30 %}
+                        <span class="badge badge-warning">{{ days_left }}d left</span>
+                        {% else %}
+                        <span class="badge badge-success">{{ expiry_date }}</span>
+                        {% endif %}
+                    {% else %}
+                        <span class="badge badge-secondary">-</span>
+                    {% endif %}
+                </td>
+                <td>
+                    <button onclick="openEditModal({{ p[0] }})" class="btn btn-primary btn-sm" id="tour-edit-btn-{{ p[0] }}" style="margin-right: 6px;">Edit</button>
                     <form method="POST" action="{{ url_for('delete_product', id=p[0]) }}" style="display: inline;">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <button type="submit" class="btn btn-danger btn-sm">Delete</button>
                     </form>
                 </td>
@@ -73,6 +99,7 @@
         </div>
         <div class="modal-body">
             <form id="editForm">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="id" id="editId">
                 <div class="form-group" style="margin-bottom: 16px;">
                     <label class="form-label">Barcode</label>
@@ -145,8 +172,53 @@ function saveEdit() {
 {% with messages = get_flashed_messages(with_categories=true) %}
   {% if messages %}
     {% for category, message in messages %}
-      <script>Swal.fire({ icon: '{{ "success" if category == "success" else "error" }}', title: '{{ message }}', showConfirmButton: false, timer: 2500, toast: true, position: 'top-end' });</script>
+      <script>Swal.fire({ icon: '{{ "success" if category == "success" else "error" }}', title: {{ message | tojson }}, showConfirmButton: false, timer: 2500, toast: true, position: 'top-end' });</script>
     {% endfor %}
   {% endif %}
 {% endwith %}
+{% endblock %}
+
+{% block help_tour %}
+<script>
+const HELP_TOUR_STEPS = [
+  {
+    selector: "#tour-nav-all-products",
+    title: "All Products",
+    description: "View and manage every product in your inventory from this page.",
+    instruction: "Browse products by ID, name, barcode, category, price, stock, and expiry date."
+  },
+  {
+    selector: 'form[method="GET"]',
+    title: "Search Bar",
+    description: "Quickly find products by name or barcode.",
+    instruction: "Type a keyword and press Enter or click Search to filter the table."
+  },
+  {
+    selector: "#tour-add-product-btn",
+    title: "Add Product",
+    description: "Register a new medicine or supply to your inventory.",
+    instruction: "Click this button to open the add product form."
+  },
+  {
+    selector: "#tour-products-table table",
+    title: "Products Table",
+    description: "Browse all products with current stock levels and expiry dates.",
+    instruction: "Low stock items are highlighted with color-coded badges."
+  },
+  {
+    selector: ".btn-primary.btn-sm",
+    title: "Edit Product",
+    description: "Modify existing product details.",
+    instruction: "Click Edit to open the edit modal and update any field."
+  },
+  {
+    selector: ".btn-danger.btn-sm",
+    title: "Delete Product",
+    description: "Remove a product from inventory permanently.",
+    instruction: "Click Delete and confirm to remove the product and its history."
+  }
+];
+window.HELP_TOUR_STEPS = HELP_TOUR_STEPS;
+window.HELP_TOUR_STORAGE_KEY = "helptour_all_products";
+</script>
 {% endblock %}

@@ -10,7 +10,37 @@
         <p class="page-subtitle">Overview of all sales performance</p>
     </div>
 
+    <form method="GET" action="{{ url_for('sales_dashboard') }}" style="display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap; align-items: end;">
+        <div>
+            <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 4px;">From</label>
+            <input type="date" name="date_from" value="{{ date_from or '' }}" style="padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 13px;">
+        </div>
+        <div>
+            <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 4px;">To</label>
+            <input type="date" name="date_to" value="{{ date_to or '' }}" style="padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 13px;">
+        </div>
+        <button type="submit" class="btn btn-primary" style="padding: 8px 16px; font-size: 13px;">Apply Filter</button>
+        <a href="{{ url_for('sales_dashboard') }}" class="btn btn-secondary" style="padding: 8px 16px; font-size: 13px; text-decoration: none;">Reset</a>
+        <button type="submit" name="export" value="csv" class="btn btn-success" style="padding: 8px 16px; font-size: 13px; margin-left: auto;">Export CSV</button>
+    </form>
+
+    {% if date_from or date_to %}
+    <div style="background: #f0f9ff; border: 1px solid #bae6fd; border-radius: var(--radius); padding: 10px 16px; margin-bottom: 20px; font-size: 13px; color: #0369a1;">
+        Showing custom range: {{ date_from or '...' }} to {{ date_to or '...' }}
+    </div>
+    {% endif %}
+
+    {% if date_from or date_to %}
+    <div class="stats-grid" style="margin-bottom: 20px;">
+        <div class="stat-card" style="grid-column: 1 / -1; background: #f0f9ff; border: 1px solid #bae6fd;">
+            <div class="stat-label">Custom Range</div>
+            <div class="stat-value" style="color: #0369a1; font-size: 18px;">{{ date_from or '...' }} to {{ date_to or '...' }}</div>
+        </div>
+    </div>
+    {% endif %}
+
     <div class="stats-grid">
+        {% if not date_from and not date_to %}
         <div class="stat-card">
             <div class="stat-label">Today</div>
             <div class="stat-value" style="color: var(--accent);">₱{{ "%.2f"|format(daily_sales) }}</div>
@@ -31,6 +61,7 @@
             <div class="stat-value" style="color: #7c3aed;">₱{{ "%.2f"|format(yearly_sales) }}</div>
             <div class="stat-meta"><span style="color: var(--accent);">M: ₱{{ "%.2f"|format(yearly_medical_sales) }}</span> &nbsp; <span style="color: var(--success);">NM: ₱{{ "%.2f"|format(yearly_nonmedical_sales) }}</span></div>
         </div>
+        {% endif %}
         <div class="stat-card">
             <div class="stat-label">Overall</div>
             <div class="stat-value" style="color: #db2777;">₱{{ "%.2f"|format(overall_sales) }}</div>
@@ -40,7 +71,13 @@
 
     <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 20px;">
         <div class="card" style="padding: 24px;">
-            <h3 style="font-size: 16px; font-weight: 700; margin-bottom: 20px;">Daily Sales - Medical vs Non-Medical (Last 30 Days)</h3>
+            <h3 style="font-size: 16px; font-weight: 700; margin-bottom: 20px;">
+                {% if date_from or date_to %}
+                Daily Sales - Medical vs Non-Medical ({{ date_from or '...' }} to {{ date_to or '...' }})
+                {% else %}
+                Daily Sales - Medical vs Non-Medical (Last 30 Days)
+                {% endif %}
+            </h3>
             <canvas id="salesChart" height="150"></canvas>
             <div style="margin-top: 15px; display: flex; gap: 20px; justify-content: center;">
                 <span style="color: var(--accent); font-weight: 600;">● Medical</span>
@@ -87,5 +124,32 @@ new Chart(ctx, {
         }
     }
 });
+</script>
+{% endblock %}
+
+{% block help_tour %}
+<script>
+const HELP_TOUR_STEPS = [
+  {
+    selector: ".stats-grid",
+    title: "Sales Statistics",
+    description: "Overview of sales performance across different time periods.",
+    instruction: "View Today, Week, Month, Year, and Overall totals. Medical and Non-Medical sales are tracked separately."
+  },
+  {
+    selector: "#salesChart",
+    title: "Daily Sales Chart",
+    description: "Visualize daily sales trends over the past 30 days.",
+    instruction: "The chart shows Medical vs Non-Medical sales. Hover over data points for exact values."
+  },
+  {
+    selector: ".card:has(h3)",
+    title: "Top Selling Products",
+    description: "See your best-performing products by quantity sold.",
+    instruction: "Products are ranked by total quantity sold and total revenue."
+  }
+];
+window.HELP_TOUR_STEPS = HELP_TOUR_STEPS;
+window.HELP_TOUR_STORAGE_KEY = "helptour_sales_dashboard";
 </script>
 {% endblock %}

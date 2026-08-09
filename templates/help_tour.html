@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PharmaCon | Help Tour Guide</title>
+    <link rel="stylesheet" href="/static/css/help-tour.css">
+    <style>
+        :root {
+            --primary: #2563eb;
+            --primary-dark: #1d4ed8;
+            --accent: #f97316;
+            --accent-dark: #ea580c;
+            --success: #22c55e;
+            --danger: #ef4444;
+            --warning: #f59e0b;
+            --bg: #f1f5f9;
+            --surface: #ffffff;
+            --border: #e2e8f0;
+            --text: #0f172a;
+            --text-secondary: #64748b;
+            --text-muted: #94a3b8;
+            --shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+            --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+            --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+            --radius: 8px;
+            --radius-lg: 12px;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); display: flex; min-height: 100vh; }
+        a { text-decoration: none; color: inherit; }
+
+        .sidebar { width: 260px; background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; position: fixed; inset: 0 auto 0 0; z-index: 100; }
+        .sidebar-header { padding: 24px; border-bottom: 1px solid var(--border); }
+        .brand { font-weight: 800; font-size: 20px; letter-spacing: -0.5px; cursor: pointer; }
+        .brand span { color: var(--accent); }
+        .sidebar-nav { flex: 1; padding: 16px 0; overflow-y: auto; }
+        .nav-section { padding: 8px 24px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); margin-top: 8px; }
+        .nav-item { padding: 10px 24px; display: flex; align-items: center; gap: 12px; font-size: 14px; font-weight: 500; color: var(--text-secondary); cursor: pointer; transition: all 0.15s; border-left: 3px solid transparent; }
+        .nav-item:hover { background: var(--bg); color: var(--text); }
+        .nav-item.active { background: rgba(249, 115, 22, 0.08); color: var(--accent); border-left-color: var(--accent); font-weight: 600; }
+        .nav-item svg { width: 20px; height: 20px; flex-shrink: 0; }
+        .sidebar-footer { padding: 16px 24px; border-top: 1px solid var(--border); }
+        .logout { display: flex; align-items: center; gap: 12px; padding: 10px 0; color: var(--danger); font-size: 14px; font-weight: 500; cursor: pointer; }
+        .logout:hover { color: #dc2626; }
+        .logout svg { width: 20px; height: 20px; }
+
+        .main { flex: 1; margin-left: 260px; display: flex; flex-direction: column; min-height: 100vh; }
+        .topbar { background: var(--surface); border-bottom: 1px solid var(--border); padding: 16px 72px 16px 32px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 50; }
+        .topbar-title { font-size: 18px; font-weight: 700; }
+        .topbar-actions { display: flex; align-items: center; gap: 16px; }
+        .content { flex: 1; padding: 32px; overflow-y: auto; }
+        .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow); padding: 24px; margin-bottom: 24px; }
+        .card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+        .card-title { font-size: 18px; font-weight: 700; }
+        .card-subtitle { font-size: 14px; color: var(--text-secondary); margin-top: 4px; }
+
+        .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 14px 26px; border-radius: var(--radius); font-size: 15px; font-weight: 700; cursor: pointer; border: 1px solid transparent; transition: all 0.15s; }
+        .btn-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+        .btn-primary:hover { background: var(--accent-dark); }
+        .btn-secondary { background: #64748b; color: #fff; border-color: #64748b; }
+        .btn-secondary:hover { background: #475569; border-color: #475569; }
+        .btn-sm { padding: 8px 16px; font-size: 13px; }
+
+        .help-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; }
+        .help-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 24px; transition: box-shadow 0.15s; }
+        .help-card:hover { box-shadow: var(--shadow-md); }
+        .help-icon { width: 48px; height: 48px; border-radius: var(--radius); display: flex; align-items: center; justify-content: center; font-size: 24px; margin-bottom: 16px; }
+        .help-icon.blue { background: #dbeafe; color: #1e40af; }
+        .help-icon.green { background: #dcfce7; color: #166534; }
+        .help-icon.orange { background: #ffedd5; color: #9a3412; }
+        .help-icon.purple { background: #f3e8ff; color: #6b21a8; }
+        .help-icon.red { background: #fee2e2; color: #991b1b; }
+        .help-card-title { font-size: 16px; font-weight: 700; margin-bottom: 8px; }
+        .help-card-text { font-size: 14px; color: var(--text-secondary); line-height: 1.6; }
+
+        .step-list { display: flex; flex-direction: column; gap: 12px; }
+        .step-item { display: flex; gap: 16px; padding: 16px; background: var(--bg); border-radius: var(--radius); }
+        .step-number { width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; flex-shrink: 0; }
+        .step-content { flex: 1; }
+        .step-title { font-weight: 700; margin-bottom: 4px; }
+        .step-desc { font-size: 14px; color: var(--text-secondary); line-height: 1.5; }
+
+        .shortcut-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+        .shortcut-item { display: flex; align-items: center; gap: 12px; padding: 12px 16px; background: var(--bg); border-radius: var(--radius); }
+        .shortcut-key { font-family: 'Courier New', monospace; font-weight: 700; background: var(--surface); border: 1px solid var(--border); padding: 4px 10px; border-radius: 6px; font-size: 13px; min-width: 80px; text-align: center; }
+        .shortcut-desc { font-size: 14px; color: var(--text-secondary); }
+
+        .table-container { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius-lg); }
+        table { width: 100%; border-collapse: collapse; font-size: 14px; }
+        thead { background: var(--bg); }
+        th { padding: 12px 16px; text-align: left; font-size: 12px; font-weight: 600; text-transform: uppercase; color: var(--text-secondary); letter-spacing: 0.3px; }
+        td { padding: 14px 16px; border-top: 1px solid var(--border); }
+        tbody tr:hover { background: rgba(0,0,0,0.01); }
+        .badge { display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 9999px; font-size: 12px; font-weight: 600; }
+        .badge-success { background: #dcfce7; color: #166534; }
+        .badge-danger { background: #fee2e2; color: #991b1b; }
+        .badge-warning { background: #fef3c7; color: #92400e; }
+        .badge-info { background: #dbeafe; color: #1e40af; }
+
+        .back-link { display: inline-flex; align-items: center; gap: 6px; margin-bottom: 16px; color: var(--accent); font-size: 14px; font-weight: 500; }
+        .back-link:hover { text-decoration: underline; }
+
+        @media (max-width: 768px) {
+            .sidebar { width: 100%; position: relative; }
+            .main { margin-left: 0; }
+            .sidebar { position: fixed; top: 0; left: -260px; height: 100vh; transition: left 0.3s ease; z-index: 100; }
+            .sidebar.open { left: 0; }
+            .help-grid { grid-template-columns: 1fr; }
+            .shortcut-grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <div class="brand" onclick="window.location.href='/admin'">PHARMA<span>CON</span></div>
+        </div>
+        <nav class="sidebar-nav">
+            <div class="nav-section">Help & Support</div>
+            <div class="nav-item active" id="nav-help">Help Tour Guide</div>
+            <div class="nav-section">Dashboard</div>
+            <div class="nav-item" onclick="window.location.href='/admin'">Dashboard</div>
+            <div class="nav-section">Inventory</div>
+            <div class="nav-item" onclick="window.location.href='/all_products'">All Products</div>
+            <div class="nav-item" onclick="window.location.href='/add_product'">Add Product</div>
+            <div class="nav-section">Sales</div>
+            <div class="nav-item" onclick="window.location.href='/sales_dashboard'">Sales Dashboard</div>
+            <div class="nav-item" onclick="window.location.href='/medical_sales'">Medical Sales</div>
+            <div class="nav-item" onclick="window.location.href='/non_medical_sales'">Non-Medical Sales</div>
+            <div class="nav-section">Alerts</div>
+            <div class="nav-item" onclick="window.location.href='/out_of_stock'">Out of Stock</div>
+            <div class="nav-item" onclick="window.location.href='/expiring_medical'">Expiring Products</div>
+            <div class="nav-section">Management</div>
+            <div class="nav-item" onclick="window.location.href='/register_cashier'">Register Cashier</div>
+            <div class="nav-item" onclick="window.location.href='/delete_cashier'">Manage Staff</div>
+            <div class="nav-item" onclick="window.location.href='/admin/change_password'">Change Password</div>
+            <div class="nav-item" onclick="window.location.href='/receipt_customization'">Receipt Settings</div>
+            <div class="nav-item" onclick="window.location.href='/backup_restore'">Backup & Restore</div>
+        </nav>
+        <div class="sidebar-footer" style="padding: 16px 24px; border-top: 1px solid var(--border);">
+            <div class="logout" onclick="window.location.href='/admin_logout'">Logout</div>
+        </div>
+    </div>
+
+    <div class="main">
+        <div class="topbar">
+            <div class="topbar-title">Help Tour Guide</div>
+            <div class="topbar-actions">
+                <button class="btn btn-primary btn-sm" onclick="startTourFromGuide()">Start Tutorial</button>
+            </div>
+        </div>
+
+        <div class="content">
+            <div class="back-link" onclick="window.location.href='/admin'">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+                Back to Dashboard
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <div>
+                        <h1 class="card-title">Welcome to PharmaCon Help Tour</h1>
+                        <p class="card-subtitle">Learn how to use the system with our interactive guide</p>
+                    </div>
+                </div>
+                <p style="color: var(--text-secondary); line-height: 1.6; margin-bottom: 24px;">
+                    The Help Tour is an interactive guide that walks you through every page and feature of the PharmaCon system. 
+                    It uses visual highlights, tooltips, and step-by-step instructions to help you understand each component.
+                </p>
+                <div class="help-grid">
+                    <div class="help-card">
+                        <div class="help-icon blue">?</div>
+                        <div class="help-card-title">Floating Help Button</div>
+                        <div class="help-card-text">Look for the blue <strong>? HELP</strong> button at the bottom-right corner of every page. Click it to open the help menu and start the tutorial from any page.</div>
+                    </div>
+                    <div class="help-card">
+                        <div class="help-icon green">&#9656;</div>
+                        <div class="help-card-title">Interactive Spotlight</div>
+                        <div class="help-card-text">When the tour is active, a dark overlay appears with a spotlight highlighting the current element. An arrow points from the tooltip to the highlighted area.</div>
+                    </div>
+                    <div class="help-card">
+                        <div class="help-icon orange">&#128203;</div>
+                        <div class="help-card-title">Step-by-Step Guide</div>
+                        <div class="help-card-text">Each step shows a title, description, and instruction. Navigate using the buttons or keyboard shortcuts. Your progress is saved automatically.</div>
+                    </div>
+                    <div class="help-card">
+                        <div class="help-icon purple">&#128274;</div>
+                        <div class="help-card-title">Progress Saved</div>
+                        <div class="help-card-text">The system remembers if you completed the tour or which step you were on. You can resume later without starting over. The pulse animation stops after completion.</div>
+                    </div>
+                    <div class="help-card">
+                        <div class="help-icon red">&#9881;</div>
+                        <div class="help-card-title">Page-Specific Tours</div>
+                        <div class="help-card-text">Every page has its own set of tour steps tailored to that page's features. The help button is available on all admin and cashier pages.</div>
+                    </div>
+                    <div class="help-card">
+                        <div class="help-icon blue">&#9000;</div>
+                        <div class="help-card-title">Keyboard Shortcuts</div>
+                        <div class="help-card-text">Use keyboard shortcuts to navigate quickly. Press ESC to exit anytime, Enter or Right Arrow for next step, Left Arrow for previous step.</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <div>
+                        <h2 class="card-title">How to Start the Tour</h2>
+                        <p class="card-subtitle">Follow these simple steps to begin</p>
+                    </div>
+                </div>
+                <div class="step-list">
+                    <div class="step-item">
+                        <div class="step-number">1</div>
+                        <div class="step-content">
+                            <div class="step-title">Locate the Help Button</div>
+                            <div class="step-desc">Find the blue circular button with a question mark (?) at the bottom-right corner of the screen. It may have a subtle pulse animation.</div>
+                        </div>
+                    </div>
+                    <div class="step-item">
+                        <div class="step-number">2</div>
+                        <div class="step-content">
+                            <div class="step-title">Open the Help Menu</div>
+                            <div class="step-desc">Click the help button to reveal a dropdown menu with options like "Start Tutorial" or "Restart Tutorial".</div>
+                        </div>
+                    </div>
+                    <div class="step-item">
+                        <div class="step-number">3</div>
+                        <div class="step-content">
+                            <div class="step-title">Begin the Tutorial</div>
+                            <div class="step-desc">Click "Start Tutorial" to launch the interactive tour. The screen will dim and the first element will be highlighted.</div>
+                        </div>
+                    </div>
+                    <div class="step-item">
+                        <div class="step-number">4</div>
+                        <div class="step-content">
+                            <div class="step-title">Navigate Through Steps</div>
+                            <div class="step-desc">Use the <strong>Next</strong> and <strong>Previous</strong> buttons in the tooltip, or use keyboard shortcuts to move through each step.</div>
+                        </div>
+                    </div>
+                    <div class="step-item">
+                        <div class="step-number">5</div>
+                        <div class="step-content">
+                            <div class="step-title">Complete or Skip</div>
+                            <div class="step-desc">Click <strong>Finish</strong> on the last step to complete the tour, or click <strong>Skip</strong> to exit anytime. You can restart the tour later from the help menu.</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <div>
+                        <h2 class="card-title">Keyboard Shortcuts</h2>
+                        <p class="card-subtitle">Navigate the tour faster using your keyboard</p>
+                    </div>
+                </div>
+                <div class="shortcut-grid">
+                    <div class="shortcut-item">
+                        <div class="shortcut-key">ESC</div>
+                        <div class="shortcut-desc">Exit tour immediately</div>
+                    </div>
+                    <div class="shortcut-item">
+                        <div class="shortcut-key">Enter</div>
+                        <div class="shortcut-desc">Next step or Finish</div>
+                    </div>
+                    <div class="shortcut-item">
+                        <div class="shortcut-key">&rarr;</div>
+                        <div class="shortcut-desc">Next step</div>
+                    </div>
+                    <div class="shortcut-item">
+                        <div class="shortcut-key">&larr;</div>
+                        <div class="shortcut-desc">Previous step</div>
+                    </div>
+                    <div class="shortcut-item">
+                        <div class="shortcut-key">Tab</div>
+                        <div class="shortcut-desc">Next step</div>
+                    </div>
+                    <div class="shortcut-item">
+                        <div class="shortcut-key">Shift+Tab</div>
+                        <div class="shortcut-desc">Previous step</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <div>
+                        <h2 class="card-title">Pages with Help Tours</h2>
+                        <p class="card-subtitle">Interactive guides are available on these pages</p>
+                    </div>
+                </div>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Page</th>
+                                <th>Description</th>
+                                <th>Quick Link</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><strong>Admin Dashboard</strong></td>
+                                <td>Overview of stats, notifications, and cashier status</td>
+                                <td><a href="/admin" style="color: var(--accent); font-weight: 600;">Go to Dashboard</a></td>
+                            </tr>
+                            <tr>
+                                <td><strong>All Products</strong></td>
+                                <td>Product catalog management and inventory view</td>
+                                <td><a href="/all_products" style="color: var(--accent); font-weight: 600;">View Products</a></td>
+                            </tr>
+                            <tr>
+                                <td><strong>Add Product</strong></td>
+                                <td>Registering new pharmaceutical products</td>
+                                <td><a href="/add_product" style="color: var(--accent); font-weight: 600;">Add Product</a></td>
+                            </tr>
+                            <tr>
+                                <td><strong>Out of Stock</strong></td>
+                                <td>Low stock alert monitoring</td>
+                                <td><a href="/out_of_stock" style="color: var(--accent); font-weight: 600;">View Alerts</a></td>
+                            </tr>
+                            <tr>
+                                <td><strong>Expiring Products</strong></td>
+                                <td>Expiry date monitoring</td>
+                                <td><a href="/expiring_medical" style="color: var(--accent); font-weight: 600;">View Expiring</a></td>
+                            </tr>
+                            <tr>
+                                <td><strong>Sales Dashboard</strong></td>
+                                <td>Sales analytics and charts</td>
+                                <td><a href="/sales_dashboard" style="color: var(--accent); font-weight: 600;">View Sales</a></td>
+                            </tr>
+                            <tr>
+                                <td><strong>Medical Sales</strong></td>
+                                <td>Medical product sales history</td>
+                                <td><a href="/medical_sales" style="color: var(--accent); font-weight: 600;">View Medical</a></td>
+                            </tr>
+                            <tr>
+                                <td><strong>Non-Medical Sales</strong></td>
+                                <td>Non-Medical product sales history</td>
+                                <td><a href="/non_medical_sales" style="color: var(--accent); font-weight: 600;">View Non-Medical</a></td>
+                            </tr>
+                            <tr>
+                                <td><strong>Register Cashier</strong></td>
+                                <td>Creating new cashier accounts</td>
+                                <td><a href="/register_cashier" style="color: var(--accent); font-weight: 600;">Register</a></td>
+                            </tr>
+                            <tr>
+                                <td><strong>Manage Staff</strong></td>
+                                <td>Managing cashier accounts</td>
+                                <td><a href="/delete_cashier" style="color: var(--accent); font-weight: 600;">Manage Staff</a></td>
+                            </tr>
+                            <tr>
+                                <td><strong>Backup & Restore</strong></td>
+                                <td>Database backup and restore tools</td>
+                                <td><a href="/backup_restore" style="color: var(--accent); font-weight: 600;">Backup</a></td>
+                            </tr>
+                            <tr>
+                                <td><strong>Receipt Customization</strong></td>
+                                <td>Customizing printed receipts</td>
+                                <td><a href="/receipt_customization" style="color: var(--accent); font-weight: 600;">Customize</a></td>
+                            </tr>
+                            <tr>
+                                <td><strong>Change Password</strong></td>
+                                <td>Updating account passwords</td>
+                                <td><a href="/admin/change_password" style="color: var(--accent); font-weight: 600;">Change</a></td>
+                            </tr>
+                            <tr>
+                                <td><strong>Cashier Activity Logs</strong></td>
+                                <td>Viewing cashier login logs</td>
+                                <td><a href="/admin/cashier_logs" style="color: var(--accent); font-weight: 600;">View Logs</a></td>
+                            </tr>
+                            <tr>
+                                <td><strong>Admin Activity Logs</strong></td>
+                                <td>Viewing admin action logs</td>
+                                <td><a href="/admin/activity_logs" style="color: var(--accent); font-weight: 600;">View Logs</a></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <div>
+                        <h2 class="card-title">System Roles & Default Credentials</h2>
+                        <p class="card-subtitle">Quick reference for login and permissions</p>
+                    </div>
+                </div>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Role</th>
+                                <th>Username</th>
+                                <th>Password</th>
+                                <th>Access Level</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><span class="badge badge-info">Admin</span></td>
+                                <td><code>admin</code></td>
+                                <td><code>admin123</code></td>
+                                <td>Full access to all features, settings, and reports</td>
+                            </tr>
+                            <tr>
+                                <td><span class="badge badge-success">Cashier</span></td>
+                                <td><em>Created by Admin</em></td>
+                                <td><em>Set during registration</em></td>
+                                <td>POS transactions, sales history, and personal settings</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <p style="margin-top: 16px; font-size: 14px; color: var(--text-secondary);">
+                    <strong>Note:</strong> The admin account is created automatically on first run. Cashier accounts must be registered by an admin via the <a href="/register_cashier" style="color: var(--accent);">Staff Management</a> page.
+                </p>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <div>
+                        <h2 class="card-title">Troubleshooting</h2>
+                        <p class="card-subtitle">Common issues and how to resolve them</p>
+                    </div>
+                </div>
+                <div class="step-list">
+                    <div class="step-item">
+                        <div class="step-number">!</div>
+                        <div class="step-content">
+                            <div class="step-title">Tour not appearing</div>
+                            <div class="step-desc">Make sure <code>help-tour.js</code> and <code>help-tour.css</code> are properly loaded. Check the browser console for errors.</div>
+                        </div>
+                    </div>
+                    <div class="step-item">
+                        <div class="step-number">!</div>
+                        <div class="step-content">
+                            <div class="step-title">Overlay stuck on screen</div>
+                            <div class="step-desc">Press <strong>ESC</strong> to close the tour instantly. If that doesn't work, refresh the page.</div>
+                        </div>
+                    </div>
+                    <div class="step-item">
+                        <div class="step-number">!</div>
+                        <div class="step-content">
+                            <div class="step-title">Pulse animation not showing</div>
+                            <div class="step-desc">The tour may already be marked as completed. Open the Help Menu and select "Restart Tutorial" to reset.</div>
+                        </div>
+                    </div>
+                    <div class="step-item">
+                        <div class="step-number">!</div>
+                        <div class="step-content">
+                            <div class="step-title">Elements not highlighted</div>
+                            <div class="step-desc">Ensure the page element has the correct ID or selector matching the tour configuration for that page.</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function startTourFromGuide() {
+            const storageKey = window.HELP_TOUR_STORAGE_KEY || 'helptour_admin_dashboard';
+            localStorage.removeItem('helptour_completed_' + storageKey);
+            localStorage.removeItem('helptour_current_step');
+            if (typeof HelpTour !== 'undefined' && window.HELP_TOUR_INSTANCE) {
+                window.HELP_TOUR_INSTANCE.start();
+            } else if (typeof HelpTour !== 'undefined' && window.HELP_TOUR_STEPS) {
+                const tour = new HelpTour(window.HELP_TOUR_STEPS, {
+                    storageKey: storageKey,
+                    role: 'admin'
+                });
+                window.HELP_TOUR_INSTANCE = tour;
+                tour.start();
+            } else {
+                window.location.href = '/admin';
+            }
+        }
+    </script>
+
+    <script>
+    const HELP_TOUR_STEPS = [
+      {
+        selector: "#nav-help",
+        title: "Help Tour Guide",
+        description: "You are currently viewing the Help Tour Guide page.",
+        instruction: "This page explains how the interactive help tour works and lists all pages with available tours."
+      },
+      {
+        selector: ".card-title",
+        title: "Guide Sections",
+        description: "The guide is organized into sections for easy reading.",
+        instruction: "Each card covers a specific topic like getting started, keyboard shortcuts, or troubleshooting."
+      },
+      {
+        selector: ".btn-primary",
+        title: "Start Tutorial",
+        description: "Click this button to launch the interactive tour on the Admin Dashboard.",
+        instruction: "You can also start tours from any page using the floating help button."
+      }
+    ];
+    window.HELP_TOUR_STEPS = HELP_TOUR_STEPS;
+    window.HELP_TOUR_STORAGE_KEY = "helptour_help_guide";
+    </script>
+    <script src="/static/js/help-tour.js"></script>
+    <script>
+        function startTourFromGuide() {
+            const storageKey = window.HELP_TOUR_STORAGE_KEY || 'helptour_help_guide';
+            localStorage.removeItem('helptour_completed_' + storageKey);
+            localStorage.removeItem('helptour_current_step');
+            if (window.HelpTourInstance) {
+                window.HelpTourInstance.start();
+            } else if (window.HELP_TOUR_STEPS) {
+                const tour = new HelpTour(window.HELP_TOUR_STEPS, {
+                    storageKey: storageKey,
+                    role: 'admin'
+                });
+                window.HelpTourInstance = tour;
+                tour.start();
+            } else {
+                window.location.href = '/admin';
+            }
+        }
+    </script>
+</body>
+</html>

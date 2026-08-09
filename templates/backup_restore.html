@@ -15,6 +15,7 @@
                 Download a complete SQL dump of the <strong>pharmacon</strong> database. This includes all tables, data, and settings.
             </p>
             <form method="POST" action="/backup_database">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button type="submit" class="btn btn-primary" style="width: 100%; justify-content: center;">
                     Download Backup (.sql)
                 </button>
@@ -28,6 +29,7 @@
                 Upload a previously saved <strong>.sql</strong> backup file. <strong style="color: #dc2626;">Warning:</strong> This will replace all current data.
             </p>
             <form method="POST" action="/restore_database" enctype="multipart/form-data">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <div class="form-group" style="margin-bottom: 15px;">
                     <input type="file" name="backup_file" accept=".sql" required 
                            style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px;">
@@ -49,4 +51,25 @@
       {% endif %}
     {% endwith %}
 </div>
+{% endblock %}
+
+{% block help_tour %}
+<script>
+const HELP_TOUR_STEPS = [
+  {
+    selector: 'form[action="/backup_database"]',
+    title: "Create Backup",
+    description: "Download a complete SQL backup of your database.",
+    instruction: "Click the Download Backup button to create and download a .sql file."
+  },
+  {
+    selector: 'form[action="/restore_database"]',
+    title: "Restore Database",
+    description: "Restore your database from a previous backup.",
+    instruction: "Upload a .sql backup file and click 'Upload & Restore'. This overwrites all current data."
+  }
+];
+window.HELP_TOUR_STEPS = HELP_TOUR_STEPS;
+window.HELP_TOUR_STORAGE_KEY = "helptour_backup_restore";
+</script>
 {% endblock %}

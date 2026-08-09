@@ -51,3 +51,18 @@
     {% endif %}
 </div>
 {% endblock %}
+
+{% block help_tour %}
+<script>
+const HELP_TOUR_STEPS = [
+  {
+    selector: ".table-container table",
+    title: "Admin Activity Log",
+    description: "Detailed history of all admin actions with IP tracking.",
+    instruction: "The table shows admin username, action type, IP address, details, and timestamp."
+  }
+];
+window.HELP_TOUR_STEPS = HELP_TOUR_STEPS;
+window.HELP_TOUR_STORAGE_KEY = "helptour_admin_activity_logs";
+</script>
+{% endblock %}

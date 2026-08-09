@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS admins (
     full_name VARCHAR(100),
     security_question VARCHAR(255),
     security_answer VARCHAR(255),
+    force_password_change TINYINT(1) DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -25,6 +26,7 @@ CREATE TABLE IF NOT EXISTS cashiers (
     status VARCHAR(20) DEFAULT 'active',
     security_question VARCHAR(255),
     security_answer VARCHAR(255),
+    force_password_change TINYINT(1) DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -47,6 +49,17 @@ CREATE TABLE IF NOT EXISTS admin_activity (
     details TEXT,
     activity_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (admin_id) REFERENCES admins(id) ON DELETE CASCADE
+);
+
+-- Login Attempts (rate limiting and lockout tracking)
+CREATE TABLE IF NOT EXISTS login_attempts (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    ip_address VARCHAR(45) DEFAULT NULL,
+    username_attempted VARCHAR(100) DEFAULT NULL,
+    attempted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    locked_until TIMESTAMP NULL DEFAULT NULL,
+    INDEX idx_ip_attempted (ip_address, attempted_at),
+    INDEX idx_username_attempted (username_attempted, attempted_at)
 );
 
 -- Categories table
@@ -92,6 +105,13 @@ CREATE TABLE IF NOT EXISTS sales (
     sale_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     receipt_printed TINYINT(1) DEFAULT 0,
     printed_at TIMESTAMP NULL DEFAULT NULL,
+    voided_at TIMESTAMP NULL DEFAULT NULL,
+    voided_by INT NULL DEFAULT NULL,
+    void_reason TEXT NULL DEFAULT NULL,
+    refunded_at TIMESTAMP NULL DEFAULT NULL,
+    refunded_by INT NULL DEFAULT NULL,
+    refund_reason TEXT NULL DEFAULT NULL,
+    original_sale_id INT NULL DEFAULT NULL,
     FOREIGN KEY (cashier_id) REFERENCES cashiers(id)
 );
 
@@ -107,8 +127,8 @@ CREATE TABLE IF NOT EXISTS sale_items (
 );
 
 -- Insert default admin (username: admin, password: admin123)
-INSERT INTO admins (username, password, full_name, security_question, security_answer) 
-VALUES ('admin', 'pbkdf2:sha256:600000$azTbU7sExjOzKtbr$392d9a3215fd515a6f540498d6c47b386a404b52adad96ce9d419cdde1513482', 'System Administrator', 'What is the name of the owner?', 'pbkdf2:sha256:600000$BlhM6ndrgPIj0Eui$8c0c6511b8af1f42401c742e1da56b34bfb60e56d703087fcc4f013f2cc2ecae');
+INSERT INTO admins (username, password, full_name, security_question, security_answer, force_password_change) 
+VALUES ('admin', 'pbkdf2:sha256:600000$azTbU7sExjOzKtbr$392d9a3215fd515a6f540498d6c47b386a404b52adad96ce9d419cdde1513482', 'System Administrator', 'What is the name of the owner?', 'pbkdf2:sha256:600000$BlhM6ndrgPIj0Eui$8c0c6511b8af1f42401c742e1da56b34bfb60e56d703087fcc4f013f2cc2ecae', 1);
 
 -- Insert sample categories
 INSERT INTO categories (category_name, description) VALUES 
@@ -135,8 +155,67 @@ CREATE TABLE IF NOT EXISTS store_settings (
 
 INSERT INTO store_settings (setting_key, setting_value) VALUES
 ('receipt_header', 'PHARMACON'),
-('receipt_subtitle', 'A\\'s PharmaHealth & Convenience'),
+('receipt_subtitle', 'A\'s PharmaHealth & Convenience'),
 ('receipt_footer', 'Thank you for your purchase!\nPlease come again.'),
 ('store_name', 'PharmaCon'),
 ('store_address', ''),
 ('store_contact', '');
+
+-- Alert Logs (track alert history and acknowledgments) - NEW
+CREATE TABLE IF NOT EXISTS alert_logs (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    alert_type VARCHAR(50) NOT NULL,
+    alert_level VARCHAR(20) NOT NULL,
+    product_id INT NOT NULL,
+    message TEXT NOT NULL,
+    acknowledged_by INT DEFAULT NULL,
+    acknowledged_at TIMESTAMP NULL DEFAULT NULL,
+    dismissed_by INT DEFAULT NULL,
+    dismissed_at TIMESTAMP NULL DEFAULT NULL,
+    dismiss_reason TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
+    UNIQUE KEY unique_alert (alert_type, product_id)
+);
+
+-- Alert Settings (configurable thresholds) - NEW
+CREATE TABLE IF NOT EXISTS alert_settings (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    setting_name VARCHAR(100) NOT NULL UNIQUE,
+    setting_value VARCHAR(255) NOT NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+INSERT INTO alert_settings (setting_name, setting_value) VALUES
+('low_stock_threshold', '10'),
+('critical_stock_threshold', '5'),
+('expiry_critical_days', '7'),
+('expiry_warning_days', '30');
+
+-- Alert Acknowledgment Tracking
+CREATE TABLE IF NOT EXISTS alert_acknowledgments (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    product_id INT NOT NULL,
+    alert_type VARCHAR(50) NOT NULL,
+    action VARCHAR(20) NOT NULL,
+    reason TEXT,
+    user_id INT NOT NULL,
+    user_type VARCHAR(20) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
+    UNIQUE KEY unique_ack (alert_type, product_id)
+);
+
+-- Alert Visibility per Admin (hide dismissed alerts)
+CREATE TABLE IF NOT EXISTS alert_visibility (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    product_id INT NOT NULL,
+    alert_type VARCHAR(50) NOT NULL,
+    admin_id INT NOT NULL,
+    is_hidden TINYINT(1) DEFAULT 1,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
+    FOREIGN KEY (admin_id) REFERENCES admins(id) ON DELETE CASCADE,
+    UNIQUE KEY unique_visibility (product_id, alert_type, admin_id)
+);

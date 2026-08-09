@@ -8,6 +8,7 @@
     </p>
 
     <form method="POST" enctype="multipart/form-data">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="receipt_logo_existing" value="{{ settings.receipt_logo or '' }}">
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
             <div class="form-group">
@@ -73,4 +74,49 @@
     color: #991b1b;
 }
 </style>
+{% endblock %}
+
+{% block help_tour %}
+<script>
+const HELP_TOUR_STEPS = [
+  {
+    selector: 'input[name="receipt_header"]',
+    title: "Store Name",
+    description: "Customize the header text on receipts.",
+    instruction: "Enter the store name that appears at the top of receipts."
+  },
+  {
+    selector: 'input[name="receipt_subtitle"]',
+    title: "Store Tagline",
+    description: "Add a subtitle below the store name.",
+    instruction: "Enter a short tagline or description."
+  },
+  {
+    selector: 'input[name="store_address"]',
+    title: "Store Address",
+    description: "Add your store address to receipts.",
+    instruction: "Enter the complete store address."
+  },
+  {
+    selector: 'input[name="store_contact"]',
+    title: "Store Contact",
+    description: "Add contact information to receipts.",
+    instruction: "Enter phone number or email."
+  },
+  {
+    selector: 'textarea[name="receipt_footer"]',
+    title: "Receipt Footer",
+    description: "Customize the message at the bottom of receipts.",
+    instruction: "Enter a thank you message or any footer text."
+  },
+  {
+    selector: 'button[type="submit"]',
+    title: "Save Settings",
+    description: "Save your receipt customization changes.",
+    instruction: "Click this button to apply your changes."
+  }
+];
+window.HELP_TOUR_STEPS = HELP_TOUR_STEPS;
+window.HELP_TOUR_STORAGE_KEY = "helptour_receipt_customization";
+</script>
 {% endblock %}

@@ -33,6 +33,7 @@
                 <td>
                     <button onclick="openEditModal('{{ c[0] }}', '{{ c[1] }}', '{{ c[2] }}', '{% if c[4] %}{{ c[4] }}{% else %}active{% endif %}')" class="btn btn-primary btn-sm" style="margin-right: 6px;">Edit</button>
                     <form method="POST" action="{{ url_for('delete_cashier') }}" style="display: inline;" onsubmit="return confirm('Delete this cashier?');">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <input type="hidden" name="id" value="{{ c[0] }}">
                         <button type="submit" class="btn btn-danger btn-sm">Delete</button>
                     </form>
@@ -56,6 +57,7 @@
         </div>
         <div class="modal-body">
             <form method="POST" action="{{ url_for('edit_cashier') }}" id="editCashierForm">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="id" id="editId">
                 <div class="form-group" style="margin-bottom: 16px;">
                     <label class="form-label">Full Name</label>
@@ -112,6 +114,33 @@ function openEditModal(id, fullname, username, status) {
     document.getElementById('editConfirmPassword').value = '';
     document.getElementById('editModal').classList.add('show');
 }
-function closeEditModal() { document.getElementById('editModal').classList.remove('show'); }
+    function closeEditModal() { document.getElementById('editModal').classList.remove('show'); }
+</script>
+{% endblock %}
+
+{% block help_tour %}
+<script>
+const HELP_TOUR_STEPS = [
+  {
+    selector: ".table-container table",
+    title: "Cashiers Table",
+    description: "View all registered cashiers with their details.",
+    instruction: "Check ID, full name, username, and status. Active cashiers can log in."
+  },
+  {
+    selector: '.btn-primary.btn-sm[onclick*="openEditModal"]',
+    title: "Edit Cashier",
+    description: "Modify cashier information and status.",
+    instruction: "Click Edit to open the modal. You can change name, username, status, and password."
+  },
+  {
+    selector: 'form[onsubmit*="Delete this cashier"] .btn-danger',
+    title: "Delete Cashier",
+    description: "Remove a cashier account permanently.",
+    instruction: "Click Delete and confirm to remove the cashier."
+  }
+];
+window.HELP_TOUR_STEPS = HELP_TOUR_STEPS;
+window.HELP_TOUR_STORAGE_KEY = "helptour_manage_staff";
 </script>
 {% endblock %}

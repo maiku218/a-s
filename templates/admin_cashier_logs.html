@@ -57,3 +57,18 @@
     {% endif %}
 </div>
 {% endblock %}
+
+{% block help_tour %}
+<script>
+const HELP_TOUR_STEPS = [
+  {
+    selector: ".table-container table",
+    title: "Cashier Activity Log",
+    description: "Complete history of cashier login and logout times with IP tracking.",
+    instruction: "The table shows cashier names, login times, logout times, IP addresses, duration, and status."
+  }
+];
+window.HELP_TOUR_STEPS = HELP_TOUR_STEPS;
+window.HELP_TOUR_STORAGE_KEY = "helptour_cashier_logs";
+</script>
+{% endblock %}

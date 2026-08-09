@@ -1,0 +1,70 @@
+{% extends 'admin_dashboard.html' %}
+{% block page_title %}Alert History{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="page-header">
+        <a href="{{ url_for('admin_dashboard') }}" class="back-link">← Back to Dashboard</a>
+        <h1 class="page-title">Alert History</h1>
+        <p class="page-subtitle">History of all alert actions (acknowledged, dismissed, resolved).</p>
+    </div>
+
+    {% if logs %}
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Product</th>
+                    <th>Alert Type</th>
+                    <th>Action</th>
+                    <th>User</th>
+                    <th>Details</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for log in logs %}
+            <tr>
+                <td>{{ log[11].strftime('%Y-%m-%d %H:%M') if log[11] else '-' }}</td>
+                <td><strong>{{ log[4] }}</strong></td>
+                <td>
+                    {% if log[1] == 'out_of_stock' %}<span class="badge badge-danger">Out of Stock</span>
+                    {% elif log[1] == 'low_stock' %}<span class="badge badge-warning">Low Stock</span>
+                    {% elif log[1] == 'expired' %}<span class="badge badge-danger">Expired</span>
+                    {% elif log[1] == 'expiring_critical' %}<span class="badge badge-danger">Critical Expiring</span>
+                    {% elif log[1] == 'expiring_warning' %}<span class="badge badge-warning">Warning Expiring</span>
+                    {% else %}<span class="badge badge-info">{{ log[1] }}</span>{% endif %}
+                </td>
+                <td>
+                    {% if log[6] and not log[8] %}<span class="badge badge-success">Acknowledged</span>
+                    {% elif log[8] and not log[6] %}<span class="badge badge-danger">Dismissed</span>
+                    {% elif log[6] and log[8] %}<span class="badge badge-info">Ack then Dismissed</span>
+                    {% else %}<span class="badge badge-secondary">Unknown</span>{% endif %}
+                </td>
+                <td>User #{{ log[6] or log[8] or '-' }}</td>
+                <td>{{ log[10] or log[5] or '-' }}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p style="color: var(--text-secondary); margin-top: 20px;">No alert history found.</p>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block help_tour %}
+<script>
+const HELP_TOUR_STEPS = [
+  {
+    selector: ".table-container table",
+    title: "Alert History",
+    description: "View all alert actions taken in the system.",
+    instruction: "Check date, product, alert type, action taken, user, and details/reason."
+  }
+];
+window.HELP_TOUR_STEPS = HELP_TOUR_STEPS;
+window.HELP_TOUR_STORAGE_KEY = "helptour_alert_history";
+</script>
+{% endblock %}

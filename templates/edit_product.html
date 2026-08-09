@@ -13,6 +13,7 @@
 
     {% if product %}
     <form action="{{ url_for('edit_product', id=product[0]) }}" method="POST">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div style="background: #fff7ed; border: 2px dashed var(--accent); border-radius: var(--radius-lg); padding: 24px; margin-bottom: 24px; text-align: center;">
             <label style="font-weight: 700; color: var(--text); margin-bottom: 12px; display: block; font-size: 16px;">
                 <span style="background: var(--accent); color: white; padding: 2px 10px; border-radius: 4px; margin-right: 8px; font-size: 14px;">1</span>
@@ -48,7 +49,11 @@
             </div>
             <div class="form-group">
                 <label class="form-label">Expiration Date</label>
-                <input type="date" name="expiration_date" value="{{ product[7] }}">
+                <input type="date" name="expiration_date" id="expirationDateInput" value="{{ product[7] or '' }}">
+                <label style="display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 13px; color: var(--text-secondary); cursor: pointer;">
+                    <input type="checkbox" id="noExpirationCheckbox" onchange="toggleExpiration(this)" {% if not product[7] %}checked{% endif %}>
+                    No expiration date
+                </label>
             </div>
         </div>
 
@@ -68,8 +73,80 @@
 {% with messages = get_flashed_messages(with_categories=true) %}
   {% if messages %}
     {% for category, message in messages %}
-      <script>Swal.fire({ icon: '{{ "success" if category == "success" else "error" }}', title: '{{ message }}', showConfirmButton: false, timer: 2500, toast: true, position: 'top-end' });</script>
+      <script>Swal.fire({ icon: '{{ "success" if category == "success" else "error" }}', title: {{ message | tojson }}, showConfirmButton: false, timer: 2500, toast: true, position: 'top-end' });</script>
     {% endfor %}
   {% endif %}
 {% endwith %}
+
+<script>
+function toggleExpiration(checkbox) {
+    const dateInput = document.getElementById('expirationDateInput');
+    if (checkbox.checked) {
+        dateInput.value = '';
+        dateInput.disabled = true;
+    } else {
+        dateInput.disabled = false;
+    }
+}
+window.onload = function() {
+    const checkbox = document.getElementById('noExpirationCheckbox');
+    if (checkbox) toggleExpiration(checkbox);
+};
+</script>
+
+{% block help_tour %}
+<script>
+const HELP_TOUR_STEPS = [
+  {
+    selector: "#barcodeInput",
+    title: "Barcode",
+    description: "Product barcode identifier.",
+    instruction: "Scan or enter the product barcode."
+  },
+  {
+    selector: "#productName",
+    title: "Product Name",
+    description: "Update the product name.",
+    instruction: "Edit the product name as needed."
+  },
+  {
+    selector: "#categorySelect",
+    title: "Category",
+    description: "Product type classification.",
+    instruction: "Select Medical or Non-Medical."
+  },
+  {
+    selector: 'input[name="price"]',
+    title: "Price",
+    description: "Product selling price.",
+    instruction: "Update the price in Philippine Pesos."
+  },
+  {
+    selector: "#stockInput",
+    title: "Stock",
+    description: "Current stock quantity.",
+    instruction: "Update the available stock count."
+  },
+  {
+    selector: 'input[name="expiration_date"]',
+    title: "Expiration Date",
+    description: "Product expiration date.",
+    instruction: "Update the expiration date or check 'No expiration date' if applicable."
+  },
+  {
+    selector: "#noExpirationCheckbox",
+    title: "No Expiration Date",
+    description: "Mark product as having no expiration.",
+    instruction: "Check this box to clear the expiration date."
+  },
+  {
+    selector: 'button[type="submit"]',
+    title: "Save Changes",
+    description: "Update the product in inventory.",
+    instruction: "Click to save your changes."
+  }
+];
+window.HELP_TOUR_STEPS = HELP_TOUR_STEPS;
+window.HELP_TOUR_STORAGE_KEY = "helptour_edit_product";
+</script>
 {% endblock %}

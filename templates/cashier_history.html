@@ -3,8 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>PharmaCon POS - Sales History</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="/static/css/help-tour.css">
     <style>
         :root {
             --accent: #f97316;
@@ -49,6 +51,7 @@
         td { padding: 14px 16px; border-top: 1px solid var(--border); }
         tbody tr:hover { background: rgba(0,0,0,0.01); }
         .items-box { background: var(--bg); padding: 8px; border-radius: var(--radius); margin-top: 6px; font-size: 12px; color: var(--text-secondary); line-height: 1.6; }
+        .btn-sm { padding: 6px 12px; font-size: 12px; }
     </style>
 </head>
 <body>
@@ -80,10 +83,17 @@
 
         <aside class="panel">
             <h2 class="panel-title">Transaction History</h2>
-            <div style="overflow-y: auto; max-height: calc(100vh - 140px);">
+            <form method="GET" action="{{ url_for('cashier_history') }}" style="display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap;">
+                <input type="text" name="receipt_number" placeholder="Search receipt #" value="{{ receipt_search or '' }}" style="padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 13px; flex: 1; min-width: 140px;">
+                <input type="date" name="date_from" value="{{ date_from or '' }}" style="padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 13px;">
+                <input type="date" name="date_to" value="{{ date_to or '' }}" style="padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 13px;">
+                <button type="submit" class="btn btn-primary" style="padding: 8px 16px; font-size: 13px;">Search</button>
+                <a href="{{ url_for('cashier_history') }}" class="btn btn-secondary" style="padding: 8px 16px; font-size: 13px; text-decoration: none;">Clear</a>
+            </form>
+            <div style="overflow-y: auto; max-height: calc(100vh - 240px);">
                 <table>
                     <thead>
-                        <tr><th>Receipt #</th><th>Total</th><th>Date</th></tr>
+                        <tr><th>Receipt #</th><th>Total</th><th>Date</th><th>Actions</th></tr>
                     </thead>
                     <tbody>
                         {% for sale in sales %}
@@ -91,9 +101,14 @@
                             <td style="font-weight: 600;">{{ sale.receipt_number }}</td>
                             <td>₱{{ "%.2f"|format(sale.total_amount) }}</td>
                             <td>{{ sale.sale_date }}</td>
+                            <td>
+                                <button class="btn btn-primary btn-sm" onclick="reprintReceipt({{ sale.id }})" style="margin-right: 4px;">Reprint</button>
+                                <button class="btn btn-danger btn-sm" onclick="voidSale({{ sale.id }})" style="margin-right: 4px;">Void</button>
+                                <button class="btn btn-secondary btn-sm" onclick="refundSale({{ sale.id }})">Refund</button>
+                            </td>
                         </tr>
                         <tr>
-                            <td colspan="3">
+                            <td colspan="4">
                                 <div class="items-box">
                                     {% for item in sale['items'] %}
                                         {{ item[2] }} (x{{ item[0] }}) ₱{{ "%.2f"|format(item[1]) }}<br>
@@ -102,7 +117,7 @@
                             </td>
                         </tr>
                         {% else %}
-                        <tr><td colspan="3" style="text-align: center; color: var(--text-muted);">No transactions found.</td></tr>
+                        <tr><td colspan="4" style="text-align: center; color: var(--text-muted);">No transactions found.</td></tr>
                         {% endfor %}
                     </tbody>
                 </table>
@@ -131,6 +146,74 @@
             }
         }
     });
-    </script>
+</script>
+
+<script>
+    function reprintReceipt(saleId) {
+        window.open('/reprint_receipt/' + saleId, '_blank');
+    }
+
+    function voidSale(saleId) {
+        const reason = prompt('Enter void reason:');
+        if (reason === null) return;
+        if (!reason.trim()) { alert('Reason is required'); return; }
+        fetch('/api/void_sale', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').getAttribute('content') },
+            body: JSON.stringify({ sale_id: saleId, reason: reason.trim() })
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                alert(data.message);
+                location.reload();
+            } else {
+                alert(data.message);
+            }
+        });
+    }
+
+    function refundSale(saleId) {
+        const reason = prompt('Enter refund reason:');
+        if (reason === null) return;
+        if (!reason.trim()) { alert('Reason is required'); return; }
+        fetch('/api/refund_sale', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').getAttribute('content') },
+            body: JSON.stringify({ sale_id: saleId, reason: reason.trim() })
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                alert(data.message);
+                location.reload();
+            } else {
+                alert(data.message);
+            }
+        });
+    }
+</script>
+
+<script>
+const HELP_TOUR_STEPS = [
+  {
+    selector: "#salesChart",
+    title: "Sales Chart",
+    description: "Visualize your daily sales performance.",
+    instruction: "The chart shows daily sales totals and transaction counts."
+  },
+  {
+    selector: ".panel:last-child table",
+    title: "Transaction History",
+    description: "View all completed transactions for today.",
+    instruction: "Each transaction shows receipt number, total, date, and item details."
+  }
+];
+window.HELP_TOUR_STEPS = HELP_TOUR_STEPS;
+window.HELP_TOUR_STORAGE_KEY = "helptour_cashier_history";
+</script>
+
+<script src="/static/js/help-tour.js"></script>
+
 </body>
 </html>

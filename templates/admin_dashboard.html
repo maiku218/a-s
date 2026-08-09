@@ -3,7 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>PharmaCon | Admin Dashboard</title>
+    <link rel="stylesheet" href="/static/css/help-tour.css">
     <style>
         :root {
             --primary: #2563eb;
@@ -212,21 +214,14 @@
 
 <!-- Notification Bell -->
 <div class="notification-container" style="position: fixed; top: 16px; right: 16px; z-index: 1000;">
-    <button class="notification-btn" onclick="toggleNotifications()" title="Notifications">
+    <button class="notification-btn" onclick="toggleNotifications()" id="tour-notification-bell" title="Notifications">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
-        {% set ls = low_stock_count | default(0) %}
-        {% set ex = expiring_count | default(0) %}
-        {% if ls + ex > 0 %}
-        <span class="notification-badge">{{ ls + ex }}</span>
-        {% endif %}
+        <span class="notification-badge" id="notificationBadge" style="display: none;">0</span>
     </button>
     <div class="notification-dropdown" id="notificationDropdown">
         <div class="notification-header">
-            <span>Notifications</span>
-            <div style="display: flex; gap: 6px;">
-                <a href="/out_of_stock" style="font-size: 11px; padding: 2px 8px; background: #fee2e2; color: #991b1b; border-radius: 4px; text-decoration: none; font-weight: 600;">Low Stock</a>
-                <a href="/expiring_medical" style="font-size: 11px; padding: 2px 8px; background: #fef3c7; color: #92400e; border-radius: 4px; text-decoration: none; font-weight: 600;">Expiring</a>
-            </div>
+            <span>Notifications (<span id="unreadCount">0</span> unread)</span>
+            <button onclick="markAllAsRead()" style="font-size: 11px; padding: 2px 8px; background: var(--accent); color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 600;">Mark all read</button>
         </div>
         <div id="notificationList">
             <div class="no-notifications">Loading...</div>
@@ -236,65 +231,68 @@
 
 <div class="sidebar">
     <div class="sidebar-header">
-        <a href="{{ url_for('admin_dashboard') }}" class="brand" style="text-decoration: none; color: inherit;">PHARMA<span>CON</span></a>
+        <a href="{{ url_for('admin_dashboard') }}" class="brand" id="tour-brand" style="text-decoration: none; color: inherit;">PHARMA<span>CON</span></a>
     </div>
     <nav class="sidebar-nav">
         <div class="nav-section">Dashboard</div>
-        <div class="nav-item {% if active_main == 'dashboard' or not active_main or active_main == 'admin' %}active{% endif %}" onclick="toggleMenu('dash-menu')">
+        <div class="nav-item {% if active_main == 'dashboard' or not active_main or active_main == 'admin' %}active{% endif %}" onclick="toggleMenu('dash-menu')" id="tour-nav-dashboard">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
             Dashboard
         </div>
         <div id="dash-menu" style="display: {% if active_main == 'dashboard' or not active_main or active_main == 'admin' %}block{% else %}none{% endif %}; padding-left: 36px;">
-            <div class="nav-item {% if active_sub == 'monitoring' or active_main == 'admin' %}active{% endif %}" style="padding: 8px 0;"><a href="{{ url_for('admin_dashboard') }}" style="color: inherit; text-decoration: none;">Activity Monitor</a></div>
-            <div class="nav-item {% if active_sub == 'cashier_logs' %}active{% endif %}" style="padding: 8px 0;"><a href="{{ url_for('cashier_logs') }}" style="color: inherit; text-decoration: none;">Cashier Logs</a></div>
+            <div class="nav-item {% if active_sub == 'monitoring' or active_main == 'admin' %}active{% endif %}" id="tour-nav-activity-monitor" style="padding: 8px 0;"><a href="{{ url_for('admin_dashboard') }}" style="color: inherit; text-decoration: none;">Activity Monitor</a></div>
+            <div class="nav-item {% if active_sub == 'cashier_logs' %}active{% endif %}" id="tour-nav-cashier-logs" style="padding: 8px 0;"><a href="{{ url_for('cashier_logs') }}" style="color: inherit; text-decoration: none;">Cashier Logs</a></div>
         </div>
 
         <div class="nav-section">Inventory</div>
-        <div class="nav-item {% if active_main == 'inventory' %}active{% endif %}" onclick="toggleMenu('inventory-menu')">
+        <div class="nav-item {% if active_main == 'inventory' %}active{% endif %}" onclick="toggleMenu('inventory-menu')" id="tour-nav-inventory">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
             Inventory
         </div>
         <div id="inventory-menu" style="display: {% if active_main == 'inventory' %}block{% else %}none{% endif %}; padding-left: 36px;">
-            <div class="nav-item {% if active_sub == 'all_products' %}active{% endif %}" style="padding: 8px 0;"><a href="{{ url_for('all_products') }}" style="color: inherit; text-decoration: none;">All Products</a></div>
-            <div class="nav-item {% if active_sub == 'add_product' %}active{% endif %}" style="padding: 8px 0;"><a href="{{ url_for('add_product') }}" style="color: inherit; text-decoration: none;">Add Product</a></div>
+            <div class="nav-item {% if active_sub == 'all_products' %}active{% endif %}" id="tour-nav-all-products" style="padding: 8px 0;"><a href="{{ url_for('all_products') }}" style="color: inherit; text-decoration: none;">All Products</a></div>
+            <div class="nav-item {% if active_sub == 'add_product' %}active{% endif %}" id="tour-nav-add-product" style="padding: 8px 0;"><a href="{{ url_for('add_product') }}" style="color: inherit; text-decoration: none;">Add Product</a></div>
         </div>
 
         <div class="nav-section">Sales</div>
-        <div class="nav-item {% if active_main == 'sales' %}active{% endif %}" onclick="toggleMenu('sales-menu')">
+        <div class="nav-item {% if active_main == 'sales' %}active{% endif %}" onclick="toggleMenu('sales-menu')" id="tour-nav-sales">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M18.7 8l-5.1 5.2-2.8-2.7L7 14.3"/></svg>
             Sales Reports
         </div>
         <div id="sales-menu" style="display: {% if active_main == 'sales' %}block{% else %}none{% endif %}; padding-left: 36px;">
-            <div class="nav-item {% if active_sub == 'sales_dashboard' %}active{% endif %}" style="padding: 8px 0;"><a href="{{ url_for('sales_dashboard') }}" style="color: inherit; text-decoration: none;">Sales Dashboard</a></div>
-            <div class="nav-item {% if active_sub == 'medical_sales' %}active{% endif %}" style="padding: 8px 0;"><a href="{{ url_for('medical_sales') }}" style="color: inherit; text-decoration: none;">Medical Sales</a></div>
-            <div class="nav-item {% if active_sub == 'non_medical_sales' %}active{% endif %}" style="padding: 8px 0;"><a href="{{ url_for('non_medical_sales') }}" style="color: inherit; text-decoration: none;">Non-Medical Sales</a></div>
+            <div class="nav-item {% if active_sub == 'sales_dashboard' %}active{% endif %}" id="tour-nav-sales-dashboard" style="padding: 8px 0;"><a href="{{ url_for('sales_dashboard') }}" style="color: inherit; text-decoration: none;">Sales Dashboard</a></div>
+            <div class="nav-item {% if active_sub == 'medical_sales' %}active{% endif %}" id="tour-nav-medical-sales" style="padding: 8px 0;"><a href="{{ url_for('medical_sales') }}" style="color: inherit; text-decoration: none;">Medical Sales</a></div>
+            <div class="nav-item {% if active_sub == 'non_medical_sales' %}active{% endif %}" id="tour-nav-non-medical-sales" style="padding: 8px 0;"><a href="{{ url_for('non_medical_sales') }}" style="color: inherit; text-decoration: none;">Non-Medical Sales</a></div>
         </div>
 
         <div class="nav-section">Alerts</div>
-        <div class="nav-item {% if active_main == 'alerts' %}active{% endif %}" onclick="toggleMenu('alerts-menu')">
+        <div class="nav-item {% if active_main == 'alerts' %}active{% endif %}" onclick="toggleMenu('alerts-menu')" id="tour-nav-alerts">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
             Alerts
         </div>
         <div id="alerts-menu" style="display: {% if active_main == 'alerts' %}block{% else %}none{% endif %}; padding-left: 36px;">
-            <div class="nav-item {% if active_sub == 'out_of_stock' %}active{% endif %}" style="padding: 8px 0;"><a href="{{ url_for('out_of_stock') }}" style="color: inherit; text-decoration: none;">Low Stock Alerts</a></div>
-            <div class="nav-item {% if active_sub == 'expiring_medical' %}active{% endif %}" style="padding: 8px 0;"><a href="{{ url_for('expiring_medical') }}" style="color: inherit; text-decoration: none;">Expiring Alerts</a></div>
+            <div class="nav-item {% if active_sub == 'out_of_stock' %}active{% endif %}" id="tour-nav-out-of-stock" style="padding: 8px 0;"><a href="{{ url_for('out_of_stock') }}" style="color: inherit; text-decoration: none;">Out of Stock</a></div>
+            <div class="nav-item {% if active_sub == 'low_stock' %}active{% endif %}" id="tour-nav-low-stock" style="padding: 8px 0;"><a href="{{ url_for('low_stock') }}" style="color: inherit; text-decoration: none;">Low Stock</a></div>
+            <div class="nav-item {% if active_sub == 'expired_products' %}active{% endif %}" id="tour-nav-expired" style="padding: 8px 0;"><a href="{{ url_for('expired_products') }}" style="color: inherit; text-decoration: none;">Expired Products</a></div>
+            <div class="nav-item {% if active_sub == 'expiring_medical' %}active{% endif %}" id="tour-nav-expiring" style="padding: 8px 0;"><a href="{{ url_for('expiring_medical') }}" style="color: inherit; text-decoration: none;">Expiring Products</a></div>
+            <div class="nav-item {% if active_sub == 'alert_history' %}active{% endif %}" id="tour-nav-alert-history" style="padding: 8px 0;"><a href="{{ url_for('alert_history') }}" style="color: inherit; text-decoration: none;">Alert History</a></div>
         </div>
 
         <div class="nav-section">Management</div>
-        <div class="nav-item {% if active_main == 'management' %}active{% endif %}" onclick="toggleMenu('admin-menu')">
+        <div class="nav-item {% if active_main == 'management' %}active{% endif %}" onclick="toggleMenu('admin-menu')" id="tour-nav-management">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
             Management
         </div>
         <div id="admin-menu" style="display: {% if active_main == 'management' %}block{% else %}none{% endif %}; padding-left: 36px;">
-            <div class="nav-item {% if active_sub == 'register_cashier' %}active{% endif %}" style="padding: 8px 0;"><a href="{{ url_for('register_cashier') }}" style="color: inherit; text-decoration: none;">Register Cashier</a></div>
-            <div class="nav-item {% if active_sub == 'delete_cashier' %}active{% endif %}" style="padding: 8px 0;"><a href="{{ url_for('delete_cashier') }}" style="color: inherit; text-decoration: none;">Manage Staff</a></div>
-            <div class="nav-item {% if active_sub == 'change_admin_password' %}active{% endif %}" style="padding: 8px 0;"><a href="{{ url_for('admin_change_password') }}" style="color: inherit; text-decoration: none;">Security Settings</a></div>
-            <div class="nav-item {% if active_sub == 'receipt_customization' %}active{% endif %}" style="padding: 8px 0;"><a href="/receipt_customization" style="color: inherit; text-decoration: none;">Receipt Customization</a></div>
-            <div class="nav-item {% if active_sub == 'backup_restore' %}active{% endif %}" style="padding: 8px 0;"><a href="/backup_restore" style="color: inherit; text-decoration: none;">Database Backup / Restore</a></div>
+            <div class="nav-item {% if active_sub == 'register_cashier' %}active{% endif %}" id="tour-nav-register-cashier" style="padding: 8px 0;"><a href="{{ url_for('register_cashier') }}" style="color: inherit; text-decoration: none;">Register Cashier</a></div>
+            <div class="nav-item {% if active_sub == 'delete_cashier' %}active{% endif %}" id="tour-nav-manage-staff" style="padding: 8px 0;"><a href="{{ url_for('delete_cashier') }}" style="color: inherit; text-decoration: none;">Manage Staff</a></div>
+            <div class="nav-item {% if active_sub == 'change_admin_password' %}active{% endif %}" id="tour-nav-security" style="padding: 8px 0;"><a href="{{ url_for('admin_change_password') }}" style="color: inherit; text-decoration: none;">Security Settings</a></div>
+            <div class="nav-item {% if active_sub == 'receipt_customization' %}active{% endif %}" id="tour-nav-receipt" style="padding: 8px 0;"><a href="/receipt_customization" style="color: inherit; text-decoration: none;">Receipt Customization</a></div>
+            <div class="nav-item {% if active_sub == 'backup_restore' %}active{% endif %}" id="tour-nav-backup" style="padding: 8px 0;"><a href="/backup_restore" style="color: inherit; text-decoration: none;">Database Backup / Restore</a></div>
         </div>
     </nav>
     <div class="sidebar-footer">
-        <a href="/admin_logout" class="logout" style="display: flex; align-items: center; gap: 12px; color: inherit; text-decoration: none;">
+            <a href="/admin_logout" class="logout" id="tour-logout" style="display: flex; align-items: center; gap: 12px; color: inherit; text-decoration: none;">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
             Logout
         </a>
@@ -309,7 +307,7 @@
             <button class="hamburger-btn" onclick="toggleMobileSidebar()" title="Menu">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
             </button>
-            <div class="topbar-title">{% block page_title %}Dashboard{% endblock %}</div>
+            <div class="topbar-title" id="tour-topbar-title">{% block page_title %}Dashboard{% endblock %}</div>
         </div>
         <div class="topbar-actions">
             <div style="display: flex; align-items: center; gap: 10px; padding: 6px 14px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: var(--radius);">
@@ -325,23 +323,35 @@
             <h1 class="page-title" style="margin-bottom: 8px;">Welcome back, Admin</h1>
             <p class="page-subtitle">Manage your pharmacy operations effectively. Select a category from the sidebar.</p>
 
-            <div class="stats-grid" style="margin-top: 24px;">
+            <div class="stats-grid" id="tour-stats-grid" style="margin-top: 24px;">
                 <div class="stat-card">
                     <div class="stat-label">Active Cashiers</div>
                     <div class="stat-value">{{ active_cashiers|length if active_cashiers else 0 }}</div>
                 </div>
                 <div class="stat-card">
-                    <div class="stat-label">Low Stock Alerts</div>
-                    <div class="stat-value" style="color: var(--danger);">{{ low_stock_count }}</div>
+                    <div class="stat-label">Out of Stock</div>
+                    <div class="stat-value" style="color: var(--danger);">{{ out_of_stock_count | default(0) }}</div>
                 </div>
                 <div class="stat-card">
-                    <div class="stat-label">Expiring Items</div>
-                    <div class="stat-value" style="color: var(--warning);">{{ expiring_count }}</div>
+                    <div class="stat-label">Low Stock</div>
+                    <div class="stat-value" style="color: var(--warning);">{{ low_stock_count | default(0) }}</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Expired</div>
+                    <div class="stat-value" style="color: var(--danger);">{{ expired_count | default(0) }}</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Expiring Critical</div>
+                    <div class="stat-value" style="color: var(--danger);">{{ expiring_critical_count | default(0) }}</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Expiring Warning</div>
+                    <div class="stat-value" style="color: var(--warning);">{{ expiring_warning_count | default(0) }}</div>
                 </div>
             </div>
 
             <div style="margin-top: 32px;">
-                <h3 style="font-size: 16px; font-weight: 700; margin-bottom: 16px;">Cashier Status</h3>
+                <h3 style="font-size: 16px; font-weight: 700; margin-bottom: 16px;" id="tour-cashier-status">Cashier Status</h3>
                 {% if active_cashiers %}
                     {% for cashier in active_cashiers %}
                     <div class="cashier-status">
@@ -418,29 +428,165 @@
             .then(data => {
                 const list = document.getElementById('notificationList');
                 let html = '';
+                let totalUnread = 0;
 
-                if (data.low_stock.length > 0) {
-                    html += '<div class="notification-section"><div class="notification-section-title">Low Stock</div>';
-                    data.low_stock.forEach(item => {
-                        html += `<div class="notification-item low-stock" onclick="window.location.href='/out_of_stock'"><div class="notification-item-title">${item.name}</div><div class="notification-item-detail">Stock: ${item.stock} | Barcode: ${item.barcode}</div></div>`;
+                if (data.out_of_stock && data.out_of_stock.length > 0) {
+                    totalUnread += data.out_of_stock.length;
+                    html += '<div class="notification-section"><div class="notification-section-title">Out of Stock (' + data.out_of_stock.length + ')</div>';
+                    data.out_of_stock.forEach(item => {
+                        html += `<div class="notification-item low-stock" style="display:flex;justify-content:space-between;align-items:center;" data-id="${item.id}" data-type="out_of_stock">
+                            <div onclick="window.location.href='/out_of_stock'">
+                                <div class="notification-item-title">${item.name}</div>
+                                <div class="notification-item-detail">Stock: ${item.stock} | Barcode: ${item.barcode}</div>
+                            </div>
+                            <div style="display:flex;gap:4px;">
+                                <button class="btn btn-sm btn-primary" onclick="acknowledgeNotification('out_of_stock', ${item.id})" title="Acknowledge">Ack</button>
+                                <button class="btn btn-sm btn-danger" onclick="dismissNotification('out_of_stock', ${item.id})" title="Dismiss">Dismiss</button>
+                            </div>
+                        </div>`;
                     });
                     html += '</div>';
                 }
 
-                if (data.expiring.length > 0) {
-                    html += '<div class="notification-section"><div class="notification-section-title">Expiring Soon</div>';
-                    data.expiring.forEach(item => {
-                        html += `<div class="notification-item expiring" onclick="window.location.href='/expiring_medical'"><div class="notification-item-title">${item.name}</div><div class="notification-item-detail">Expires: ${item.expiry} | Barcode: ${item.barcode}</div></div>`;
+                if (data.low_stock && data.low_stock.length > 0) {
+                    totalUnread += data.low_stock.length;
+                    html += '<div class="notification-section"><div class="notification-section-title">Low Stock (' + data.low_stock.length + ')</div>';
+                    data.low_stock.forEach(item => {
+                        html += `<div class="notification-item low-stock" style="display:flex;justify-content:space-between;align-items:center;" data-id="${item.id}" data-type="low_stock">
+                            <div onclick="window.location.href='/low_stock'">
+                                <div class="notification-item-title">${item.name}</div>
+                                <div class="notification-item-detail">Stock: ${item.stock} | Barcode: ${item.barcode}</div>
+                            </div>
+                            <div style="display:flex;gap:4px;">
+                                <button class="btn btn-sm btn-primary" onclick="acknowledgeNotification('low_stock', ${item.id})" title="Acknowledge">Ack</button>
+                                <button class="btn btn-sm btn-danger" onclick="dismissNotification('low_stock', ${item.id})" title="Dismiss">Dismiss</button>
+                            </div>
+                        </div>`;
+                    });
+                    html += '</div>';
+                }
+
+                if (data.expired && data.expired.length > 0) {
+                    totalUnread += data.expired.length;
+                    html += '<div class="notification-section"><div class="notification-section-title">Expired (' + data.expired.length + ')</div>';
+                    data.expired.forEach(item => {
+                        html += `<div class="notification-item expiring" style="display:flex;justify-content:space-between;align-items:center;" data-id="${item.id}" data-type="expired">
+                            <div onclick="window.location.href='/expired_products'">
+                                <div class="notification-item-title">${item.name}</div>
+                                <div class="notification-item-detail">Expired: ${item.expiry} | Barcode: ${item.barcode}</div>
+                            </div>
+                            <div style="display:flex;gap:4px;">
+                                <button class="btn btn-sm btn-primary" onclick="acknowledgeNotification('expired', ${item.id})" title="Acknowledge">Ack</button>
+                                <button class="btn btn-sm btn-danger" onclick="dismissNotification('expired', ${item.id})" title="Dismiss">Dismiss</button>
+                            </div>
+                        </div>`;
+                    });
+                    html += '</div>';
+                }
+
+                if (data.expiring_critical && data.expiring_critical.length > 0) {
+                    totalUnread += data.expiring_critical.length;
+                    html += '<div class="notification-section"><div class="notification-section-title">Critical Expiring (' + data.expiring_critical.length + ')</div>';
+                    data.expiring_critical.forEach(item => {
+                        html += `<div class="notification-item expiring" style="display:flex;justify-content:space-between;align-items:center;" data-id="${item.id}" data-type="expiring_critical">
+                            <div onclick="window.location.href='/expiring_medical?level=critical'">
+                                <div class="notification-item-title">${item.name}</div>
+                                <div class="notification-item-detail">Expires: ${item.expiry} (${item.days_left} days) | Barcode: ${item.barcode}</div>
+                            </div>
+                            <div style="display:flex;gap:4px;">
+                                <button class="btn btn-sm btn-primary" onclick="acknowledgeNotification('expiring_critical', ${item.id})" title="Acknowledge">Ack</button>
+                                <button class="btn btn-sm btn-danger" onclick="dismissNotification('expiring_critical', ${item.id})" title="Dismiss">Dismiss</button>
+                            </div>
+                        </div>`;
+                    });
+                    html += '</div>';
+                }
+
+                if (data.expiring_warning && data.expiring_warning.length > 0) {
+                    totalUnread += data.expiring_warning.length;
+                    html += '<div class="notification-section"><div class="notification-section-title">Expiring Warning (' + data.expiring_warning.length + ')</div>';
+                    data.expiring_warning.forEach(item => {
+                        html += `<div class="notification-item expiring" style="display:flex;justify-content:space-between;align-items:center;" data-id="${item.id}" data-type="expiring_warning">
+                            <div onclick="window.location.href='/expiring_medical?level=warning'">
+                                <div class="notification-item-title">${item.name}</div>
+                                <div class="notification-item-detail">Expires: ${item.expiry} (${item.days_left} days) | Barcode: ${item.barcode}</div>
+                            </div>
+                            <div style="display:flex;gap:4px;">
+                                <button class="btn btn-sm btn-primary" onclick="acknowledgeNotification('expiring_warning', ${item.id})" title="Acknowledge">Ack</button>
+                                <button class="btn btn-sm btn-danger" onclick="dismissNotification('expiring_warning', ${item.id})" title="Dismiss">Dismiss</button>
+                            </div>
+                        </div>`;
                     });
                     html += '</div>';
                 }
 
                 if (!html) {
-                    html = '<div class="no-notifications">No notifications</div>';
+                    html = '<div class="no-notifications">All caught up! No unread alerts.</div>';
                 }
 
                 list.innerHTML = html;
+                const badge = document.querySelector('.notification-badge');
+                if (badge) {
+                    badge.textContent = totalUnread;
+                    badge.style.display = totalUnread > 0 ? 'flex' : 'none';
+                }
             });
+    }
+
+    function acknowledgeNotification(type, productId) {
+        fetch('/api/alert/acknowledge', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').getAttribute('content') },
+            body: JSON.stringify({ alert_type: type, product_id: productId })
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                location.reload();
+            } else {
+                alert(data.message);
+            }
+        });
+    }
+
+    function dismissNotification(type, productId) {
+        const reason = prompt('Enter reason for dismissing this alert:');
+        if (reason === null) return;
+        if (!reason.trim()) { alert('Reason is required'); return; }
+        fetch('/api/alert/dismiss', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').getAttribute('content') },
+            body: JSON.stringify({ alert_type: type, product_id: productId, reason: reason.trim() })
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                location.reload();
+            } else {
+                alert(data.message);
+            }
+        });
+    }
+
+    function markAllAsRead() {
+        const items = document.querySelectorAll('#notificationList .notification-item');
+        const promises = [];
+        items.forEach(item => {
+            const type = item.getAttribute('data-type');
+            const id = item.getAttribute('data-id');
+            if (type && id) {
+                promises.push(
+                    fetch('/api/alert/acknowledge', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').getAttribute('content') },
+                        body: JSON.stringify({ alert_type: type, product_id: parseInt(id) })
+                    }).then(res => res.json())
+                );
+            }
+        });
+        Promise.all(promises).then(() => {
+            location.reload();
+        });
     }
 
     document.addEventListener('click', function(e) {
@@ -450,6 +596,80 @@
             if (dropdown) dropdown.classList.remove('show');
         }
     });
+</script>
+
+{% block help_tour %}
+<script>
+const HELP_TOUR_STEPS = [
+  {
+    selector: "#tour-topbar-title",
+    title: "Dashboard",
+    description: "This is your Admin Dashboard - the main hub for managing pharmacy operations.",
+    instruction: "View key metrics and access all features from here."
+  },
+  {
+    selector: "#tour-notification-bell",
+    title: "Notification Bell",
+    description: "Get real-time alerts for low stock items and products nearing expiration.",
+    instruction: "Click the bell icon to open the notifications dropdown. A red badge shows the total count."
+  },
+  {
+    selector: "#tour-stats-grid",
+    title: "Dashboard Statistics",
+    description: "Key pharmacy metrics displayed at a glance.",
+    instruction: "View Active Cashiers, Low Stock Alerts, and Expiring Items counts."
+  },
+  {
+    selector: "#tour-cashier-status",
+    title: "Cashier Status Monitor",
+    description: "See which cashiers are currently logged in and working.",
+    instruction: "Green dots indicate online cashiers with their login times displayed."
+  },
+  {
+    selector: "#tour-brand",
+    title: "Brand Logo",
+    description: "Click the brand logo to quickly return to the Dashboard.",
+    instruction: "The logo is always accessible from any admin page."
+  }
+];
+window.HELP_TOUR_STEPS = HELP_TOUR_STEPS;
+window.HELP_TOUR_STORAGE_KEY = "helptour_admin_dashboard";
+</script>
+{% endblock %}
+
+<script src="/static/js/help-tour.js"></script>
+<script>
+(function() {
+    const token = document.querySelector('meta[name="csrf-token"]');
+    if (token) {
+        const csrfToken = token.getAttribute('content');
+        const originalFetch = window.fetch;
+        window.fetch = function(url, options) {
+            options = options || {};
+            options.headers = options.headers || {};
+            if (!options.headers['X-CSRFToken'] && !options.headers['x-csrftoken']) {
+                options.headers['X-CSRFToken'] = csrfToken;
+            }
+            return originalFetch(url, options);
+        };
+        const originalOpen = XMLHttpRequest.prototype.open;
+        XMLHttpRequest.prototype.open = function(method, url) {
+            this._method = method;
+            return originalOpen.apply(this, arguments);
+        };
+        const originalSetRequestHeader = XMLHttpRequest.prototype.setRequestHeader;
+        XMLHttpRequest.prototype.setRequestHeader = function(header, value) {
+            if (this._method && (this._method === 'POST' || this._method === 'PUT' || this._method === 'DELETE' || this._method === 'PATCH')) {
+                if (header.toLowerCase() === 'content-type') {
+                    originalSetRequestHeader.apply(this, arguments);
+                    originalSetRequestHeader.call(this, 'X-CSRFToken', csrfToken);
+                    return;
+                }
+            }
+            return originalSetRequestHeader.apply(this, arguments);
+        };
+    }
+})();
 </script>
 
 </body>

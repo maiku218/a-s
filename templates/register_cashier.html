@@ -12,6 +12,7 @@
     </div>
 
     <form method="POST">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="form-group" style="margin-bottom: 20px;">
             <label class="form-label">Full Name</label>
             <input type="text" name="full_name" required placeholder="Enter full name">
@@ -39,8 +40,53 @@
 {% with messages = get_flashed_messages(with_categories=true) %}
   {% if messages %}
     {% for category, message in messages %}
-      <script>Swal.fire({ icon: '{{ "success" if category == "success" else "error" }}', title: '{{ message }}', showConfirmButton: false, timer: 2500 });</script>
+      <script>Swal.fire({ icon: '{{ "success" if category == "success" else "error" }}', title: {{ message | tojson }}, showConfirmButton: false, timer: 2500 });</script>
     {% endfor %}
   {% endif %}
 {% endwith %}
+{% endblock %}
+
+{% block help_tour %}
+<script>
+const HELP_TOUR_STEPS = [
+  {
+    selector: 'input[name="full_name"]',
+    title: "Full Name",
+    description: "Enter the cashier's full name.",
+    instruction: "Type the complete name for proper identification in the system."
+  },
+  {
+    selector: 'input[name="username"]',
+    title: "Username",
+    description: "Create a unique username for the cashier account.",
+    instruction: "Enter a unique username used for login. Must be unique."
+  },
+  {
+    selector: 'input[name="password"]',
+    title: "Password",
+    description: "Set the initial password for the cashier account.",
+    instruction: "Enter a secure password with mixed characters."
+  },
+  {
+    selector: 'input[name="security_question"]',
+    title: "Security Question",
+    description: "Set a security question for password recovery.",
+    instruction: "A default question is provided. The cashier needs this to recover their password."
+  },
+  {
+    selector: 'input[name="security_answer"]',
+    title: "Security Answer",
+    description: "Set the answer to the security question.",
+    instruction: "Enter the answer. Make sure the cashier knows it."
+  },
+  {
+    selector: 'button[type="submit"]',
+    title: "Register Cashier",
+    description: "Create the new cashier account.",
+    instruction: "Click this button after filling all required fields."
+  }
+];
+window.HELP_TOUR_STEPS = HELP_TOUR_STEPS;
+window.HELP_TOUR_STORAGE_KEY = "helptour_register_cashier";
+</script>
 {% endblock %}

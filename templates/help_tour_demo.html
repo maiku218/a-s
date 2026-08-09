@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PharmaCon - Demo Page with Help Tour</title>
+  <link rel="stylesheet" href="/static/css/help-tour.css">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #f1f5f9; color: #0f172a; min-height: 100vh;
+    }
+    .sidebar {
+      width: 260px; background: #fff; border-right: 1px solid #e2e8f0;
+      display: flex; flex-direction: column; position: fixed; top: 0; left: 0;
+      height: 100vh; overflow-y: auto; z-index: 10;
+    }
+    .sidebar-header { padding: 24px; border-bottom: 1px solid #e2e8f0; }
+    .brand { font-weight: 800; font-size: 20px; color: #0f172a; cursor: pointer; }
+    .brand span { color: #f97316; }
+    .sidebar-nav { flex: 1; padding: 16px 0; }
+    .nav-section { padding: 8px 24px; font-size: 11px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.5px; color: #94a3b8; margin-top: 8px; }
+    .nav-item { padding: 10px 24px; cursor: pointer; transition: all 0.15s;
+      border-left: 3px solid transparent; }
+    .nav-item:hover { background: #f1f5f9; }
+    .nav-item.active { background: rgba(249, 115, 22, 0.08); color: #f97316;
+      border-left-color: #f97316; font-weight: 600; }
+    .main { margin-left: 260px; padding: 32px; min-height: 100vh; }
+    .topbar { background: #fff; border-bottom: 1px solid #e2e8f0;
+      padding: 16px 72px 16px 32px; display: flex;
+      align-items: center; justify-content: space-between; position: sticky;
+      top: 0; z-index: 5; }
+    .topbar-title { font-size: 18px; font-weight: 700; }
+    .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 20px; margin-bottom: 24px; }
+    .stat-card { background: #fff; border: 1px solid #e2e8f0;
+      border-radius: 12px; box-shadow: 0 1px 3px 0 rgba(0,0,0,0.1); padding: 20px; }
+    .stat-label { font-size: 12px; font-weight: 600; text-transform: uppercase;
+      color: #94a3b8; letter-spacing: 0.3px; }
+    .stat-value { font-size: 24px; font-weight: 800; margin-top: 8px; }
+    .card { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px;
+      box-shadow: 0 1px 3px 0 rgba(0,0,0,0.1); padding: 24px; margin-bottom: 24px; }
+    .btn { display: inline-flex; align-items: center; justify-content: center;
+      gap: 8px; padding: 14px 26px; border-radius: 8px; font-size: 15px;
+      font-weight: 700; cursor: pointer; border: 1px solid transparent;
+      transition: all 0.15s; }
+    .btn-primary { background: #f97316; color: #fff; border-color: #f97316; }
+    .btn-primary:hover { background: #ea580c; }
+    .btn-secondary { background: #64748b; color: #fff; border-color: #64748b; }
+    .btn-secondary:hover { background: #475569; }
+    .btn-sm { padding: 8px 16px; font-size: 13px; }
+    .page-title { font-size: 24px; font-weight: 800; margin-bottom: 4px; }
+    .page-subtitle { font-size: 14px; color: #64748b; }
+    .table-container { overflow-x: auto; border: 1px solid #e2e8f0; border-radius: 12px; }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    thead { background: #f8fafc; }
+    th { padding: 12px 16px; text-align: left; font-size: 12px; font-weight: 600;
+      text-transform: uppercase; color: #94a3ab; letter-spacing: 0.3px; }
+    td { padding: 14px 16px; border-top: 1px solid #e2e8f0; }
+    tbody tr:hover { background: rgba(0,0,0,0.01); }
+    .badge { display: inline-flex; align-items: center; padding: 4px 10px;
+      border-radius: 9999px; font-size: 12px; font-weight: 600; }
+    .badge-success { background: #dcfce7; color: #166534; }
+    .badge-danger { background: #fee2e2; color: #991b1b; }
+    .badge-warning { background: #fef3c7; color: #92400e; }
+    .badge-info { background: #dbeafe; color: #1e40af; }
+    .card-header { display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 20px; }
+    .form-group { display: flex; flex-direction: column; gap: 6px; }
+    .form-label { font-size: 14px; font-weight: 600; color: #0f172a; }
+    .form-input { padding: 10px 14px; border: 1px solid #e2e8f0; border-radius: 8px;
+      font-size: 14px; background: #fff; outline: none; transition: border-color 0.15s; }
+    .form-input:focus { outline: none; border-color: #f97316;
+      box-shadow: 0 0 0 3px rgba(249,115,22,0.1); }
+    .logout { display: flex; align-items: center; gap: 12px; padding: 10px 0;
+      color: #ef4444; font-size: 14px; font-weight: 500; cursor: pointer; }
+    .logout:hover { color: #dc2626; }
+    @media (max-width: 768px) {
+      .sidebar { width: 100%; position: relative; }
+      .main { margin-left: 0; }
+      .sidebar { position: fixed; top: 0; left: -260px; height: 100vh;
+        transition: left 0.3s ease; z-index: 100; }
+      .sidebar.open { left: 0; }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <div class="brand" id="brand-logo">PHARMA<span>CON</span></div>
+    </div>
+    <nav class="sidebar-nav">
+      <div class="nav-section">Dashboard</div>
+      <div class="nav-item active" id="nav-dashboard">Activity Monitor</div>
+      <div class="nav-section">Inventory</div>
+      <div class="nav-item" id="nav-inventory">Inventory</div>
+      <div class="nav-item" id="nav-all-products">All Products</div>
+      <div class="nav-item" id="nav-add-product">Add Product</div>
+      <div class="nav-section">Sales</div>
+      <div class="nav-item" id="nav-sales">Sales Reports</div>
+      <div class="nav-item" id="nav-sales-dashboard">Sales Dashboard</div>
+      <div class="nav-item" id="nav-medical-sales">Medical Sales</div>
+      <div class="nav-section">Management</div>
+      <div class="nav-item" id="nav-management">Management</div>
+      <div class="nav-item" id="nav-register-cashier">Register Cashier</div>
+      <div class="nav-item" id="nav-manage-staff">Manage Staff</div>
+    </nav>
+    <div class="sidebar-footer" style="padding: 16px 24px; border-top: 1px solid #e2e8f0;">
+      <div class="logout" id="logout-btn">Logout</div>
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="topbar">
+      <div class="topbar-title" id="page-title">Dashboard</div>
+    </div>
+
+    <div class="stats-grid" id="stats-grid">
+      <div class="stat-card">
+        <div class="stat-label">Active Cashiers</div>
+        <div class="stat-value" id="stat-cashiers">3</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Low Stock Alerts</div>
+        <div class="stat-value" style="color: #ef4444;" id="stat-low-stock">2</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Expiring Items</div>
+        <div class="stat-value" style="color: #f59e0b;" id="stat-expiring">1</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <h1 class="page-title">All Products</h1>
+          <p class="page-subtitle">View and manage all products in inventory</p>
+        </div>
+        <button class="btn btn-primary" id="add-product-btn">+ Add Product</button>
+      </div>
+
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th><th>Product Name</th><th>Barcode</th>
+              <th>Category</th><th>Price</th><th>Stock</th><th>Expiry</th><th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>1</td><td><strong>Amoxicillin 500mg</strong></td><td>012345</td>
+              <td><span class="badge badge-info">Medical</span></td>
+              <td>₱150.00</td>
+              <td><span class="badge badge-success">25</span></td>
+              <td>2025-03-15</td>
+              <td>
+                <button class="btn btn-primary btn-sm" style="margin-right: 6px;">Edit</button>
+                <button class="btn btn-danger btn-sm">Delete</button>
+              </td>
+            </tr>
+            <tr>
+              <td>2</td><td><strong>Paracetamol 500mg</strong></td><td>012346</td>
+              <td><span class="badge badge-info">Medical</span></td>
+              <td>₱85.00</td>
+              <td><span class="badge badge-warning">7</span></td>
+              <td>2024-12-10</td>
+              <td>
+                <button class="btn btn-primary btn-sm" style="margin-right: 6px;">Edit</button>
+                <button class="btn btn-danger btn-sm">Delete</button>
+              </td>
+            </tr>
+            <tr>
+              <td>3</td><td><strong>Face Masks (50pcs)</strong></td><td>012347</td>
+              <td><span class="badge badge-success">Non-Medical</span></td>
+              <td>₱250.00</td>
+              <td><span class="badge badge-danger">0</span></td>
+              <td>-</td>
+              <td>
+                <button class="btn btn-primary btn-sm" style="margin-right: 6px;">Edit</button>
+                <button class="btn btn-danger btn-sm">Delete</button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Tour Configuration -->
+  <script type="application/json" id="help-tour-steps">
+    [
+      {
+        "selector": "#brand-logo",
+        "title": "Brand Logo",
+        "description": "Click the brand logo to quickly return to the Dashboard from anywhere in the system.",
+        "instruction": "This is your home button."
+      },
+      {
+        "selector": "#nav-inventory",
+        "title": "Inventory Section",
+        "description": "Manage all your pharmacy products and stock levels.",
+        "instruction": "Click to expand inventory options."
+      },
+      {
+        "selector": "#nav-all-products",
+        "title": "All Products",
+        "description": "View and manage every product in your inventory.",
+        "instruction": "Browse products by name, barcode, price, and stock level."
+      },
+      {
+        "selector": "#nav-add-product",
+        "title": "Add Product",
+        "description": "Register new medicine or supplies to the system.",
+        "instruction": "Fill in barcode, name, category, price, and stock."
+      },
+      {
+        "selector": "#add-product-btn",
+        "title": "Add Product Button",
+        "description": "Click this button to open the product registration form.",
+        "instruction": "All fields marked with * are required."
+      },
+      {
+        "selector": "#stats-grid",
+        "title": "Dashboard Statistics",
+        "description": "Key pharmacy metrics displayed at a glance.",
+        "instruction": "View active cashiers, low stock alerts, and expiring items."
+      },
+      {
+        "selector": "#page-title",
+        "title": "Page Title",
+        "description": "The current page title shows where you are in the system.",
+        "instruction": "Use the sidebar to navigate between pages."
+      },
+      {
+        "selector": "#logout-btn",
+        "title": "Logout",
+        "description": "Securely end your session and return to the login screen.",
+        "instruction": "Click here when you are done working."
+      }
+    ]
+  </script>
+
+  <script src="/static/js/help-tour.js"></script>
+</body>
+</html>
