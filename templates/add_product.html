@@ -142,48 +142,104 @@ const HELP_TOUR_STEPS = [
   {
     selector: "#barcodeInput",
     title: "Barcode Scanner",
+    category: "core-features",
+    purpose: "Accurate barcode entry ensures every product is uniquely identified and tracked through sales and alerts.",
+    how_to_use: [
+      "Place your cursor in the barcode field and scan the product barcode",
+      "If scanning is unavailable, type the barcode number manually",
+      "Verify the scanned value before moving to the product name field"
+    ],
     description: "Scan or enter the product barcode.",
     instruction: "Place your cursor here and scan the barcode, or type it manually."
   },
   {
     selector: "#productName",
     title: "Product Name",
+    category: "core-features",
+    purpose: "The product name is what cashiers and customers see during checkout and on printed receipts.",
+    how_to_use: [
+      "Type the full product name in the input field",
+      "Wait for suggestions to appear as you type to avoid duplicates",
+      "Click a suggestion or finish typing to confirm the name"
+    ],
     description: "Enter the name of the product.",
     instruction: "Type the product name. Suggestions appear as you type."
   },
   {
     selector: "#categorySelect",
     title: "Product Category",
+    category: "core-features",
+    purpose: "Categorizing products as Medical or Non-Medical ensures correct tax handling, sales reporting, and alert rules.",
+    how_to_use: [
+      "Click the category dropdown to expand the options",
+      "Select Medical for medicines and healthcare items",
+      "Select Non-Medical for supplies, hygiene products, and general merchandise"
+    ],
     description: "Select the product type.",
     instruction: "Choose Medical for medicines or Non-Medical for supplies."
   },
   {
     selector: 'input[name="price"]',
     title: "Product Price",
+    category: "core-features",
+    purpose: "Setting the correct price upfront prevents checkout discrepancies and ensures accurate sales reports.",
+    how_to_use: [
+      "Enter the selling price in Philippine Pesos (e.g., 25.50)",
+      "Double-check the decimal placement to avoid pricing errors",
+      "Proceed to stock only after confirming the price is correct"
+    ],
     description: "Set the selling price for the product.",
     instruction: "Enter the price in Philippine Pesos (₱)."
   },
   {
     selector: "#stockInput",
     title: "Initial Stock",
+    category: "core-features",
+    purpose: "Initial stock levels drive low-stock alerts and prevent overselling items that are not yet available.",
+    how_to_use: [
+      "Enter the number of units received for this product",
+      "Watch for the yellow warning if stock is 10 or less",
+      "Confirm the quantity before submitting the form"
+    ],
     description: "Set the initial quantity available.",
     instruction: "Enter the number of units received. A warning shows if 10 or less."
   },
   {
     selector: 'input[name="expiration_date"]',
     title: "Expiration Date",
+    category: "core-features",
+    purpose: "Expiration tracking prevents expired products from being sold and automatically triggers alerts for removals.",
+    how_to_use: [
+      "Click the date field to open the calendar picker",
+      "Select the product expiration date",
+      "If the product has no expiry, check the No expiration date box below"
+    ],
     description: "Set the product expiration date.",
     instruction: "Click the field and select a date. Check 'No expiration date' if the product has no expiry."
   },
   {
     selector: "#noExpirationCheckbox",
     title: "No Expiration Date",
+    category: "core-features",
+    purpose: "Non-perishable items should be flagged so the system does not generate false expiration alerts.",
+    how_to_use: [
+      "Check this box only if the product does not have an expiration date",
+      "Confirm the date field becomes disabled after checking",
+      "Uncheck it later if expiration tracking becomes relevant"
+    ],
     description: "Use this option for products that do not expire.",
     instruction: "Check this box if the product has no expiration date. The date field will be disabled."
   },
   {
     selector: 'button[type="submit"]',
     title: "Register Product",
+    category: "core-features",
+    purpose: "Submitting the form officially adds the product to inventory and makes it available for POS transactions.",
+    how_to_use: [
+      "Review all fields to ensure data accuracy",
+      "Click Register Product to submit the form",
+      "Wait for the success confirmation before adding another product"
+    ],
     description: "Save the product to your inventory.",
     instruction: "Click this button to add the product after filling all required fields."
   }
@@ -191,4 +247,5 @@ const HELP_TOUR_STEPS = [
 window.HELP_TOUR_STEPS = HELP_TOUR_STEPS;
 window.HELP_TOUR_STORAGE_KEY = "helptour_add_product";
 </script>
+<script src="/static/js/help-tour.js"></script>
 {% endblock %}

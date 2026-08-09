@@ -114,12 +114,26 @@ const HELP_TOUR_STEPS = [
   {
     selector: "label[style*='margin-right: 10px']",
     title: "Status Filter",
+    category: "core-features",
+    purpose: "Filtering expired alerts by status helps you separate new issues from those already addressed by the team.",
+    how_to_use: [
+      "Click Active to view unresolved expired-product alerts",
+      "Click Acknowledged to see items staff have already reviewed",
+      "Click Dismissed to audit alerts closed with a documented reason"
+    ],
     description: "Filter alerts by acknowledgment status.",
     instruction: "Choose Active, Acknowledged, or Dismissed to filter the list."
   },
   {
     selector: ".table-container table",
     title: "Expired Products",
+    category: "core-features",
+    purpose: "This table lists products past their expiration date so they can be removed from sale and from inventory records.",
+    how_to_use: [
+      "Check product names, categories, barcodes, prices, and expiration dates",
+      "Click Acknowledge to confirm you have seen the expired item",
+      "Click Dismiss and provide a reason if the alert is a false positive"
+    ],
     description: "View products that have passed their expiration date.",
     instruction: "Check product names, categories, barcodes, prices, and expiration dates. Use Acknowledge or Dismiss buttons to manage alerts."
   }
@@ -127,4 +141,5 @@ const HELP_TOUR_STEPS = [
 window.HELP_TOUR_STEPS = HELP_TOUR_STEPS;
 window.HELP_TOUR_STORAGE_KEY = "helptour_expired";
 </script>
+<script src="/static/js/help-tour.js"></script>
 {% endblock %}

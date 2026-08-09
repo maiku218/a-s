@@ -58,6 +58,13 @@ const HELP_TOUR_STEPS = [
   {
     selector: ".table-container table",
     title: "Admin Activity Log",
+    category: "advanced",
+    purpose: "Admin activity logs track every administrative action with timestamps and IP addresses for security and compliance.",
+    how_to_use: [
+      "Review admin usernames, action types, IP addresses, and timestamps",
+      "Identify unusual actions such as logins at unexpected hours",
+      "Use the Details column to understand the context of each action"
+    ],
     description: "Detailed history of all admin actions with IP tracking.",
     instruction: "The table shows admin username, action type, IP address, details, and timestamp."
   }
@@ -65,4 +72,5 @@ const HELP_TOUR_STEPS = [
 window.HELP_TOUR_STEPS = HELP_TOUR_STEPS;
 window.HELP_TOUR_STORAGE_KEY = "helptour_admin_activity_logs";
 </script>
+<script src="/static/js/help-tour.js"></script>
 {% endblock %}

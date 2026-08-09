@@ -101,18 +101,39 @@ const HELP_TOUR_STEPS = [
   {
     selector: ".page-header",
     title: "Medical Sales Report",
+    category: "core-features",
+    purpose: "Medical sales reporting tracks prescription and over-the-counter medicine performance, which is critical for compliance and restocking.",
+    how_to_use: [
+      "Review total medical sales and average per transaction",
+      "Use the date filters to isolate specific reporting periods",
+      "Export CSV for offline analysis or accounting reconciliation"
+    ],
     description: "View all completed medical product sales.",
     instruction: "The report shows receipt numbers, product names, totals, dates, and status."
   },
   {
     selector: "#salesChart",
     title: "Sales Chart",
+    category: "core-features",
+    purpose: "Daily medical sales trends help you understand demand cycles and plan purchase orders for fast-moving medicines.",
+    how_to_use: [
+      "Hover over chart points to see exact daily revenue figures",
+      "Compare current period performance against previous weeks",
+      "Identify unusual dips that may indicate stock-outs or system issues"
+    ],
     description: "Daily medical sales over the past 30 days.",
     instruction: "Hover over the chart to see exact values for each day."
   },
   {
     selector: ".table-container table",
     title: "Sales Table",
+    category: "core-features",
+    purpose: "The detailed sales table provides transaction-level visibility for auditing, refunds, or customer inquiries.",
+    how_to_use: [
+      "Scan receipt numbers, product names, totals, dates, and status",
+      "Use this data to verify specific transactions when needed",
+      "Cross-reference with the dashboard chart for consistency checks"
+    ],
     description: "Detailed list of all medical sales transactions.",
     instruction: "Each row shows receipt number, products, total amount, date, and status."
   }
@@ -120,4 +141,5 @@ const HELP_TOUR_STEPS = [
 window.HELP_TOUR_STEPS = HELP_TOUR_STEPS;
 window.HELP_TOUR_STORAGE_KEY = "helptour_medical_sales";
 </script>
+<script src="/static/js/help-tour.js"></script>
 {% endblock %}

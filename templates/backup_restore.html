@@ -59,12 +59,26 @@ const HELP_TOUR_STEPS = [
   {
     selector: 'form[action="/backup_database"]',
     title: "Create Backup",
+    category: "advanced",
+    purpose: "Regular database backups protect against data loss from hardware failure, accidental deletions, or software errors.",
+    how_to_use: [
+      "Click the Download Backup button to generate a .sql dump of the database",
+      "Save the downloaded file to a secure off-site location",
+      "Schedule regular backups to maintain recent restore points"
+    ],
     description: "Download a complete SQL backup of your database.",
     instruction: "Click the Download Backup button to create and download a .sql file."
   },
   {
     selector: 'form[action="/restore_database"]',
     title: "Restore Database",
+    category: "advanced",
+    purpose: "Restoring from a backup lets you recover data after corruption, migration, or catastrophic system failure.",
+    how_to_use: [
+      "Click Choose File and select a previously saved .sql backup",
+      "Review the warning: this overwrites all current data",
+      "Click Upload & Restore and wait for the process to complete"
+    ],
     description: "Restore your database from a previous backup.",
     instruction: "Upload a .sql backup file and click 'Upload & Restore'. This overwrites all current data."
   }
@@ -72,4 +86,5 @@ const HELP_TOUR_STEPS = [
 window.HELP_TOUR_STEPS = HELP_TOUR_STEPS;
 window.HELP_TOUR_STORAGE_KEY = "helptour_backup_restore";
 </script>
+<script src="/static/js/help-tour.js"></script>
 {% endblock %}

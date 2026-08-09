@@ -117,12 +117,26 @@ const HELP_TOUR_STEPS = [
   {
     selector: "label[style*='margin-right: 10px']",
     title: "Status Filter",
+    category: "core-features",
+    purpose: "Status filtering lets you prioritize active low-stock alerts over those already reviewed by staff.",
+    how_to_use: [
+      "Select Active to see only unresolved low-stock items",
+      "Select Acknowledged to see items staff have already noted",
+      "Select Dismissed to review closed alerts and their reasons"
+    ],
     description: "Filter alerts by acknowledgment status.",
     instruction: "Choose Active, Acknowledged, or Dismissed to filter the list."
   },
   {
     selector: ".table-container table",
     title: "Low Stock Products",
+    category: "core-features",
+    purpose: "This view helps you catch items running low before they hit zero, preventing lost sales and customer complaints.",
+    how_to_use: [
+      "Check product names, categories, barcodes, prices, and current stock levels",
+      "Use Acknowledge to flag items you are already reordering",
+      "Use Dismiss with a reason for items that do not need immediate action"
+    ],
     description: "View products with low stock levels.",
     instruction: "Check product names, categories, barcodes, prices, and stock levels. Use Acknowledge or Dismiss buttons to manage alerts."
   }
@@ -130,4 +144,5 @@ const HELP_TOUR_STEPS = [
 window.HELP_TOUR_STEPS = HELP_TOUR_STEPS;
 window.HELP_TOUR_STORAGE_KEY = "helptour_low_stock";
 </script>
+<script src="/static/js/help-tour.js"></script>
 {% endblock %}

@@ -124,18 +124,39 @@ const HELP_TOUR_STEPS = [
   {
     selector: ".table-container table",
     title: "Cashiers Table",
+    category: "advanced",
+    purpose: "The cashiers table provides a complete roster of staff accounts, their statuses, and quick management actions.",
+    how_to_use: [
+      "Scan the table to review ID, full name, username, and current status",
+      "Verify active cashiers are legitimate and current employees",
+      "Use the table to identify accounts that need updating or removal"
+    ],
     description: "View all registered cashiers with their details.",
     instruction: "Check ID, full name, username, and status. Active cashiers can log in."
   },
   {
     selector: '.btn-primary.btn-sm[onclick*="openEditModal"]',
     title: "Edit Cashier",
+    category: "advanced",
+    purpose: "Editing lets you update cashier details and reset passwords without creating a new account.",
+    how_to_use: [
+      "Click Edit on the cashier row you want to update",
+      "Change name, username, or status in the modal form",
+      "Use the Change Password section if the cashier forgot their password"
+    ],
     description: "Modify cashier information and status.",
     instruction: "Click Edit to open the modal. You can change name, username, status, and password."
   },
   {
     selector: 'form[onsubmit*="Delete this cashier"] .btn-danger',
     title: "Delete Cashier",
+    category: "advanced",
+    purpose: "Removing inactive or departed staff accounts prevents unauthorized POS access and keeps the roster clean.",
+    how_to_use: [
+      "Click Delete on the cashier account you want to remove",
+      "Confirm the deletion in the browser prompt",
+      "Verify the row disappears from the table and the account can no longer log in"
+    ],
     description: "Remove a cashier account permanently.",
     instruction: "Click Delete and confirm to remove the cashier."
   }
@@ -143,4 +164,5 @@ const HELP_TOUR_STEPS = [
 window.HELP_TOUR_STEPS = HELP_TOUR_STEPS;
 window.HELP_TOUR_STORAGE_KEY = "helptour_manage_staff";
 </script>
+<script src="/static/js/help-tour.js"></script>
 {% endblock %}

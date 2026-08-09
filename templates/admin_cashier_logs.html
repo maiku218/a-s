@@ -64,6 +64,13 @@ const HELP_TOUR_STEPS = [
   {
     selector: ".table-container table",
     title: "Cashier Activity Log",
+    category: "advanced",
+    purpose: "Cashier activity logs provide an auditable record of login and logout times, IP addresses, and session durations.",
+    how_to_use: [
+      "Review cashier names, login times, and logout times in the table",
+      "Check IP addresses to verify sessions originated from expected locations",
+      "Use the duration and status columns to investigate unusual session lengths"
+    ],
     description: "Complete history of cashier login and logout times with IP tracking.",
     instruction: "The table shows cashier names, login times, logout times, IP addresses, duration, and status."
   }
@@ -71,4 +78,5 @@ const HELP_TOUR_STEPS = [
 window.HELP_TOUR_STEPS = HELP_TOUR_STEPS;
 window.HELP_TOUR_STORAGE_KEY = "helptour_cashier_logs";
 </script>
+<script src="/static/js/help-tour.js"></script>
 {% endblock %}

@@ -482,26 +482,47 @@
     </script>
 
     <script>
-    const HELP_TOUR_STEPS = [
-      {
-        selector: "#nav-help",
-        title: "Help Tour Guide",
-        description: "You are currently viewing the Help Tour Guide page.",
-        instruction: "This page explains how the interactive help tour works and lists all pages with available tours."
-      },
-      {
-        selector: ".card-title",
-        title: "Guide Sections",
-        description: "The guide is organized into sections for easy reading.",
-        instruction: "Each card covers a specific topic like getting started, keyboard shortcuts, or troubleshooting."
-      },
-      {
-        selector: ".btn-primary",
-        title: "Start Tutorial",
-        description: "Click this button to launch the interactive tour on the Admin Dashboard.",
-        instruction: "You can also start tours from any page using the floating help button."
-      }
-    ];
+const HELP_TOUR_STEPS = [
+  {
+    selector: "#nav-help",
+    title: "Help Tour Guide",
+    category: "getting-started",
+    purpose: "The Help Tour Guide page is your starting point for learning how to navigate and use every feature of PharmaCon.",
+    how_to_use: [
+      "Read through the guide sections to understand how the interactive tour works",
+      "Click Start Tutorial to launch the tour from this page",
+      "Return here anytime using the sidebar if you need a refresher"
+    ],
+    description: "You are currently viewing the Help Tour Guide page.",
+    instruction: "This page explains how the interactive help tour works and lists all pages with available tours."
+  },
+  {
+    selector: ".card-title",
+    title: "Guide Sections",
+    category: "getting-started",
+    purpose: "Organized sections make it easy to find exactly what you need, from getting started to troubleshooting.",
+    how_to_use: [
+      "Browse sections like Getting Started, Keyboard Shortcuts, and Troubleshooting",
+      "Read each card to understand key features before starting the tour",
+      "Use the guide alongside the live tour for the best learning experience"
+    ],
+    description: "The guide is organized into sections for easy reading.",
+    instruction: "Each card covers a specific topic like getting started, keyboard shortcuts, or troubleshooting."
+  },
+  {
+    selector: ".btn-primary",
+    title: "Start Tutorial",
+    category: "completion",
+    purpose: "Starting the tutorial from the guide launches the interactive tour immediately on the Admin Dashboard.",
+    how_to_use: [
+      "Click Start Tutorial to begin the interactive walkthrough",
+      "Navigate using Next, Previous, or keyboard shortcuts",
+      "Click Finish when done, or Skip to exit at any time"
+    ],
+    description: "Click this button to launch the interactive tour on the Admin Dashboard.",
+    instruction: "You can also start tours from any page using the floating help button."
+  }
+];
     window.HELP_TOUR_STEPS = HELP_TOUR_STEPS;
     window.HELP_TOUR_STORAGE_KEY = "helptour_help_guide";
     </script>

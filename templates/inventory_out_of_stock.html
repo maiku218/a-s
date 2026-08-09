@@ -113,12 +113,26 @@ const HELP_TOUR_STEPS = [
   {
     selector: "label[style*='margin-right: 10px']",
     title: "Status Filter",
+    category: "core-features",
+    purpose: "Filtering by status helps you focus on active alerts versus those already handled by your team.",
+    how_to_use: [
+      "Click Active to view only unresolved out-of-stock alerts",
+      "Click Acknowledged to review alerts that staff have seen",
+      "Click Dismissed to audit alerts that were closed with a reason"
+    ],
     description: "Filter alerts by acknowledgment status.",
     instruction: "Choose Active, Acknowledged, or Dismissed to filter the list."
   },
   {
     selector: ".table-container table",
     title: "Out of Stock Products",
+    category: "core-features",
+    purpose: "This table highlights products with zero stock so you can reorder or remove them before they cause checkout failures.",
+    how_to_use: [
+      "Review product names, categories, barcodes, and prices",
+      "Use the Acknowledge button to mark alerts as seen by the team",
+      "Use the Dismiss button with a reason to close alerts that do not require action"
+    ],
     description: "View all products with zero stock remaining.",
     instruction: "Check product names, categories, barcodes, prices, and stock levels. Use Acknowledge or Dismiss buttons to manage alerts."
   }
@@ -126,4 +140,5 @@ const HELP_TOUR_STEPS = [
 window.HELP_TOUR_STEPS = HELP_TOUR_STEPS;
 window.HELP_TOUR_STORAGE_KEY = "helptour_out_of_stock";
 </script>
+<script src="/static/js/help-tour.js"></script>
 {% endblock %}

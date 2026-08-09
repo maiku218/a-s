@@ -100,48 +100,104 @@ const HELP_TOUR_STEPS = [
   {
     selector: "#barcodeInput",
     title: "Barcode",
+    category: "core-features",
+    purpose: "The barcode is the primary identifier used by the POS scanner and inventory tracking systems.",
+    how_to_use: [
+      "Scan or enter the updated barcode if it changed",
+      "Verify the barcode matches the physical product label",
+      "Leave unchanged if the barcode remains the same"
+    ],
     description: "Product barcode identifier.",
     instruction: "Scan or enter the product barcode."
   },
   {
     selector: "#productName",
     title: "Product Name",
+    category: "core-features",
+    purpose: "Keeping product names current ensures accurate receipts, reports, and search results for cashiers.",
+    how_to_use: [
+      "Edit the product name to reflect branding or generic name changes",
+      "Check for typos that could affect search accuracy",
+      "Save the change to update it across the dashboard and POS"
+    ],
     description: "Update the product name.",
     instruction: "Edit the product name as needed."
   },
   {
     selector: "#categorySelect",
     title: "Category",
+    category: "core-features",
+    purpose: "Correct categorization affects sales analytics, alert rules, and receipt categorization.",
+    how_to_use: [
+      "Open the dropdown to review available categories",
+      "Select Medical for branded/generic medicines",
+      "Select Non-Medical for supplies, hygiene, and convenience items"
+    ],
     description: "Product type classification.",
     instruction: "Select Medical or Non-Medical."
   },
   {
     selector: 'input[name="price"]',
     title: "Price",
+    category: "core-features",
+    purpose: "Accurate pricing protects margins and ensures customers are charged the correct amount at checkout.",
+    how_to_use: [
+      "Enter the updated selling price in Philippine Pesos",
+      "Confirm the new price before saving",
+      "Check recent sales reports if you need pricing history"
+    ],
     description: "Product selling price.",
     instruction: "Update the price in Philippine Pesos."
   },
   {
     selector: "#stockInput",
     title: "Stock",
+    category: "core-features",
+    purpose: "Stock counts drive low-stock alerts and determine whether a product can be sold through the POS.",
+    how_to_use: [
+      "Update the stock count after receiving new inventory",
+      "Enter zero only if the product is fully discontinued",
+      "Verify the count matches physical stock before saving"
+    ],
     description: "Current stock quantity.",
     instruction: "Update the available stock count."
   },
   {
     selector: 'input[name="expiration_date"]',
     title: "Expiration Date",
+    category: "core-features",
+    purpose: "Updating expiration dates prevents the system from blocking sales or raising false alerts.",
+    how_to_use: [
+      "Click the date field and select the correct expiration date",
+      "Use the No expiration date checkbox for non-perishables",
+      "Save the change to refresh alert calculations immediately"
+    ],
     description: "Product expiration date.",
     instruction: "Update the expiration date or check 'No expiration date' if applicable."
   },
   {
     selector: "#noExpirationCheckbox",
     title: "No Expiration Date",
+    category: "core-features",
+    purpose: "Marking non-perishable products correctly stops unnecessary expiration alerts from cluttering the notification center.",
+    how_to_use: [
+      "Check this box if the product does not expire",
+      "Confirm the expiration date field is disabled after checking",
+      "Uncheck it if expiration tracking is later required"
+    ],
     description: "Mark product as having no expiration.",
     instruction: "Check this box to clear the expiration date."
   },
   {
     selector: 'button[type="submit"]',
     title: "Save Changes",
+    category: "core-features",
+    purpose: "Saving commits your updates to the database and refreshes inventory data across all admin and cashier views.",
+    how_to_use: [
+      "Review all edited fields before submitting",
+      "Click Save Changes to persist updates",
+      "Return to All Products to verify the changes appear correctly"
+    ],
     description: "Update the product in inventory.",
     instruction: "Click to save your changes."
   }
@@ -149,4 +205,5 @@ const HELP_TOUR_STEPS = [
 window.HELP_TOUR_STEPS = HELP_TOUR_STEPS;
 window.HELP_TOUR_STORAGE_KEY = "helptour_edit_product";
 </script>
+<script src="/static/js/help-tour.js"></script>
 {% endblock %}

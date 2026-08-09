@@ -58,9 +58,12 @@
             <a href="{{ url_for('cashier_history') }}" class="nav-icon" title="Sales History">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
             </a>
-            <a href="{{ url_for('cashier_metrics') }}" class="nav-icon active" title="Performance">
+            <div class="nav-icon active" title="Performance">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
-            </a>
+            </div>
+            <button class="nav-icon" onclick="openResumeModal()" title="Resume Held">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+            </button>
             <div class="nav-icon logout" onclick="window.location.href='/cashier_logout'" title="Logout">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
             </div>
@@ -106,5 +109,124 @@
             </div>
         </main>
     </div>
+
+    {% block help_tour %}
+    <script>
+    const HELP_TOUR_STEPS = [
+      {
+        selector: "#tour-metrics-title",
+        title: "Cashier Metrics",
+        category: "core-features",
+        purpose: "Track your sales performance and see how you rank against other cashiers.",
+        how_to_use: [
+          "Review your total sales, transaction count, and average sale value",
+          "Check the leaderboard to see your rank among other cashiers",
+          "Use this data to improve your daily performance"
+        ],
+        description: "This page shows your personal sales metrics and the cashier leaderboard.",
+        instruction: "Metrics are calculated from completed transactions only."
+      },
+      {
+        selector: "#tour-metrics-stats",
+        title: "Performance Stats",
+        category: "core-features",
+        purpose: "Quick overview of your key performance indicators for the selected period.",
+        how_to_use: [
+          "Switch between Daily, Weekly, and Monthly views using the tabs",
+          "Monitor total sales amount and transaction count",
+          "Check average sale value to understand customer spending patterns"
+        ],
+        description: "The stat cards at the top show your total sales, transactions, and average sale amount.",
+        instruction: "Click the tabs above the cards to change the time period."
+      },
+      {
+        selector: "#tour-metrics-chart",
+        title: "Sales Chart",
+        category: "core-features",
+        purpose: "Visualize your sales trends over time to identify patterns.",
+        how_to_use: [
+          "The chart shows sales data for the selected period",
+          "Hover over data points to see exact values",
+          "Use the chart to spot peak hours or slow days"
+        ],
+        description: "A line chart displays your sales performance across the selected time period.",
+        instruction: "The chart updates automatically when you change the time period."
+      },
+      {
+        selector: "#tour-metrics-leaderboard",
+        title: "Leaderboard",
+        category: "core-features",
+        purpose: "See how your performance compares to other cashiers in the store.",
+        how_to_use: [
+          "View your rank based on total sales",
+          "Compare your transaction count and average sale",
+          "Use the leaderboard as motivation to improve your metrics"
+        ],
+        description: "The leaderboard ranks all cashiers by total sales amount.",
+        instruction: "Your name is highlighted if you are currently logged in."
+      }
+    ];
+    window.HELP_TOUR_STEPS = HELP_TOUR_STEPS;
+    window.HELP_TOUR_STORAGE_KEY = "helptour_cashier_metrics";
+    </script>
+    <script src="/static/js/help-tour.js"></script>
+    {% endblock %}
+
+<script>
+function openResumeModal() {
+    fetch('/api/held_transactions')
+        .then(res => res.json())
+        .then(data => {
+            const list = document.getElementById('resume-list');
+            list.innerHTML = '';
+            if (data.holds && data.holds.length > 0) {
+                data.holds.forEach((hold, idx) => {
+                    const div = document.createElement('div');
+                    div.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:12px;border-bottom:1px solid var(--border);';
+                    div.innerHTML = `<div><div style="font-weight:700;">${hold.name}</div><div style="font-size:12px;color:var(--text-secondary);">${hold.timestamp} - ${hold.cart.length} items</div></div><button class="btn btn-primary btn-sm" onclick="resumeTransaction(${idx})">Resume</button>`;
+                    list.appendChild(div);
+                });
+            } else {
+                list.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:20px;">No held transactions</div>';
+            }
+            document.getElementById('resume-modal').classList.add('show');
+        });
+}
+
+function closeResumeModal() {
+    document.getElementById('resume-modal').classList.remove('show');
+}
+
+function resumeTransaction(index) {
+    fetch('/api/resume_transaction', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').getAttribute('content') },
+        body: JSON.stringify({ index: index })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            window.location.href = '/cashier';
+        } else {
+            alert(data.message);
+        }
+    });
+}
+</script>
+
+<!-- Resume Transaction Modal -->
+<div id="resume-modal" class="modal-overlay">
+    <div class="modal" style="max-width: 480px;">
+        <div class="modal-header">
+            <div class="modal-title">Resume Transaction</div>
+            <div class="modal-subtitle">Select a held transaction to continue.</div>
+        </div>
+        <div class="modal-body" id="resume-list" style="max-height: 300px; overflow-y: auto;"></div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closeResumeModal()">Close</button>
+        </div>
+    </div>
+</div>
+
 </body>
 </html>

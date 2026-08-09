@@ -82,36 +82,78 @@ const HELP_TOUR_STEPS = [
   {
     selector: 'input[name="receipt_header"]',
     title: "Store Name",
+    category: "advanced",
+    purpose: "The store name header reinforces brand identity and helps customers recognize their purchase immediately.",
+    how_to_use: [
+      "Type your official store name into the Store Name field",
+      "Preview the receipt layout to confirm the header looks correct",
+      "Click Save Settings to apply the change to all future receipts"
+    ],
     description: "Customize the header text on receipts.",
     instruction: "Enter the store name that appears at the top of receipts."
   },
   {
     selector: 'input[name="receipt_subtitle"]',
     title: "Store Tagline",
+    category: "advanced",
+    purpose: "A tagline adds a professional touch and can communicate your brand message or store specialty.",
+    how_to_use: [
+      "Enter a short tagline or slogan below the store name",
+      "Keep it concise so it fits on narrow thermal receipt paper",
+      "Save the setting to see it appear on the next printed receipt"
+    ],
     description: "Add a subtitle below the store name.",
     instruction: "Enter a short tagline or description."
   },
   {
     selector: 'input[name="store_address"]',
     title: "Store Address",
+    category: "advanced",
+    purpose: "Including the store address on receipts helps customers locate you and supports return or warranty claims.",
+    how_to_use: [
+      "Type the complete store address in the address field",
+      "Use standard abbreviations to save space if needed",
+      "Save the setting so the address prints on every receipt"
+    ],
     description: "Add your store address to receipts.",
     instruction: "Enter the complete store address."
   },
   {
     selector: 'input[name="store_contact"]',
     title: "Store Contact",
+    category: "advanced",
+    purpose: "Contact information on receipts allows customers to reach you for support, refunds, or inquiries.",
+    how_to_use: [
+      "Enter a phone number or email address in the contact field",
+      "Verify the contact details are current before saving",
+      "Save to ensure customers can reach you from every receipt"
+    ],
     description: "Add contact information to receipts.",
     instruction: "Enter phone number or email."
   },
   {
     selector: 'textarea[name="receipt_footer"]',
     title: "Receipt Footer",
+    category: "advanced",
+    purpose: "The footer message is the last thing customers see, making it ideal for thank-you notes, return policies, or promotions.",
+    how_to_use: [
+      "Type a thank-you message, return policy, or promotional note",
+      "Use line breaks to separate multiple pieces of information",
+      "Save the settings and print a test receipt to verify formatting"
+    ],
     description: "Customize the message at the bottom of receipts.",
     instruction: "Enter a thank you message or any footer text."
   },
   {
     selector: 'button[type="submit"]',
     title: "Save Settings",
+    category: "advanced",
+    purpose: "Saving commits all receipt customization changes so they take effect immediately for every new transaction.",
+    how_to_use: [
+      "Review all receipt fields for accuracy before saving",
+      "Click Save Settings to persist changes to the database",
+      "Print a test receipt to confirm the new layout and text appear correctly"
+    ],
     description: "Save your receipt customization changes.",
     instruction: "Click this button to apply your changes."
   }
@@ -119,4 +161,5 @@ const HELP_TOUR_STEPS = [
 window.HELP_TOUR_STEPS = HELP_TOUR_STEPS;
 window.HELP_TOUR_STORAGE_KEY = "helptour_receipt_customization";
 </script>
+<script src="/static/js/help-tour.js"></script>
 {% endblock %}

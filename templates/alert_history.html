@@ -60,6 +60,13 @@ const HELP_TOUR_STEPS = [
   {
     selector: ".table-container table",
     title: "Alert History",
+    category: "core-features",
+    purpose: "The alert history log provides accountability and an audit trail for all inventory-related decisions made by staff.",
+    how_to_use: [
+      "Review the Date, Product, Alert Type, and Action columns to understand past decisions",
+      "Check the User column to see which staff member handled each alert",
+      "Read the Details or Reason column for context on dismissals or acknowledgments"
+    ],
     description: "View all alert actions taken in the system.",
     instruction: "Check date, product, alert type, action taken, user, and details/reason."
   }
@@ -67,4 +74,5 @@ const HELP_TOUR_STEPS = [
 window.HELP_TOUR_STEPS = HELP_TOUR_STEPS;
 window.HELP_TOUR_STORAGE_KEY = "helptour_alert_history";
 </script>
+<script src="/static/js/help-tour.js"></script>
 {% endblock %}

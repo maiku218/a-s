@@ -133,18 +133,39 @@ const HELP_TOUR_STEPS = [
   {
     selector: ".stats-grid",
     title: "Sales Statistics",
+    category: "core-features",
+    purpose: "Sales statistics give you an at-a-glance view of business performance across daily, weekly, monthly, and yearly periods.",
+    how_to_use: [
+      "Review Today, Week, Month, Year, and Overall totals to track performance trends",
+      "Compare Medical vs Non-Medical sales to understand product mix",
+      "Use the date filter to isolate specific periods for deeper analysis"
+    ],
     description: "Overview of sales performance across different time periods.",
     instruction: "View Today, Week, Month, Year, and Overall totals. Medical and Non-Medical sales are tracked separately."
   },
   {
     selector: "#salesChart",
     title: "Daily Sales Chart",
+    category: "core-features",
+    purpose: "The chart visualizes sales trends, making it easy to spot spikes, drops, or seasonal patterns.",
+    how_to_use: [
+      "Hover over data points to see exact sales values for each day",
+      "Compare the Medical and Non-Medical lines to analyze category performance",
+      "Use the visual trend to plan inventory and staffing for upcoming days"
+    ],
     description: "Visualize daily sales trends over the past 30 days.",
     instruction: "The chart shows Medical vs Non-Medical sales. Hover over data points for exact values."
   },
   {
     selector: ".card:has(h3)",
     title: "Top Selling Products",
+    category: "core-features",
+    purpose: "Knowing your best-selling products helps with merchandising, stock prioritization, and marketing decisions.",
+    how_to_use: [
+      "Review the ranked list to identify your highest-grossing products",
+      "Check both quantity sold and revenue to understand margins",
+      "Use this list to ensure top sellers are always well-stocked"
+    ],
     description: "See your best-performing products by quantity sold.",
     instruction: "Products are ranked by total quantity sold and total revenue."
   }
@@ -152,4 +173,5 @@ const HELP_TOUR_STEPS = [
 window.HELP_TOUR_STEPS = HELP_TOUR_STEPS;
 window.HELP_TOUR_STORAGE_KEY = "helptour_sales_dashboard";
 </script>
+<script src="/static/js/help-tour.js"></script>
 {% endblock %}

@@ -69,6 +69,12 @@
             <div class="nav-icon active" title="Sales History">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
             </div>
+            <a href="{{ url_for('cashier_metrics') }}" class="nav-icon" title="Performance">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+            </a>
+            <button class="nav-icon" onclick="openResumeModal()" title="Resume Held">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+            </button>
             <div class="nav-icon logout" onclick="window.location.href='/cashier_logout'" title="Logout">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
             </div>
@@ -199,12 +205,26 @@ const HELP_TOUR_STEPS = [
   {
     selector: "#salesChart",
     title: "Sales Chart",
+    category: "core-features",
+    purpose: "The sales chart visualizes daily performance so you can review trends and productivity over time.",
+    how_to_use: [
+      "Examine the daily sales line to see revenue patterns",
+      "Compare transaction counts against sales totals to gauge efficiency",
+      "Use the chart to identify your best-performing days"
+    ],
     description: "Visualize your daily sales performance.",
     instruction: "The chart shows daily sales totals and transaction counts."
   },
   {
     selector: ".panel:last-child table",
     title: "Transaction History",
+    category: "core-features",
+    purpose: "Transaction history lets you review, reprint, void, or refund past sales for customer service and auditing.",
+    how_to_use: [
+      "Search by receipt number or date range to locate specific transactions",
+      "Click Reprint to generate a duplicate receipt for the customer",
+      "Use Void or Refund when a sale needs to be reversed with a documented reason"
+    ],
     description: "View all completed transactions for today.",
     instruction: "Each transaction shows receipt number, total, date, and item details."
   }
@@ -212,6 +232,62 @@ const HELP_TOUR_STEPS = [
 window.HELP_TOUR_STEPS = HELP_TOUR_STEPS;
 window.HELP_TOUR_STORAGE_KEY = "helptour_cashier_history";
 </script>
+
+<script>
+function openResumeModal() {
+    fetch('/api/held_transactions')
+        .then(res => res.json())
+        .then(data => {
+            const list = document.getElementById('resume-list');
+            list.innerHTML = '';
+            if (data.holds && data.holds.length > 0) {
+                data.holds.forEach((hold, idx) => {
+                    const div = document.createElement('div');
+                    div.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:12px;border-bottom:1px solid var(--border);';
+                    div.innerHTML = `<div><div style="font-weight:700;">${hold.name}</div><div style="font-size:12px;color:var(--text-secondary);">${hold.timestamp} - ${hold.cart.length} items</div></div><button class="btn btn-primary btn-sm" onclick="resumeTransaction(${idx})">Resume</button>`;
+                    list.appendChild(div);
+                });
+            } else {
+                list.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:20px;">No held transactions</div>';
+            }
+            document.getElementById('resume-modal').classList.add('show');
+        });
+}
+
+function closeResumeModal() {
+    document.getElementById('resume-modal').classList.remove('show');
+}
+
+function resumeTransaction(index) {
+    fetch('/api/resume_transaction', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').getAttribute('content') },
+        body: JSON.stringify({ index: index })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            window.location.href = '/cashier';
+        } else {
+            alert(data.message);
+        }
+    });
+}
+</script>
+
+<!-- Resume Transaction Modal -->
+<div id="resume-modal" class="modal-overlay">
+    <div class="modal" style="max-width: 480px;">
+        <div class="modal-header">
+            <div class="modal-title">Resume Transaction</div>
+            <div class="modal-subtitle">Select a held transaction to continue.</div>
+        </div>
+        <div class="modal-body" id="resume-list" style="max-height: 300px; overflow-y: auto;"></div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closeResumeModal()">Close</button>
+        </div>
+    </div>
+</div>
 
 <script src="/static/js/help-tour.js"></script>
 

@@ -27,10 +27,12 @@ class HelpTour {
       helpBtn: null,
       menu: null,
       finishBtn: null,
+      minimap: null,
     };
 
     this._boundHandleKeydown = this._handleKeydown.bind(this);
     this._boundHandleResize = this._handleResize.bind(this);
+    this._boundHandleScroll = this._handleScroll.bind(this);
 
     this._init();
   }
@@ -265,10 +267,12 @@ class HelpTour {
     this._createSpotlight();
     this._createTooltip();
     this._createArrow();
+    this._createMinimap();
 
     document.body.classList.add('help-tour--active');
     document.addEventListener('keydown', this._boundHandleKeydown);
     window.addEventListener('resize', this._boundHandleResize);
+    window.addEventListener('scroll', this._boundHandleScroll, true);
   }
 
   _createOverlay() {
@@ -298,6 +302,56 @@ class HelpTour {
     this.el.arrow = arrow;
   }
 
+  _createMinimap() {
+    if (this.el.minimap || this.steps.length < 5) return;
+
+    const minimap = document.createElement('div');
+    minimap.className = 'help-tour__minimap';
+    minimap.setAttribute('role', 'navigation');
+    minimap.setAttribute('aria-label', 'Tour progress');
+
+    const inner = document.createElement('div');
+    inner.className = 'help-tour__minimap-inner';
+
+    this.steps.forEach((step, idx) => {
+      const dot = document.createElement('button');
+      dot.className = 'help-tour__minimap-dot';
+      dot.setAttribute('aria-label', `Step ${idx + 1}: ${step.title || ''}`);
+      dot.setAttribute('title', step.title || `Step ${idx + 1}`);
+      dot.addEventListener('click', () => {
+        if (this.isActive) {
+          this._fadeOut(() => this._showStep(idx));
+        }
+      });
+      inner.appendChild(dot);
+    });
+
+    minimap.appendChild(inner);
+    document.body.appendChild(minimap);
+    this.el.minimap = minimap;
+    this._updateMinimap();
+  }
+
+  _updateMinimap() {
+    if (!this.el.minimap) return;
+    const dots = this.el.minimap.querySelectorAll('.help-tour__minimap-dot');
+    dots.forEach((dot, idx) => {
+      dot.classList.remove('help-tour__minimap-dot--active', 'help-tour__minimap-dot--visited');
+      if (idx === this.currentStep) {
+        dot.classList.add('help-tour__minimap-dot--active');
+      } else if (idx < this.currentStep) {
+        dot.classList.add('help-tour__minimap-dot--visited');
+      }
+    });
+  }
+
+  _removeMinimap() {
+    if (this.el.minimap && this.el.minimap.parentNode) {
+      this.el.minimap.parentNode.removeChild(this.el.minimap);
+    }
+    this.el.minimap = null;
+  }
+
   _createTooltip() {
     if (this.el.tooltip) return;
     const tooltip = document.createElement('div');
@@ -306,18 +360,22 @@ class HelpTour {
     tooltip.setAttribute('aria-live', 'polite');
     tooltip.setAttribute('aria-label', 'Tour tooltip');
     tooltip.innerHTML = `
-      <button class="help-tour__btn--close" aria-label="Close tour">&times;</button>
+      <button class="help-tour__btn--close" aria-label="Close help tour">&times;</button>
       <div class="help-tour__header">
         <div class="help-tour__step-indicator" id="help-tour-step-indicator">1</div>
-        <h3 class="help-tour__title" id="help-tour-title"></h3>
+        <div style="flex:1;min-width:0;">
+          <h3 class="help-tour__title" id="help-tour-title"></h3>
+          <div class="help-tour__category-label" id="help-tour-category"></div>
+        </div>
       </div>
-      <p class="help-tour__description" id="help-tour-description"></p>
       <div class="help-tour__progress">
         <div class="help-tour__progress-bar">
           <div class="help-tour__progress-fill"></div>
         </div>
         <span class="help-tour__step-text" id="help-tour-step-text"></span>
       </div>
+      <div class="help-tour__dots" id="help-tour-dots"></div>
+      <div class="help-tour__body" id="help-tour-body"></div>
       <div class="help-tour__actions">
         <button class="help-tour__btn--skip" id="help-tour-skip">Skip</button>
         <div class="help-tour__btn-group">
@@ -354,6 +412,21 @@ class HelpTour {
     if (indicator) indicator.textContent = current;
   }
 
+  _updateDots() {
+    if (!this.el.tooltip) return;
+    const container = this.el.tooltip.querySelector('#help-tour-dots');
+    if (!container) return;
+
+    container.innerHTML = '';
+    this.steps.forEach((_, idx) => {
+      const dot = document.createElement('span');
+      dot.className = 'help-tour__dot';
+      if (idx === this.currentStep) dot.classList.add('help-tour__dot--active');
+      else if (idx < this.currentStep) dot.classList.add('help-tour__dot--visited');
+      container.appendChild(dot);
+    });
+  }
+
   _updateNavButtons() {
     if (!this.el.tooltip) return;
 
@@ -386,16 +459,69 @@ class HelpTour {
 
     const indicator = this.el.tooltip.querySelector('#help-tour-step-indicator');
     const titleEl = this.el.tooltip.querySelector('#help-tour-title');
-    const descEl = this.el.tooltip.querySelector('#help-tour-description');
+    const categoryEl = this.el.tooltip.querySelector('#help-tour-category');
+    const bodyEl = this.el.tooltip.querySelector('#help-tour-body');
 
     if (indicator) indicator.textContent = this.currentStep + 1;
     if (titleEl) titleEl.textContent = step.title || '';
 
-    let desc = step.description || '';
-    if (step.instruction) desc += `\n\n${step.instruction}`;
-    if (descEl) descEl.textContent = desc;
+    if (categoryEl) {
+      const categoryMap = {
+        'getting-started': 'Getting Started',
+        'core-features': 'Core Features',
+        'advanced': 'Advanced Tools',
+        'completion': 'Completing Setup',
+      };
+      const label = categoryMap[step.category] || '';
+      categoryEl.textContent = label;
+      categoryEl.style.display = label ? 'block' : 'none';
+    }
+
+    if (bodyEl) {
+      let html = '';
+
+      if (step.description) {
+        html += `<p class="help-tour__description">${this._escapeHtml(step.description)}</p>`;
+      }
+
+      if (step.purpose) {
+        html += `
+          <div class="help-tour__section help-tour__section--purpose">
+            <div class="help-tour__section-label">&#128161; WHY THIS MATTERS</div>
+            <p>${this._escapeHtml(step.purpose)}</p>
+          </div>
+        `;
+      }
+
+      if (step.how_to_use) {
+        const items = Array.isArray(step.how_to_use) ? step.how_to_use : [step.how_to_use];
+        html += `
+          <div class="help-tour__section help-tour__section--how">
+            <div class="help-tour__section-label">&#128736; HOW TO USE</div>
+            <ol class="help-tour__how-list">
+              ${items.map(item => `<li>${this._escapeHtml(item)}</li>`).join('')}
+            </ol>
+          </div>
+        `;
+      }
+
+      if (step.instruction) {
+        html += `<p class="help-tour__instruction">${this._escapeHtml(step.instruction)}</p>`;
+      }
+
+      bodyEl.innerHTML = html;
+
+      requestAnimationFrame(() => {
+        if (bodyEl.scrollHeight > bodyEl.clientHeight) {
+          bodyEl.classList.add('help-tour__body--scrollable');
+        } else {
+          bodyEl.classList.remove('help-tour__body--scrollable');
+        }
+      });
+    }
 
     this._updateProgress();
+    this._updateDots();
     this._updateNavButtons();
 
     requestAnimationFrame(() => {
@@ -434,6 +560,8 @@ class HelpTour {
       this._showStepContent(step);
       if (this.el.arrow) this.el.arrow.classList.remove('help-tour__arrow--visible');
     }
+
+    this._updateMinimap();
   }
 
   _findTarget(selector) {
@@ -472,11 +600,11 @@ class HelpTour {
 
   _scrollToElement(element) {
     const rect = element.getBoundingClientRect();
-    const offset = 80;
+    const offset = 120;
     if (rect.top < offset || rect.bottom > window.innerHeight - offset) {
       window.scrollTo({
         top: rect.top + window.scrollY - offset,
-        behavior: 'smooth',
+        behavior: 'auto',
       });
     }
   }
@@ -488,13 +616,14 @@ class HelpTour {
   _positionSpotlight(target) {
     if (!this.el.spotlight || !target) return;
     const rect = target.getBoundingClientRect();
+    const padding = 6;
     this.el.spotlight.style.cssText = `
       position: fixed;
-      top: ${rect.top}px;
-      left: ${rect.left}px;
-      width: ${rect.width}px;
-      height: ${rect.height}px;
-      border-radius: 4px;
+      top: ${rect.top - padding}px;
+      left: ${rect.left - padding}px;
+      width: ${rect.width + padding * 2}px;
+      height: ${rect.height + padding * 2}px;
+      border-radius: 6px;
       box-shadow: 0 0 0 9999px rgba(0,0,0,0.6);
       transition: all 350ms cubic-bezier(0.25, 0.1, 0.25, 1);
       z-index: 9999;
@@ -506,8 +635,8 @@ class HelpTour {
   _getPlacement(target) {
     if (!target) return 'bottom';
     const rect = target.getBoundingClientRect();
-    const tooltipWidth = 360;
-    const tooltipHeight = 200;
+    const tooltipWidth = 380;
+    const tooltipHeight = 260;
     const margin = 20;
 
     const canPlaceRight = rect.right + tooltipWidth + margin < window.innerWidth;
@@ -515,11 +644,16 @@ class HelpTour {
     const canPlaceBottom = rect.bottom + tooltipHeight + margin < window.innerHeight;
     const canPlaceTop = rect.top - tooltipHeight - margin > 0;
 
+    const isNearBottom = rect.bottom > window.innerHeight * 0.7;
+    const isNearTop = rect.top < window.innerHeight * 0.3;
+
+    if (isNearBottom && canPlaceTop) return 'top';
+    if (isNearTop && canPlaceBottom) return 'bottom';
     if (canPlaceBottom) return 'bottom';
     if (canPlaceTop) return 'top';
     if (canPlaceRight) return 'right';
     if (canPlaceLeft) return 'left';
-    return 'top';
+    return 'center';
   }
 
   _positionTooltip(target) {
@@ -537,32 +671,44 @@ class HelpTour {
     const margin = 20;
     const scrollTop = window.scrollY;
     const scrollLeft = window.scrollX;
+    const viewportHeight = window.innerHeight;
+    const viewportWidth = window.innerWidth;
 
     let top, left;
+    const clampedLeft = Math.max(margin, Math.min(
+      rect.left + rect.width / 2 - realWidth / 2 + scrollLeft,
+      viewportWidth - realWidth - margin
+    ));
+
     if (placement === 'top') {
-      top = Math.max(margin, rect.top + scrollTop - realHeight - margin);
-      left = Math.max(margin, Math.min(
-        rect.left + rect.width / 2 - realWidth / 2 + scrollLeft,
-        window.innerWidth - realWidth - margin
-      ));
+      const maxTop = scrollTop + viewportHeight - realHeight - margin;
+      top = Math.min(maxTop, Math.max(margin, rect.top + scrollTop - realHeight - margin));
+      left = clampedLeft;
     } else if (placement === 'bottom') {
-      top = Math.max(margin, rect.bottom + scrollTop + margin);
-      left = Math.max(margin, Math.min(
-        rect.left + rect.width / 2 - realWidth / 2 + scrollLeft,
-        window.innerWidth - realWidth - margin
-      ));
+      const maxTop = scrollTop + viewportHeight - realHeight - margin;
+      top = Math.min(Math.max(margin, rect.bottom + scrollTop + margin), maxTop);
+      left = clampedLeft;
     } else if (placement === 'right') {
       top = Math.max(margin, Math.min(
         rect.top + rect.height / 2 - realHeight / 2 + scrollTop,
-        window.innerHeight - realHeight - margin
+        viewportHeight - realHeight - margin
       ));
-      left = Math.min(window.innerWidth - realWidth - margin, rect.right + scrollLeft + margin);
-    } else {
+      left = Math.min(viewportWidth - realWidth - margin, rect.right + scrollLeft + margin);
+    } else if (placement === 'left') {
       top = Math.max(margin, Math.min(
         rect.top + rect.height / 2 - realHeight / 2 + scrollTop,
-        window.innerHeight - realHeight - margin
+        viewportHeight - realHeight - margin
       ));
       left = Math.max(margin, rect.left + scrollLeft - realWidth - margin);
+    } else {
+      top = Math.max(margin, Math.min(
+        scrollTop + viewportHeight / 2 - realHeight / 2,
+        scrollTop + viewportHeight - realHeight - margin
+      ));
+      left = Math.max(margin, Math.min(
+        scrollLeft + viewportWidth / 2 - realWidth / 2,
+        viewportWidth - realWidth - margin
+      ));
     }
 
     tooltip.style.top = `${top}px`;
@@ -570,7 +716,61 @@ class HelpTour {
     tooltip.style.visibility = 'visible';
     tooltip.style.display = 'block';
 
-    this._positionArrow(target, placement);
+    this._avoidTooltipOverlap(target);
+
+    this._clampTooltipToViewport();
+
+    if (placement !== 'center') {
+      this._positionArrow(target, placement);
+    } else {
+      this._positionArrowCenter(target);
+    }
+  }
+
+  _clampTooltipToViewport() {
+    if (!this.el.tooltip) return;
+    const tooltipRect = this.el.tooltip.getBoundingClientRect();
+    const scrollTop = window.scrollY;
+    const viewportHeight = window.innerHeight;
+    const margin = 16;
+
+    let top = parseFloat(this.el.tooltip.style.top);
+    const height = this.el.tooltip.offsetHeight;
+    const maxTop = scrollTop + viewportHeight - height - margin;
+    const minTop = scrollTop + margin;
+
+    if (top < minTop) top = minTop;
+    if (top > maxTop) top = maxTop;
+
+    this.el.tooltip.style.top = `${top}px`;
+  }
+
+  _avoidTooltipOverlap(target) {
+    if (!this.el.tooltip || !target) return;
+
+    const tooltipRect = this.el.tooltip.getBoundingClientRect();
+    const targetRect = target.getBoundingClientRect();
+    const overlapMargin = 12;
+
+    const tooltipCenterY = tooltipRect.top + tooltipRect.height / 2;
+    const targetCenterY = targetRect.top + targetRect.height / 2;
+
+    const verticalOverlap = !(tooltipRect.bottom < targetRect.top - overlapMargin || tooltipRect.top > targetRect.bottom + overlapMargin);
+    const horizontalOverlap = !(tooltipRect.right < targetRect.left - overlapMargin || tooltipRect.left > targetRect.right + overlapMargin);
+
+    if (verticalOverlap && horizontalOverlap) {
+      const scrollTop = window.scrollY;
+      const viewportHeight = window.innerHeight;
+
+      if (targetCenterY > tooltipCenterY) {
+        const newTop = Math.min(tooltipRect.top + scrollTop, targetRect.bottom + scrollTop + overlapMargin);
+        this.el.tooltip.style.top = `${newTop}px`;
+      } else {
+        const maxTop = scrollTop + viewportHeight - this.el.tooltip.offsetHeight - 20;
+        const newTop = Math.max(scrollTop + 20, targetRect.top + scrollTop - this.el.tooltip.offsetHeight - overlapMargin);
+        this.el.tooltip.style.top = `${Math.min(newTop, maxTop)}px`;
+      }
+    }
   }
 
   _positionArrow(target, placement) {
@@ -590,6 +790,39 @@ class HelpTour {
       left = rect.left + rect.width / 2 - arrowSize / 2 + scrollLeft;
       this.el.arrow.style.transform = 'rotate(-45deg) scaleX(-1)';
     } else if (placement === 'right') {
+      top = rect.top + rect.height / 2 - arrowSize / 2 + scrollTop;
+      left = rect.left + scrollLeft - arrowSize / 2;
+      this.el.arrow.style.transform = 'rotate(-45deg) scaleY(-1)';
+    } else {
+      top = rect.top + rect.height / 2 - arrowSize / 2 + scrollTop;
+      left = rect.right + scrollLeft - arrowSize / 2;
+      this.el.arrow.style.transform = 'rotate(45deg) scaleY(-1)';
+    }
+
+    this.el.arrow.style.top = `${top}px`;
+    this.el.arrow.style.left = `${left}px`;
+    this.el.arrow.className = 'help-tour__arrow help-tour__arrow--visible';
+  }
+
+  _positionArrowCenter(target) {
+    if (!this.el.arrow || !target) return;
+    const rect = target.getBoundingClientRect();
+    const scrollTop = window.scrollY;
+    const scrollLeft = window.scrollX;
+
+    const tooltipRect = this.el.tooltip.getBoundingClientRect();
+    const arrowSize = 22;
+
+    let top, left;
+    if (rect.top > tooltipRect.bottom) {
+      top = rect.top + scrollTop - arrowSize / 2;
+      left = rect.left + rect.width / 2 - arrowSize / 2 + scrollLeft;
+      this.el.arrow.style.transform = 'rotate(-45deg) scaleX(-1)';
+    } else if (rect.bottom < tooltipRect.top) {
+      top = rect.bottom + scrollTop - arrowSize / 2;
+      left = rect.left + rect.width / 2 - arrowSize / 2 + scrollLeft;
+      this.el.arrow.style.transform = 'rotate(45deg)';
+    } else if (rect.left > tooltipRect.right) {
       top = rect.top + rect.height / 2 - arrowSize / 2 + scrollTop;
       left = rect.left + scrollLeft - arrowSize / 2;
       this.el.arrow.style.transform = 'rotate(-45deg) scaleY(-1)';
@@ -631,13 +864,13 @@ class HelpTour {
     if (this.el.tooltip) {
       const indicator = this.el.tooltip.querySelector('#help-tour-step-indicator');
       const titleEl = this.el.tooltip.querySelector('#help-tour-title');
-      const descEl = this.el.tooltip.querySelector('#help-tour-description');
+      const bodyEl = this.el.tooltip.querySelector('#help-tour-body');
       const prevBtn = this.el.tooltip.querySelector('#help-tour-prev');
       const nextBtn = this.el.tooltip.querySelector('#help-tour-next');
 
       if (indicator) indicator.style.display = 'none';
       if (titleEl) titleEl.textContent = 'No Tutorial Available';
-      if (descEl) descEl.textContent = 'No tutorial steps are configured for this page.';
+      if (bodyEl) bodyEl.innerHTML = '<p class="help-tour__description">No tutorial steps are configured for this page.</p>';
       if (prevBtn) prevBtn.style.display = 'none';
       if (nextBtn) nextBtn.style.display = 'none';
       if (this.el.spotlight) this.el.spotlight.style.display = 'none';
@@ -666,6 +899,7 @@ class HelpTour {
     if (this.el.tooltip) this.el.tooltip.classList.remove('help-tour__tooltip--visible');
     if (this.el.arrow) this.el.arrow.classList.remove('help-tour__arrow--visible');
     if (this.el.spotlight) this.el.spotlight.style.display = 'none';
+    this._removeMinimap();
   }
 
   /* ---------- Events ---------- */
@@ -708,6 +942,18 @@ class HelpTour {
     }
   }
 
+  _handleScroll() {
+    if (!this.isActive) return;
+    const step = this.steps[this.currentStep];
+    if (!step) return;
+    const target = this._findTarget(step.selector);
+    if (target) {
+      this._positionSpotlight(target);
+      this._positionTooltip(target);
+      this._positionArrow(target);
+    }
+  }
+
   _trapFocus(e) {
     if (!this.el.tooltip || !this.isActive) return;
     const focusable = this.el.tooltip.querySelectorAll(
@@ -738,6 +984,12 @@ class HelpTour {
     this._focusHandled = false;
   }
 
+  _escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
   /* ---------- Destroy ---------- */
 
   destroy() {
@@ -748,9 +1000,11 @@ class HelpTour {
     if (this.el.spotlight && this.el.spotlight.parentNode) this.el.spotlight.parentNode.removeChild(this.el.spotlight);
     if (this.el.tooltip && this.el.tooltip.parentNode) this.el.tooltip.parentNode.removeChild(this.el.tooltip);
     if (this.el.arrow && this.el.arrow.parentNode) this.el.arrow.parentNode.removeChild(this.el.arrow);
+    if (this.el.minimap && this.el.minimap.parentNode) this.el.minimap.parentNode.removeChild(this.el.minimap);
     this.el = {};
     document.removeEventListener('keydown', this._boundHandleKeydown);
     window.removeEventListener('resize', this._boundHandleResize);
+    window.removeEventListener('scroll', this._boundHandleScroll, true);
   }
 }
 

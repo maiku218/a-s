@@ -101,18 +101,39 @@ const HELP_TOUR_STEPS = [
   {
     selector: ".page-header",
     title: "Non-Medical Sales Report",
+    category: "core-features",
+    purpose: "Tracking non-medical sales ensures supplies and convenience items are properly monitored and restocked.",
+    how_to_use: [
+      "Review total non-medical sales and average transaction value",
+      "Apply date filters to analyze specific periods or promotions",
+      "Export the data to CSV for accounting or inventory planning"
+    ],
     description: "View all completed non-medical product sales.",
     instruction: "The report shows receipt numbers, product names, totals, dates, and status."
   },
   {
     selector: "#salesChart",
     title: "Sales Chart",
+    category: "core-features",
+    purpose: "Visualizing non-medical sales trends helps you understand demand for supplies and plan reorders effectively.",
+    how_to_use: [
+      "Hover over data points to inspect exact daily sales figures",
+      "Compare trends week-over-week to spot growth or decline",
+      "Use insights to adjust stock levels for high-demand supplies"
+    ],
     description: "Daily non-medical sales over the past 30 days.",
     instruction: "Hover over the chart to see exact values for each day."
   },
   {
     selector: ".table-container table",
     title: "Sales Table",
+    category: "core-features",
+    purpose: "Transaction-level detail for non-medical sales supports refunds, voids, and customer service lookups.",
+    how_to_use: [
+      "Check receipt numbers, product names, totals, dates, and status",
+      "Use transaction details to process refunds or answer customer questions",
+      "Correlate table data with the chart for complete accuracy checks"
+    ],
     description: "Detailed list of all non-medical sales transactions.",
     instruction: "Each row shows receipt number, products, total amount, date, and status."
   }
@@ -120,4 +141,5 @@ const HELP_TOUR_STEPS = [
 window.HELP_TOUR_STEPS = HELP_TOUR_STEPS;
 window.HELP_TOUR_STORAGE_KEY = "helptour_non_medical_sales";
 </script>
+<script src="/static/js/help-tour.js"></script>
 {% endblock %}

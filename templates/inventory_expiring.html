@@ -136,12 +136,26 @@ const HELP_TOUR_STEPS = [
   {
     selector: "label[style*='margin-right: 10px']",
     title: "Level Filter",
+    category: "core-features",
+    purpose: "Filtering by severity level helps you triage alerts and focus on the most urgent expirations first.",
+    how_to_use: [
+      "Choose Expired to see products already past their expiration date",
+      "Choose Critical for items expiring within 7 days",
+      "Choose Warning for items expiring within 8 to 30 days"
+    ],
     description: "Filter expiration alerts by severity level.",
     instruction: "Choose All, Expired, Critical, or Warning to filter the list."
   },
   {
     selector: ".table-container table",
     title: "Expiration Alerts",
+    category: "core-features",
+    purpose: "This view lets you proactively manage products approaching expiration to avoid waste and compliance issues.",
+    how_to_use: [
+      "Review product names, categories, barcodes, prices, and days remaining",
+      "Use Acknowledge to flag items you are planning to discount or remove",
+      "Use Dismiss with a reason for alerts that do not require action"
+    ],
     description: "View products organized by expiration severity.",
     instruction: "Check product names, categories, barcodes, prices, expiration dates, and days remaining. Use Acknowledge or Dismiss buttons to manage alerts."
   }
@@ -149,4 +163,5 @@ const HELP_TOUR_STEPS = [
 window.HELP_TOUR_STEPS = HELP_TOUR_STEPS;
 window.HELP_TOUR_STORAGE_KEY = "helptour_expiring";
 </script>
+<script src="/static/js/help-tour.js"></script>
 {% endblock %}

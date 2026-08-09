@@ -604,30 +604,65 @@ const HELP_TOUR_STEPS = [
   {
     selector: "#tour-topbar-title",
     title: "Dashboard",
+    category: "getting-started",
+    purpose: "The Admin Dashboard is your central command center for monitoring all pharmacy operations at a glance.",
+    how_to_use: [
+      "View real-time stats for active cashiers, low stock, expired, and expiring items",
+      "Click any sidebar category to navigate to detailed management pages",
+      "Use the notification bell to stay updated on urgent alerts"
+    ],
     description: "This is your Admin Dashboard - the main hub for managing pharmacy operations.",
     instruction: "View key metrics and access all features from here."
   },
   {
     selector: "#tour-notification-bell",
     title: "Notification Bell",
+    category: "getting-started",
+    purpose: "Instant alerts ensure you never miss critical inventory events that could impact sales or patient safety.",
+    how_to_use: [
+      "Click the bell icon to open the notifications dropdown",
+      "Review the red badge to see total unread alert count",
+      "Click Acknowledge or Dismiss directly from the dropdown to manage alerts"
+    ],
     description: "Get real-time alerts for low stock items and products nearing expiration.",
     instruction: "Click the bell icon to open the notifications dropdown. A red badge shows the total count."
   },
   {
     selector: "#tour-stats-grid",
     title: "Dashboard Statistics",
+    category: "core-features",
+    purpose: "Key pharmacy metrics displayed at a glance help you make quick decisions without navigating away from the dashboard.",
+    how_to_use: [
+      "Review Active Cashiers count to see who is currently logged in",
+      "Check Out of Stock and Low Stock counts to prioritize reordering",
+      "Monitor Expired and Expiring Critical/Warning counts to remove or discount products"
+    ],
     description: "Key pharmacy metrics displayed at a glance.",
     instruction: "View Active Cashiers, Low Stock Alerts, and Expiring Items counts."
   },
   {
     selector: "#tour-cashier-status",
     title: "Cashier Status Monitor",
+    category: "core-features",
+    purpose: "Knowing which cashiers are online helps you coordinate staffing and track session activity.",
+    how_to_use: [
+      "Identify online cashiers by the green status dot",
+      "View login times to see when each session started",
+      "Use this panel during peak hours to monitor active POS terminals"
+    ],
     description: "See which cashiers are currently logged in and working.",
     instruction: "Green dots indicate online cashiers with their login times displayed."
   },
   {
     selector: "#tour-brand",
     title: "Brand Logo",
+    category: "core-features",
+    purpose: "Quick navigation back to the dashboard saves time when you are deep in a sub-page.",
+    how_to_use: [
+      "Click the brand logo from any admin page to return to the dashboard",
+      "Use it as a reliable home anchor after completing a task",
+      "The logo remains accessible regardless of which sidebar section is open"
+    ],
     description: "Click the brand logo to quickly return to the Dashboard.",
     instruction: "The logo is always accessible from any admin page."
   }
@@ -670,6 +705,12 @@ window.HELP_TOUR_STORAGE_KEY = "helptour_admin_dashboard";
         };
     }
 })();
+</script>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    loadNotifications();
+});
 </script>
 
 </body>
