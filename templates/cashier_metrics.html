@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PharmaCon POS - Cashier Metrics</title>
+    <link rel="stylesheet" href="/static/css/help-tour.css">
+    <style>
+        :root {
+            --accent: #10b981;
+            --accent-dark: #059669;
+            --accent-light: #d1fae5;
+            --success: #10b981;
+            --success-dark: #059669;
+            --danger: #ef4444;
+            --danger-soft: #fef2f2;
+            --warning: #f59e0b;
+            --warning-soft: #fffbeb;
+            --bg: #ffffff;
+            --bg-secondary: #f9fafb;
+            --bg-tinted: #f0fdf4;
+            --surface: #ffffff;
+            --border: #e5e7eb;
+            --border-light: #f3f4f6;
+            --text: #111827;
+            --text-secondary: #4b5563;
+            --text-muted: #9ca3af;
+            --shadow: 0 1px 3px 0 rgb(0 0 0 / 0.06), 0 1px 2px -1px rgb(0 0 0 / 0.06);
+            --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.06), 0 2px 4px -2px rgb(0 0 0 / 0.06);
+            --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.06), 0 4px 6px -4px rgb(0 0 0 / 0.06);
+            --radius: 10px;
+            --radius-lg: 14px;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+        .header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 12px 24px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 50; box-shadow: var(--shadow); }
+        .brand { font-weight: 800; font-size: 20px; }
+        .brand span { color: var(--accent); }
+        .layout { display: grid; grid-template-columns: 64px 1fr; gap: 16px; padding: 16px 24px; height: calc(100vh - 60px); }
+        .left-nav { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 16px 0; display: flex; flex-direction: column; align-items: center; gap: 8px; box-shadow: var(--shadow); }
+        .nav-icon { width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; border-radius: var(--radius); cursor: pointer; transition: all 0.15s; color: var(--text-secondary); background: none; border: none; }
+        .nav-icon:hover { background: var(--bg); color: var(--text); }
+        .nav-icon.active { background: var(--accent); color: white; }
+        .nav-icon.logout { margin-top: auto; color: var(--danger); }
+        .nav-icon.logout:hover { background: #fee2e2; }
+        .nav-icon svg { width: 22px; height: 22px; }
+        .panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 24px; box-shadow: var(--shadow); overflow-y: auto; }
+        .panel-title { font-size: 18px; font-weight: 800; margin-bottom: 20px; }
+        .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 24px; }
+        .stat-card { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 20px; text-align: center; }
+        .stat-label { font-size: 12px; font-weight: 700; text-transform: uppercase; color: var(--text-secondary); letter-spacing: 0.5px; }
+        .stat-value { font-size: 28px; font-weight: 900; margin-top: 8px; color: var(--accent); }
+        table { width: 100%; border-collapse: collapse; font-size: 14px; }
+        thead { background: var(--bg); }
+        th { padding: 12px 16px; text-align: left; font-size: 12px; font-weight: 600; text-transform: uppercase; color: var(--text-secondary); letter-spacing: 0.3px; }
+        td { padding: 14px 16px; border-top: 1px solid var(--border); }
+        tbody tr:hover { background: rgba(0,0,0,0.01); }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <div class="brand">PHARMA<span>CON</span></div>
+        <div class="header-actions">Cashier: <b>{{ session['cashier_user'] }}</b></div>
+    </header>
+    <div class="layout">
+        <nav class="left-nav">
+            <a href="{{ url_for('cashier_dashboard') }}" class="nav-icon" title="Dashboard">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+            </a>
+            <a href="{{ url_for('cashier_history') }}" class="nav-icon" title="Sales History">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            </a>
+            <div class="nav-icon active" title="Performance">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+            </div>
+            <button class="nav-icon" onclick="openResumeModal()" title="Resume Held">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+            </button>
+            <div class="nav-icon logout" onclick="window.location.href='/cashier_logout'" title="Logout">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+            </div>
+        </nav>
+        <main class="panel">
+            <h2 class="panel-title">My Performance</h2>
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-label">Total Sales</div>
+                    <div class="stat-value">₱{{ "{:,.2f}".format(my_total or 0) }}</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Transactions</div>
+                    <div class="stat-value">{{ my_count or 0 }}</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Average Sale</div>
+                    <div class="stat-value">₱{{ "{:,.2f}".format(my_avg or 0) }}</div>
+                </div>
+            </div>
+
+            <h2 class="panel-title" style="margin-top: 32px;">Cashier Leaderboard</h2>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr><th>Rank</th><th>Cashier</th><th>Username</th><th>Total Sales</th><th>Transactions</th><th>Average</th></tr>
+                    </thead>
+                    <tbody>
+                        {% for r in rankings %}
+                        <tr>
+                            <td>{{ loop.index }}</td>
+                            <td>{{ r[0] }}</td>
+                            <td>{{ r[1] }}</td>
+                            <td>₱{{ "{:,.2f}".format(r[2]) }}</td>
+                            <td>{{ r[3] }}</td>
+                            <td>₱{{ "{:,.2f}".format((r[2] / r[3]) if r[3] > 0 else 0) }}</td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="6" style="text-align: center; color: var(--text-muted);">No completed transactions yet.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </main>
+    </div>
+
+    {% block help_tour %}
+    <script>
+    const HELP_TOUR_STEPS = [
+      {
+        selector: "#tour-metrics-title",
+        title: "Cashier Metrics",
+        category: "core-features",
+        purpose: "Track your sales performance and see how you rank against other cashiers.",
+        how_to_use: [
+          "Review your total sales, transaction count, and average sale value",
+          "Check the leaderboard to see your rank among other cashiers",
+          "Use this data to improve your daily performance"
+        ],
+        description: "This page shows your personal sales metrics and the cashier leaderboard.",
+        instruction: "Metrics are calculated from completed transactions only."
+      },
+      {
+        selector: "#tour-metrics-stats",
+        title: "Performance Stats",
+        category: "core-features",
+        purpose: "Quick overview of your key performance indicators for the selected period.",
+        how_to_use: [
+          "Switch between Daily, Weekly, and Monthly views using the tabs",
+          "Monitor total sales amount and transaction count",
+          "Check average sale value to understand customer spending patterns"
+        ],
+        description: "The stat cards at the top show your total sales, transactions, and average sale amount.",
+        instruction: "Click the tabs above the cards to change the time period."
+      },
+      {
+        selector: "#tour-metrics-chart",
+        title: "Sales Chart",
+        category: "core-features",
+        purpose: "Visualize your sales trends over time to identify patterns.",
+        how_to_use: [
+          "The chart shows sales data for the selected period",
+          "Hover over data points to see exact values",
+          "Use the chart to spot peak hours or slow days"
+        ],
+        description: "A line chart displays your sales performance across the selected time period.",
+        instruction: "The chart updates automatically when you change the time period."
+      },
+      {
+        selector: "#tour-metrics-leaderboard",
+        title: "Leaderboard",
+        category: "core-features",
+        purpose: "See how your performance compares to other cashiers in the store.",
+        how_to_use: [
+          "View your rank based on total sales",
+          "Compare your transaction count and average sale",
+          "Use the leaderboard as motivation to improve your metrics"
+        ],
+        description: "The leaderboard ranks all cashiers by total sales amount.",
+        instruction: "Your name is highlighted if you are currently logged in."
+      }
+    ];
+    window.HELP_TOUR_STEPS = HELP_TOUR_STEPS;
+    window.HELP_TOUR_STORAGE_KEY = "helptour_cashier_metrics";
+    </script>
+    <script src="/static/js/help-tour.js"></script>
+    {% endblock %}
+
+<script>
+function openResumeModal() {
+    fetch('/api/held_transactions')
+        .then(res => res.json())
+        .then(data => {
+            const list = document.getElementById('resume-list');
+            list.innerHTML = '';
+            if (data.holds && data.holds.length > 0) {
+                data.holds.forEach((hold, idx) => {
+                    const div = document.createElement('div');
+                    div.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:12px;border-bottom:1px solid var(--border);';
+                    div.innerHTML = `<div><div style="font-weight:700;">${hold.name}</div><div style="font-size:12px;color:var(--text-secondary);">${hold.timestamp} - ${hold.cart.length} items</div></div><button class="btn btn-primary btn-sm" onclick="resumeTransaction(${idx})">Resume</button>`;
+                    list.appendChild(div);
+                });
+            } else {
+                list.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:20px;">No held transactions</div>';
+            }
+            document.getElementById('resume-modal').classList.add('show');
+        });
+}
+
+function closeResumeModal() {
+    document.getElementById('resume-modal').classList.remove('show');
+}
+
+function resumeTransaction(index) {
+    fetch('/api/resume_transaction', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').getAttribute('content') },
+        body: JSON.stringify({ index: index })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            window.location.href = '/cashier';
+        } else {
+            alert(data.message);
+        }
+    });
+}
+</script>
+
+<!-- Resume Transaction Modal -->
+<!-- <div id="resume-modal" class="modal-overlay">
+    <div class="modal" style="max-width: 480px;">
+        <div class="modal-header">
+            <div class="modal-title">Resume Transaction</div>
+            <div class="modal-subtitle">Select a held transaction to continue.</div>
+        </div>
+        <div class="modal-body" id="resume-list" style="max-height: 300px; overflow-y: auto;"></div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closeResumeModal()">Close</button>
+        </div>
+    </div>
+</div> -->
+
+</body>
+</html>

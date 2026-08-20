@@ -15,9 +15,9 @@ mysqlclient==2.2.0  # Required by Flask-MySQLdb (C extension - faster)
 # Password Hashing (included with Werkzeug, but explicit version here)
 # passlib[bcrypt]==1.7.4  # Optional: for more advanced password handling
 
-# Production Extensions (optional)
+# Production Extensions (recommended)
 # gunicorn==21.2.0  # For production server
-# python-dotenv==1.0.0  # For environment variable management
+python-dotenv==1.0.0  # For environment variable management (SECRET_KEY, etc.)
 
 # Development Tools (optional)
 # pytest==7.4.0  # For testing

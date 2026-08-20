@@ -1,27 +1,95 @@
-from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify, send_file
+from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify, send_file, send_from_directory, current_app
 from flask_mysqldb import MySQL
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime
 import random
 import os
 import subprocess
-import tempfile
-from io import BytesIO
+import html as html_module
+import csv
+from io import BytesIO, StringIO
 
 app = Flask(__name__)
-app.secret_key = "simple_secret_key"
-app.config['SESSION_PERMANENT'] = True  # Session persists on browser close
+app.secret_key = os.environ.get('SECRET_KEY') or os.urandom(24)
+app.config['SESSION_PERMANENT'] = True
 app.config['SESSION_COOKIE_HTTPONLY'] = True
-app.config['SESSION_COOKIE_SECURE'] = False  # Set to True in production with HTTPS
-app.config['PERMANENT_SESSION_LIFETIME'] = 86400  # 24 hours - session lasts 24 hours
-
-# Use separate cookies for admin and cashier
+app.config['SESSION_COOKIE_SECURE'] = os.environ.get('SESSION_COOKIE_SECURE', 'False').lower() == 'true'
+app.config['PERMANENT_SESSION_LIFETIME'] = 86400
 app.config['SESSION_COOKIE_NAME'] = 'pharmacon_session'
+
+# Security: CSRF Protection
+def generate_csrf_token():
+    if 'csrf_token' not in session:
+        session['csrf_token'] = os.urandom(32).hex()
+    return session['csrf_token']
+
+def validate_csrf_token():
+    token = request.form.get('csrf_token') or request.headers.get('X-CSRFToken')
+    if not token or token != session.get('csrf_token'):
+        return False
+    return True
+
+@app.before_request
+def csrf_protect():
+    if request.method in ('POST', 'PUT', 'DELETE', 'PATCH'):
+        exempt_routes = ['cashier_login', 'admin_login', 'admin_login_oop', 'cashier_login_oop']
+        if request.endpoint not in exempt_routes:
+            if not validate_csrf_token():
+                if request.is_json:
+                    return jsonify({'success': False, 'message': 'CSRF token missing or invalid'}), 403
+                flash('CSRF token missing or invalid. Please refresh and try again.', 'error')
+                return redirect(request.referrer or url_for('admin_login'))
+
+# Security: Login Attempt Tracking
+MAX_LOGIN_ATTEMPTS = 5
+LOCKOUT_MINUTES = 15
+
+def check_login_lockout(ip_address, username):
+    cur = mysql.connection.cursor()
+    try:
+        cur.execute("""
+            SELECT COUNT(*) FROM login_attempts 
+            WHERE (ip_address = %s OR username_attempted = %s)
+            AND locked_until IS NOT NULL AND locked_until > NOW()
+        """, (ip_address, username))
+        return cur.fetchone()[0] > 0
+    finally:
+        cur.close()
+
+def record_login_attempt(ip_address, username, success):
+    cur = mysql.connection.cursor()
+    try:
+        if success:
+            cur.execute("""
+                DELETE FROM login_attempts 
+                WHERE (ip_address = %s OR username_attempted = %s)
+            """, (ip_address, username))
+        else:
+            cur.execute("""
+                INSERT INTO login_attempts (ip_address, username_attempted, attempted_at)
+                VALUES (%s, %s, NOW())
+            """, (ip_address, username))
+            cur.execute("""
+                SELECT COUNT(*) FROM login_attempts 
+                WHERE (ip_address = %s OR username_attempted = %s)
+                AND attempted_at > NOW() - INTERVAL 1 HOUR
+            """, (ip_address, username))
+            attempts = cur.fetchone()[0]
+            if attempts >= MAX_LOGIN_ATTEMPTS:
+                cur.execute("""
+                    UPDATE login_attempts 
+                    SET locked_until = NOW() + INTERVAL %s MINUTE
+                    WHERE (ip_address = %s OR username_attempted = %s)
+                    AND attempted_at > NOW() - INTERVAL 1 HOUR
+                """, (LOCKOUT_MINUTES, ip_address, username))
+        mysql.connection.commit()
+    finally:
+        cur.close()
 
 # Add datetime to template context
 @app.context_processor
 def inject_datetime():
-    return dict(datetime=datetime, LOW_STOCK_THRESHOLD=LOW_STOCK_THRESHOLD)
+    return dict(datetime=datetime, LOW_STOCK_THRESHOLD=LOW_STOCK_THRESHOLD, csrf_token=generate_csrf_token)
 
 def clean_input(value):
     if not value:
@@ -107,6 +175,13 @@ def admin_login():
     if request.method == 'POST':
         username = clean_input(request.form.get('username'))
         password = clean_input(request.form.get('password'))
+        ip_address = request.remote_addr
+        if request.headers.get('X-Forwarded-For'):
+            ip_address = request.headers.get('X-Forwarded-For')
+
+        if check_login_lockout(ip_address, username):
+            flash("Account temporarily locked due to too many failed attempts. Please try again later.", "error")
+            return redirect(url_for('admin_login'))
 
         if username == "" or password == "":
             flash("All fields are required", "error")
@@ -128,7 +203,7 @@ def admin_login():
                 from werkzeug.security import generate_password_hash as gen_hash
                 answer_hashed = gen_hash('admin123')
                 cur = mysql.connection.cursor()
-                cur.execute("INSERT INTO admins (username, password, full_name, security_question, security_answer) VALUES (%s, %s, %s, %s, %s)", ('admin', hashed, 'System Administrator', 'What is the name of the owner?', 'pbkdf2:sha256:600000$BlhM6ndrgPIj0Eui$8c0c6511b8af1f42401c742e1da56b34bfb60e56d703087fcc4f013f2cc2ecae'))
+                cur.execute("INSERT INTO admins (username, password, full_name, security_question, security_answer, force_password_change) VALUES (%s, %s, %s, %s, %s, %s)", ('admin', hashed, 'System Administrator', 'What is the name of the owner?', 'pbkdf2:sha256:600000$BlhM6ndrgPIj0Eui$8c0c6511b8af1f42401c742e1da56b34bfb60e56d703087fcc4f013f2cc2ecae', 1))
                 mysql.connection.commit()
                 cur.close()
                 cur = mysql.connection.cursor()
@@ -151,6 +226,23 @@ def admin_login():
                 cur.close()
         
         if admin and (password == admin[2] or check_password_hash(admin[2], password)):
+            force_change = False
+            try:
+                cur = mysql.connection.cursor()
+                cur.execute("SELECT force_password_change FROM admins WHERE id=%s", (admin[0],))
+                fc_row = cur.fetchone()
+                cur.close()
+                if fc_row and fc_row[0]:
+                    force_change = True
+            except Exception:
+                pass
+            
+            if force_change:
+                session['pending_admin_id'] = admin[0]
+                session['pending_admin_user'] = admin[1]
+                flash("You must change your password before continuing.", "error")
+                return redirect(url_for('admin_change_password'))
+            
             session['admin_user'] = admin[1]
             session['admin_id'] = admin[0]
             session['role'] = 'admin'
@@ -171,9 +263,10 @@ def admin_login():
             except:
                 pass  # Table might not exist yet
             cur.close()
-            
+            record_login_attempt(ip_address, username, True)
             return redirect(url_for('admin_dashboard'))
         else:
+            record_login_attempt(ip_address, username, False)
             flash("Invalid login credentials", "error")
             return redirect(url_for('admin_login'))
 
@@ -209,11 +302,52 @@ def admin_dashboard():
     """)
     activity_logs = cur.fetchall()
     
-    cur.execute("SELECT COUNT(*) FROM products WHERE stock <= %s", (LOW_STOCK_THRESHOLD,))
+    cur.execute("SELECT COUNT(*) FROM products WHERE stock = 0")
+    total_out_of_stock = cur.fetchone()[0]
+    cur.execute("""
+        SELECT COUNT(DISTINCT p.id) FROM products p
+        LEFT JOIN alert_logs al ON al.product_id = p.id AND al.alert_type = 'out_of_stock'
+        WHERE p.stock = 0 AND (al.id IS NULL OR (al.acknowledged_by IS NULL AND al.dismissed_by IS NULL))
+    """)
+    out_of_stock_count = cur.fetchone()[0]
+    
+    cur.execute("SELECT COUNT(*) FROM products WHERE stock > 0 AND stock <= %s", (LOW_STOCK_THRESHOLD,))
+    total_low_stock = cur.fetchone()[0]
+    cur.execute("""
+        SELECT COUNT(DISTINCT p.id) FROM products p
+        LEFT JOIN alert_logs al ON al.product_id = p.id AND al.alert_type = 'low_stock'
+        WHERE p.stock > 0 AND p.stock <= %s AND (al.id IS NULL OR (al.acknowledged_by IS NULL AND al.dismissed_by IS NULL))
+    """, (LOW_STOCK_THRESHOLD,))
     low_stock_count = cur.fetchone()[0]
     
-    cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date <= CURDATE() + INTERVAL 30 DAY AND expiration_date IS NOT NULL")
-    expiring_count = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date < CURDATE() AND expiration_date IS NOT NULL")
+    total_expired = cur.fetchone()[0]
+    cur.execute("""
+        SELECT COUNT(DISTINCT p.id) FROM products p
+        LEFT JOIN alert_logs al ON al.product_id = p.id AND al.alert_type = 'expired'
+        WHERE p.expiration_date < CURDATE() AND p.expiration_date IS NOT NULL AND (al.id IS NULL OR (al.acknowledged_by IS NULL AND al.dismissed_by IS NULL))
+    """)
+    expired_count = cur.fetchone()[0]
+    
+    cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date >= CURDATE() AND expiration_date <= CURDATE() + INTERVAL 7 DAY AND expiration_date IS NOT NULL")
+    total_expiring_critical = cur.fetchone()[0]
+    cur.execute("""
+        SELECT COUNT(DISTINCT p.id) FROM products p
+        LEFT JOIN alert_logs al ON al.product_id = p.id AND al.alert_type = 'expiring_medical'
+        WHERE p.expiration_date >= CURDATE() AND p.expiration_date <= CURDATE() + INTERVAL 7 DAY AND p.expiration_date IS NOT NULL AND (al.id IS NULL OR (al.acknowledged_by IS NULL AND al.dismissed_by IS NULL))
+    """)
+    expiring_critical_count = cur.fetchone()[0]
+    
+    cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date > CURDATE() + INTERVAL 7 DAY AND expiration_date <= CURDATE() + INTERVAL 30 DAY AND expiration_date IS NOT NULL")
+    total_expiring_warning = cur.fetchone()[0]
+    cur.execute("""
+        SELECT COUNT(DISTINCT p.id) FROM products p
+        LEFT JOIN alert_logs al ON al.product_id = p.id AND al.alert_type = 'expiring_medical'
+        WHERE p.expiration_date > CURDATE() + INTERVAL 7 DAY AND p.expiration_date <= CURDATE() + INTERVAL 30 DAY AND p.expiration_date IS NOT NULL AND (al.id IS NULL OR (al.acknowledged_by IS NULL AND al.dismissed_by IS NULL))
+    """)
+    expiring_warning_count = cur.fetchone()[0]
+    
+    total_alert_count = out_of_stock_count + low_stock_count + expired_count + expiring_critical_count + expiring_warning_count
     
     cur.close()
 
@@ -221,8 +355,12 @@ def admin_dashboard():
                            cashiers=cashiers,
                            active_cashiers=active_cashiers,
                            activity_logs=activity_logs,
+                           out_of_stock_count=out_of_stock_count,
                            low_stock_count=low_stock_count,
-                           expiring_count=expiring_count,
+                           expired_count=expired_count,
+                           expiring_critical_count=expiring_critical_count,
+                           expiring_warning_count=expiring_warning_count,
+                           total_alert_count=total_alert_count,
                            active_main='admin',
                            active_sub='dashboard')
 
@@ -292,31 +430,75 @@ def admin_activity_logs():
 @admin_required
 def get_notifications():
     cur = mysql.connection.cursor()
+    admin_id = session.get('admin_id')
+    
+    hidden_products = set()
+    if admin_id:
+        cur.execute("SELECT product_id, alert_type FROM alert_visibility WHERE admin_id = %s AND is_hidden = 1", (admin_id,))
+        for row in cur.fetchall():
+            hidden_products.add(f"{row[0]}_{row[1]}")
     
     cur.execute("""
         SELECT id, product_name, stock, barcode 
         FROM products 
-        WHERE stock <= %s
+        WHERE stock = 0
+        ORDER BY stock ASC
+        LIMIT 10
+    """)
+    out_of_stock = [p for p in cur.fetchall() if f"{p[0]}_out_of_stock" not in hidden_products]
+    
+    cur.execute("""
+        SELECT id, product_name, stock, barcode 
+        FROM products 
+        WHERE stock > 0 AND stock <= %s
         ORDER BY stock ASC
         LIMIT 10
     """, (LOW_STOCK_THRESHOLD,))
-    low_stock = cur.fetchall()
+    low_stock = [p for p in cur.fetchall() if f"{p[0]}_low_stock" not in hidden_products]
     
     cur.execute("""
-        SELECT id, product_name, expiration_date, barcode
+        SELECT id, product_name, expiration_date, barcode,
+               DATEDIFF(expiration_date, CURDATE()) as days_left
         FROM products 
-        WHERE expiration_date <= CURDATE() + INTERVAL 30 DAY 
+        WHERE expiration_date < CURDATE()
         AND expiration_date IS NOT NULL
         ORDER BY expiration_date ASC
         LIMIT 10
     """)
-    expiring = cur.fetchall()
+    expired = [p for p in cur.fetchall() if f"{p[0]}_expired" not in hidden_products]
+    
+    cur.execute("""
+        SELECT id, product_name, expiration_date, barcode,
+               DATEDIFF(expiration_date, CURDATE()) as days_left
+        FROM products 
+        WHERE expiration_date >= CURDATE()
+        AND expiration_date <= CURDATE() + INTERVAL 7 DAY
+        AND expiration_date IS NOT NULL
+        ORDER BY expiration_date ASC
+        LIMIT 10
+    """)
+    expiring_critical = [p for p in cur.fetchall() if f"{p[0]}_expiring_critical" not in hidden_products]
+    
+    cur.execute("""
+        SELECT id, product_name, expiration_date, barcode,
+               DATEDIFF(expiration_date, CURDATE()) as days_left
+        FROM products 
+        WHERE expiration_date > CURDATE() + INTERVAL 7 DAY
+        AND expiration_date <= CURDATE() + INTERVAL 30 DAY
+        AND expiration_date IS NOT NULL
+        ORDER BY expiration_date ASC
+        LIMIT 10
+    """)
+    expiring_warning = [p for p in cur.fetchall() if f"{p[0]}_expiring_warning" not in hidden_products]
     
     cur.close()
     
     return jsonify({
+        'out_of_stock': [{'id': p[0], 'name': p[1], 'stock': p[2], 'barcode': p[3]} for p in out_of_stock],
         'low_stock': [{'id': p[0], 'name': p[1], 'stock': p[2], 'barcode': p[3]} for p in low_stock],
-        'expiring': [{'id': p[0], 'name': p[1], 'expiry': str(p[2]), 'barcode': p[3]} for p in expiring]
+        'expired': [{'id': p[0], 'name': p[1], 'expiry': str(p[2]), 'barcode': p[3], 'days_left': p[4]} for p in expired],
+        'expiring_critical': [{'id': p[0], 'name': p[1], 'expiry': str(p[2]), 'barcode': p[3], 'days_left': p[4]} for p in expiring_critical],
+        'expiring_warning': [{'id': p[0], 'name': p[1], 'expiry': str(p[2]), 'barcode': p[3], 'days_left': p[4]} for p in expiring_warning]
     })
 
 @app.route('/api/cashier/notifications')
@@ -327,24 +509,24 @@ def get_cashier_notifications():
         cur.execute("""
             SELECT id, product_name, stock, barcode
             FROM products
-            WHERE stock <= %s
+            WHERE stock = 0
+            ORDER BY stock ASC
+            LIMIT 10
+        """)
+        out_of_stock = cur.fetchall()
+
+        cur.execute("""
+            SELECT id, product_name, stock, barcode
+            FROM products
+            WHERE stock > 0 AND stock <= %s
             ORDER BY stock ASC
             LIMIT 10
         """, (LOW_STOCK_THRESHOLD,))
         low_stock = cur.fetchall()
 
         cur.execute("""
-            SELECT id, product_name, expiration_date, barcode
-            FROM products
-            WHERE expiration_date <= CURDATE() + INTERVAL 30 DAY
-              AND expiration_date IS NOT NULL
-            ORDER BY expiration_date ASC
-            LIMIT 10
-        """)
-        expiring = cur.fetchall()
-
-        cur.execute("""
-            SELECT id, product_name, expiration_date, barcode
+            SELECT id, product_name, expiration_date, barcode,
+                   DATEDIFF(expiration_date, CURDATE()) as days_left
             FROM products
             WHERE expiration_date < CURDATE()
               AND expiration_date IS NOT NULL
@@ -353,10 +535,214 @@ def get_cashier_notifications():
         """)
         expired = cur.fetchall()
 
+        cur.execute("""
+            SELECT id, product_name, expiration_date, barcode,
+                   DATEDIFF(expiration_date, CURDATE()) as days_left
+            FROM products
+            WHERE expiration_date >= CURDATE()
+              AND expiration_date <= CURDATE() + INTERVAL 7 DAY
+              AND expiration_date IS NOT NULL
+            ORDER BY expiration_date ASC
+            LIMIT 10
+        """)
+        expiring_critical = cur.fetchall()
+
+        cur.execute("""
+            SELECT id, product_name, expiration_date, barcode,
+                   DATEDIFF(expiration_date, CURDATE()) as days_left
+            FROM products
+            WHERE expiration_date > CURDATE() + INTERVAL 7 DAY
+              AND expiration_date <= CURDATE() + INTERVAL 30 DAY
+              AND expiration_date IS NOT NULL
+            ORDER BY expiration_date ASC
+            LIMIT 10
+        """)
+        expiring_warning = cur.fetchall()
+
         return jsonify({
+            'out_of_stock': [{'id': p[0], 'name': p[1], 'stock': p[2], 'barcode': p[3]} for p in out_of_stock],
             'low_stock': [{'id': p[0], 'name': p[1], 'stock': p[2], 'barcode': p[3]} for p in low_stock],
-            'expiring': [{'id': p[0], 'name': p[1], 'expiry': str(p[2]), 'barcode': p[3]} for p in expiring],
-            'expired': [{'id': p[0], 'name': p[1], 'expiry': str(p[2]), 'barcode': p[3]} for p in expired]
+            'expired': [{'id': p[0], 'name': p[1], 'expiry': str(p[2]), 'barcode': p[3], 'days_left': p[4]} for p in expired],
+            'expiring_critical': [{'id': p[0], 'name': p[1], 'expiry': str(p[2]), 'barcode': p[3], 'days_left': p[4]} for p in expiring_critical],
+            'expiring_warning': [{'id': p[0], 'name': p[1], 'expiry': str(p[2]), 'barcode': p[3], 'days_left': p[4]} for p in expiring_warning]
+        })
+    finally:
+        cur.close()
+
+@app.route('/api/alert/acknowledge', methods=['POST'])
+def acknowledge_alert():
+    if 'admin_user' not in session and 'cashier_user' not in session:
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+    data = request.get_json() or {}
+    alert_type = clean_input(data.get('alert_type', ''))
+    product_id = data.get('product_id')
+    if not alert_type or not product_id:
+        return jsonify({'success': False, 'message': 'Missing fields'}), 400
+    user_id = session.get('admin_id') or session.get('cashier_id')
+    user_type = 'admin' if 'admin_user' in session else 'cashier'
+    cur = mysql.connection.cursor()
+    try:
+        cur.execute("""
+            INSERT INTO alert_logs (alert_type, alert_level, product_id, message, acknowledged_by, acknowledged_at)
+            VALUES (%s, %s, %s, %s, %s, NOW())
+            ON DUPLICATE KEY UPDATE acknowledged_by = VALUES(acknowledged_by), acknowledged_at = VALUES(acknowledged_at)
+        """, (alert_type, 'info', product_id, f'{alert_type} alert acknowledged', user_id))
+        if user_type == 'admin':
+            cur.execute("""
+                INSERT INTO alert_visibility (product_id, alert_type, admin_id, is_hidden)
+                VALUES (%s, %s, %s, 1)
+                ON DUPLICATE KEY UPDATE is_hidden = 1, updated_at = NOW()
+            """, (product_id, alert_type, user_id))
+        mysql.connection.commit()
+        return jsonify({'success': True, 'message': 'Alert acknowledged'})
+    except Exception as e:
+        mysql.connection.rollback()
+        return jsonify({'success': False, 'message': str(e)}), 500
+    finally:
+        cur.close()
+
+@app.route('/api/alert/dismiss', methods=['POST'])
+def dismiss_alert():
+    if 'admin_user' not in session and 'cashier_user' not in session:
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+    data = request.get_json() or {}
+    alert_type = clean_input(data.get('alert_type', ''))
+    product_id = data.get('product_id')
+    reason = clean_input(data.get('reason', ''))
+    if not alert_type or not product_id:
+        return jsonify({'success': False, 'message': 'Missing fields'}), 400
+    user_id = session.get('admin_id') or session.get('cashier_id')
+    user_type = 'admin' if 'admin_user' in session else 'cashier'
+    cur = mysql.connection.cursor()
+    try:
+        cur.execute("""
+            INSERT INTO alert_logs (alert_type, alert_level, product_id, message, dismissed_by, dismissed_at, dismiss_reason)
+            VALUES (%s, %s, %s, %s, %s, NOW(), %s)
+            ON DUPLICATE KEY UPDATE dismissed_by = VALUES(dismissed_by), dismissed_at = VALUES(dismissed_at), dismiss_reason = VALUES(dismiss_reason)
+        """, (alert_type, 'info', product_id, f'{alert_type} alert dismissed', user_id, reason))
+        if user_type == 'admin':
+            cur.execute("""
+                INSERT INTO alert_visibility (product_id, alert_type, admin_id, is_hidden)
+                VALUES (%s, %s, %s, 1)
+                ON DUPLICATE KEY UPDATE is_hidden = 1, updated_at = NOW()
+            """, (product_id, alert_type, user_id))
+        mysql.connection.commit()
+        return jsonify({'success': True, 'message': 'Alert dismissed'})
+    except Exception as e:
+        mysql.connection.rollback()
+        return jsonify({'success': False, 'message': str(e)}), 500
+    finally:
+        cur.close()
+
+@app.route('/api/alert/resolve', methods=['POST'])
+def resolve_alert():
+    if 'admin_user' not in session and 'cashier_user' not in session:
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+    data = request.get_json() or {}
+    alert_type = clean_input(data.get('alert_type', ''))
+    product_id = data.get('product_id')
+    if not alert_type or not product_id:
+        return jsonify({'success': False, 'message': 'Missing fields'}), 400
+    user_id = session.get('admin_id') or session.get('cashier_id')
+    user_type = 'admin' if 'admin_user' in session else 'cashier'
+    cur = mysql.connection.cursor()
+    try:
+        cur.execute("""
+            INSERT INTO alert_logs (alert_type, alert_level, product_id, message, acknowledged_by, acknowledged_at)
+            VALUES (%s, %s, %s, %s, %s, NOW())
+            ON DUPLICATE KEY UPDATE acknowledged_by = VALUES(acknowledged_by), acknowledged_at = VALUES(acknowledged_at)
+        """, (alert_type, 'info', product_id, f'{alert_type} alert resolved', user_id))
+        if user_type == 'admin':
+            cur.execute("""
+                INSERT INTO alert_visibility (product_id, alert_type, admin_id, is_hidden)
+                VALUES (%s, %s, %s, 1)
+                ON DUPLICATE KEY UPDATE is_hidden = 1, updated_at = NOW()
+            """, (product_id, alert_type, user_id))
+        mysql.connection.commit()
+        return jsonify({'success': True, 'message': 'Alert resolved'})
+    except Exception as e:
+        mysql.connection.rollback()
+        return jsonify({'success': False, 'message': str(e)}), 500
+    finally:
+        cur.close()
+
+@app.route('/api/alert/bulk_acknowledge', methods=['POST'])
+def bulk_acknowledge_alert():
+    if 'admin_user' not in session and 'cashier_user' not in session:
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+    data = request.get_json() or {}
+    alert_type = clean_input(data.get('alert_type', ''))
+    product_ids = data.get('product_ids', [])
+    if not alert_type or not product_ids:
+        return jsonify({'success': False, 'message': 'Missing fields'}), 400
+    user_id = session.get('admin_id') or session.get('cashier_id')
+    cur = mysql.connection.cursor()
+    try:
+        for pid in product_ids:
+            cur.execute("""
+                INSERT INTO alert_logs (alert_type, alert_level, product_id, message, acknowledged_by, acknowledged_at)
+                VALUES (%s, %s, %s, %s, %s, NOW())
+                ON DUPLICATE KEY UPDATE acknowledged_by = VALUES(acknowledged_by), acknowledged_at = VALUES(acknowledged_at)
+            """, (alert_type, 'info', pid, f'{alert_type} alert bulk acknowledged', user_id))
+        mysql.connection.commit()
+        return jsonify({'success': True, 'message': f'{len(product_ids)} alerts acknowledged'})
+    except Exception as e:
+        mysql.connection.rollback()
+        return jsonify({'success': False, 'message': str(e)}), 500
+    finally:
+        cur.close()
+
+@app.route('/api/alert/bulk_dismiss', methods=['POST'])
+def bulk_dismiss_alert():
+    if 'admin_user' not in session and 'cashier_user' not in session:
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+    data = request.get_json() or {}
+    alert_type = clean_input(data.get('alert_type', ''))
+    product_ids = data.get('product_ids', [])
+    reason = clean_input(data.get('reason', ''))
+    if not alert_type or not product_ids:
+        return jsonify({'success': False, 'message': 'Missing fields'}), 400
+    user_id = session.get('admin_id') or session.get('cashier_id')
+    user_type = 'admin' if 'admin_user' in session else 'cashier'
+    cur = mysql.connection.cursor()
+    try:
+        for pid in product_ids:
+            cur.execute("""
+                INSERT INTO alert_logs (alert_type, alert_level, product_id, message, dismissed_by, dismissed_at, dismiss_reason)
+                VALUES (%s, %s, %s, %s, %s, NOW(), %s)
+                ON DUPLICATE KEY UPDATE dismissed_by = VALUES(dismissed_by), dismissed_at = VALUES(dismissed_at), dismiss_reason = VALUES(dismiss_reason)
+            """, (alert_type, 'info', pid, f'{alert_type} alert bulk dismissed', user_id, reason))
+            if user_type == 'admin':
+                cur.execute("""
+                    INSERT INTO alert_visibility (product_id, alert_type, admin_id, is_hidden)
+                    VALUES (%s, %s, %s, 1)
+                    ON DUPLICATE KEY UPDATE is_hidden = 1, updated_at = NOW()
+                """, (pid, alert_type, user_id))
+        mysql.connection.commit()
+        return jsonify({'success': True, 'message': f'{len(product_ids)} alerts dismissed'})
+    except Exception as e:
+        mysql.connection.rollback()
+        return jsonify({'success': False, 'message': str(e)}), 500
+    finally:
+        cur.close()
+
+@app.route('/api/alert/status')
+def alert_status():
+    if 'admin_user' not in session and 'cashier_user' not in session:
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+    admin_id = session.get('admin_id')
+    cur = mysql.connection.cursor()
+    try:
+        cur.execute("SELECT COUNT(*) FROM alert_logs WHERE acknowledged_by IS NULL AND dismissed_by IS NULL")
+        unacknowledged = cur.fetchone()[0]
+        cur.execute("SELECT COUNT(*) FROM alert_logs WHERE acknowledged_by IS NOT NULL")
+        acknowledged = cur.fetchone()[0]
+        cur.execute("SELECT COUNT(*) FROM alert_logs WHERE dismissed_by IS NOT NULL")
+        dismissed = cur.fetchone()[0]
+        return jsonify({
+            'unacknowledged': unacknowledged,
+            'acknowledged': acknowledged,
+            'dismissed': dismissed
         })
     finally:
         cur.close()
@@ -368,8 +754,13 @@ def get_cashier_notifications():
 @app.route('/all_products')
 @admin_required
 def all_products():
+    from datetime import date
     cur = mysql.connection.cursor()
-    cur.execute("SELECT * FROM products")
+    search = request.args.get('search', '').strip()
+    if search:
+        cur.execute("SELECT * FROM products WHERE product_name LIKE %s OR barcode LIKE %s", (f'%{search}%', f'%{search}%'))
+    else:
+        cur.execute("SELECT * FROM products")
     products = cur.fetchall()
     
     cur.execute("SELECT COUNT(*) FROM products WHERE stock <= %s", (LOW_STOCK_THRESHOLD,))
@@ -382,7 +773,8 @@ def all_products():
     return render_template('all_products.html', products=products,
                            low_stock_count=low_stock_count,
                            expiring_count=expiring_count,
-                           active_main='inventory', active_sub='all_products')
+                           active_main='inventory', active_sub='all_products',
+                           search=search, today=date.today())
 
 @app.route('/add_product', methods=['GET', 'POST'])
 @admin_required
@@ -683,7 +1075,7 @@ def edit_product(id):
         category = request.form.get('category')
         price = request.form.get('price')
         stock = request.form.get('stock')
-        expiration_date = request.form.get('expiration_date')
+        expiration_date = request.form.get('expiration_date') or None
         
         if not product_name or not barcode or not category:
             flash("Product name, barcode, and category are required", "error")
@@ -752,43 +1144,87 @@ def edit_product(id):
 @admin_required
 def medical_sales():
     cur = mysql.connection.cursor()
-    
-    # Get sales with product names
-    cur.execute("""
-        SELECT s.id, s.receipt_number, GROUP_CONCAT(p.product_name SEPARATOR ', ') as products, 
+    date_from = request.args.get('date_from', '').strip()
+    date_to = request.args.get('date_to', '').strip()
+    export = request.args.get('export', '').strip()
+
+    where = ["s.sale_status = 'Completed'"]
+    params = []
+    if date_from:
+        where.append("DATE(s.sale_date) >= %s")
+        params.append(date_from)
+    if date_to:
+        where.append("DATE(s.sale_date) <= %s")
+        params.append(date_to)
+    where_clause = " AND ".join(where)
+
+    cur.execute(f"""
+        SELECT s.id, s.receipt_number, 
+               GROUP_CONCAT(DISTINCT CASE WHEN p.product_type = 'Medical' THEN p.product_name END SEPARATOR ', ') as products, 
                s.total_amount, s.sale_status, s.product_type, s.sale_date
         FROM sales s
         LEFT JOIN sale_items si ON s.id = si.sale_id
         LEFT JOIN products p ON si.product_id = p.id
-        WHERE s.product_type = 'Medical'
+        WHERE p.product_type = 'Medical' AND {where_clause}
         GROUP BY s.id
         ORDER BY s.sale_date DESC
-    """)
+    """, tuple(params))
     sales = cur.fetchall()
-    
+
     cur.execute("SELECT COUNT(*) FROM products WHERE stock <= %s", (LOW_STOCK_THRESHOLD,))
     low_stock_count = cur.fetchone()[0]
-    
+
     cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date <= CURDATE() + INTERVAL 30 DAY AND expiration_date IS NOT NULL")
     expiring_count = cur.fetchone()[0]
-    
-    # Get daily sales for chart (last 30 days)
-    cur.execute("""
-        SELECT DATE(sale_date) as day, SUM(total_amount) as daily_total
-        FROM sales
-        WHERE product_type='Medical' AND sale_date >= CURDATE() - INTERVAL 30 DAY AND sale_status = 'Completed'
-        GROUP BY DATE(sale_date)
-        ORDER BY day ASC
-    """)
-    chart_data = cur.fetchall()
-    chart_labels = [str(row[0]) for row in chart_data]
-    chart_values = [float(row[1]) for row in chart_data]
-    
+
+    chart_labels = []
+    chart_values = []
+    if not export:
+        cur.execute(f"""
+            SELECT DATE(sale_date) as day, SUM(total_amount) as daily_total
+            FROM sales s
+            WHERE s.sale_status = 'Completed' 
+            AND s.product_type = 'Medical'
+            AND s.sale_date >= CURDATE() - INTERVAL 30 DAY
+            GROUP BY DATE(sale_date)
+            ORDER BY day ASC
+        """)
+        chart_data = cur.fetchall()
+        chart_labels = [str(row[0]) for row in chart_data]
+        chart_values = [float(row[1]) for row in chart_data]
+
+    if export == 'csv':
+        cur.execute("""
+            SELECT s.receipt_number, s.sale_date, s.total_amount, s.sale_status,
+                   GROUP_CONCAT(DISTINCT p.product_name SEPARATOR ', ') as products
+            FROM sales s
+            JOIN sale_items si ON s.id = si.sale_id
+            JOIN products p ON si.product_id = p.id
+            WHERE s.sale_status = 'Completed' AND p.product_type = 'Medical'
+            GROUP BY s.id
+            ORDER BY s.sale_date DESC
+        """)
+        export_data = cur.fetchall()
+        cur.close()
+
+        from io import StringIO, BytesIO
+        text_output = StringIO()
+        writer = csv.writer(text_output)
+        writer.writerow(['Receipt #', 'Products', 'Total', 'Date', 'Status'])
+        for s in export_data:
+            writer.writerow([s[0], s[4] or '', f"{s[2]:.2f}", s[1].strftime('%Y-%m-%d %H:%M') if s[1] else '', s[3]])
+        csv_bytes = text_output.getvalue().encode('utf-8-sig')
+        output = BytesIO(csv_bytes)
+        output.seek(0)
+        return send_file(output, mimetype='text/csv; charset=utf-8', as_attachment=True, download_name=f"medical_sales_{datetime.now().strftime('%Y%m%d')}.csv")
+
     cur.close()
+
     return render_template('sales_medical.html', sales=sales,
                            low_stock_count=low_stock_count,
                            expiring_count=expiring_count,
                            chart_labels=chart_labels, chart_values=chart_values,
+                           date_from=date_from, date_to=date_to,
                            active_main='sales', active_sub='medical_sales')
 
 @app.route('/sales_dashboard')
@@ -796,117 +1232,216 @@ def medical_sales():
 def sales_dashboard():
     """Admin sales dashboard with all views"""
     cur = mysql.connection.cursor()
-    
+    date_from = request.args.get('date_from', '').strip()
+    date_to = request.args.get('date_to', '').strip()
+    export = request.args.get('export', '').strip()
+
+    custom_range = bool(date_from or date_to)
+    if custom_range:
+        date_filter = "DATE(sale_date) >= %s AND DATE(sale_date) <= %s"
+        date_params = [date_from or '2000-01-01', date_to or '2099-12-31']
+    else:
+        date_filter = "DATE(sale_date) = CURDATE()"
+        date_params = []
+
+    def exec_with_date(sql):
+        if custom_range:
+            return cur.execute(sql, tuple(date_params))
+        return cur.execute(sql)
+
     cur.execute("SELECT COUNT(*) FROM products WHERE stock <= %s", (LOW_STOCK_THRESHOLD,))
     low_stock_count = cur.fetchone()[0]
-    
+
     cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date <= CURDATE() + INTERVAL 30 DAY AND expiration_date IS NOT NULL")
     expiring_count = cur.fetchone()[0]
-    
-    # Daily sales (today) - Medical
-    cur.execute("""
-        SELECT IFNULL(SUM(total_amount), 0), COUNT(*) 
-        FROM sales 
-        WHERE DATE(sale_date) = CURDATE() AND sale_status = 'Completed' AND product_type = 'Medical'
-    """)
-    daily_medical = cur.fetchone()
-    daily_medical_sales = float(daily_medical[0]) if daily_medical[0] else 0
-    
-    # Daily sales (today) - Non-Medical
-    cur.execute("""
-        SELECT IFNULL(SUM(total_amount), 0), COUNT(*) 
-        FROM sales 
-        WHERE DATE(sale_date) = CURDATE() AND sale_status = 'Completed' AND product_type = 'Non-Medical'
-    """)
-    daily_nonmedical = cur.fetchone()
-    daily_nonmedical_sales = float(daily_nonmedical[0]) if daily_nonmedical[0] else 0
-    
-    daily_sales = daily_medical_sales + daily_nonmedical_sales
-    daily_count = daily_medical[1] if daily_medical[1] else 0
-    
-    # Weekly sales (last 7 days) - Medical
-    cur.execute("""
-        SELECT IFNULL(SUM(total_amount), 0), COUNT(*) 
-        FROM sales 
-        WHERE sale_date >= CURDATE() - INTERVAL 7 DAY AND sale_status = 'Completed' AND product_type = 'Medical'
-    """)
-    weekly_medical = cur.fetchone()
-    weekly_medical_sales = float(weekly_medical[0]) if weekly_medical[0] else 0
-    
-    # Weekly sales (last 7 days) - Non-Medical
-    cur.execute("""
-        SELECT IFNULL(SUM(total_amount), 0), COUNT(*) 
-        FROM sales 
-        WHERE sale_date >= CURDATE() - INTERVAL 7 DAY AND sale_status = 'Completed' AND product_type = 'Non-Medical'
-    """)
-    weekly_nonmedical = cur.fetchone()
-    weekly_nonmedical_sales = float(weekly_nonmedical[0]) if weekly_nonmedical[0] else 0
-    
-    weekly_sales = weekly_medical_sales + weekly_nonmedical_sales
-    weekly_count = weekly_medical[1] if weekly_medical[1] else 0
-    
-    # Monthly sales (this month) - Medical
-    cur.execute("""
-        SELECT IFNULL(SUM(total_amount), 0), COUNT(*) 
-        FROM sales 
-        WHERE MONTH(sale_date) = MONTH(CURDATE()) AND YEAR(sale_date) = YEAR(CURDATE()) AND sale_status = 'Completed' AND product_type = 'Medical'
-    """)
-    monthly_medical = cur.fetchone()
-    monthly_medical_sales = float(monthly_medical[0]) if monthly_medical[0] else 0
-    
-    # Monthly sales (this month) - Non-Medical
-    cur.execute("""
-        SELECT IFNULL(SUM(total_amount), 0), COUNT(*) 
-        FROM sales 
-        WHERE MONTH(sale_date) = MONTH(CURDATE()) AND YEAR(sale_date) = YEAR(CURDATE()) AND sale_status = 'Completed' AND product_type = 'Non-Medical'
-    """)
-    monthly_nonmedical = cur.fetchone()
-    monthly_nonmedical_sales = float(monthly_nonmedical[0]) if monthly_nonmedical[0] else 0
-    
-    monthly_sales = monthly_medical_sales + monthly_nonmedical_sales
-    monthly_count = monthly_medical[1] if monthly_medical[1] else 0
-    
-    # Yearly sales (this year) - Medical
-    cur.execute("""
-        SELECT IFNULL(SUM(total_amount), 0), COUNT(*) 
-        FROM sales 
-        WHERE YEAR(sale_date) = YEAR(CURDATE()) AND sale_status = 'Completed' AND product_type = 'Medical'
-    """)
-    yearly_medical = cur.fetchone()
-    yearly_medical_sales = float(yearly_medical[0]) if yearly_medical[0] else 0
-    
-    # Yearly sales (this year) - Non-Medical
-    cur.execute("""
-        SELECT IFNULL(SUM(total_amount), 0), COUNT(*) 
-        FROM sales 
-        WHERE YEAR(sale_date) = YEAR(CURDATE()) AND sale_status = 'Completed' AND product_type = 'Non-Medical'
-    """)
-    yearly_nonmedical = cur.fetchone()
-    yearly_nonmedical_sales = float(yearly_nonmedical[0]) if yearly_nonmedical[0] else 0
-    
-    yearly_sales = yearly_medical_sales + yearly_nonmedical_sales
-    yearly_count = yearly_medical[1] if yearly_medical[1] else 0
-    
-    # Overall sales - Medical
-    cur.execute("""
-        SELECT IFNULL(SUM(total_amount), 0), COUNT(*) 
-        FROM sales WHERE sale_status = 'Completed' AND product_type = 'Medical'
-    """)
-    overall_medical = cur.fetchone()
-    overall_medical_sales = float(overall_medical[0]) if overall_medical[0] else 0
-    
-    # Overall sales - Non-Medical
-    cur.execute("""
-        SELECT IFNULL(SUM(total_amount), 0), COUNT(*) 
-        FROM sales WHERE sale_status = 'Completed' AND product_type = 'Non-Medical'
-    """)
-    overall_nonmedical = cur.fetchone()
-    overall_nonmedical_sales = float(overall_nonmedical[0]) if overall_nonmedical[0] else 0
-    
-    overall_sales = overall_medical_sales + overall_nonmedical_sales
-    overall_count = overall_medical[1] if overall_medical[1] else 0
-    
-    # Popular products (top 10)
+
+    if custom_range:
+        cur.execute(f"""
+            SELECT IFNULL(SUM(total_amount), 0), COUNT(*) 
+            FROM sales 
+            WHERE {date_filter} AND sale_status = 'Completed' AND product_type = 'Medical'
+        """, tuple(date_params))
+        daily_medical = cur.fetchone()
+        daily_medical_sales = float(daily_medical[0]) if daily_medical[0] else 0
+
+        cur.execute(f"""
+            SELECT IFNULL(SUM(total_amount), 0), COUNT(*) 
+            FROM sales 
+            WHERE {date_filter} AND sale_status = 'Completed' AND product_type = 'Non-Medical'
+        """, tuple(date_params))
+        daily_nonmedical = cur.fetchone()
+        daily_nonmedical_sales = float(daily_nonmedical[0]) if daily_nonmedical[0] else 0
+
+        daily_sales = daily_medical_sales + daily_nonmedical_sales
+        daily_count = daily_medical[1] if daily_medical[1] else 0
+
+        cur.execute(f"""
+            SELECT IFNULL(SUM(total_amount), 0), COUNT(*) 
+            FROM sales 
+            WHERE {date_filter} AND sale_status = 'Completed' AND product_type = 'Medical'
+        """, tuple(date_params))
+        weekly_medical = cur.fetchone()
+        weekly_medical_sales = float(weekly_medical[0]) if weekly_medical[0] else 0
+
+        cur.execute(f"""
+            SELECT IFNULL(SUM(total_amount), 0), COUNT(*) 
+            FROM sales 
+            WHERE {date_filter} AND sale_status = 'Completed' AND product_type = 'Non-Medical'
+        """, tuple(date_params))
+        weekly_nonmedical = cur.fetchone()
+        weekly_nonmedical_sales = float(weekly_nonmedical[0]) if weekly_nonmedical[0] else 0
+
+        weekly_sales = weekly_medical_sales + weekly_nonmedical_sales
+        weekly_count = weekly_medical[1] if weekly_medical[1] else 0
+
+        cur.execute(f"""
+            SELECT IFNULL(SUM(total_amount), 0), COUNT(*) 
+            FROM sales 
+            WHERE {date_filter} AND sale_status = 'Completed' AND product_type = 'Medical'
+        """, tuple(date_params))
+        monthly_medical = cur.fetchone()
+        monthly_medical_sales = float(monthly_medical[0]) if monthly_medical[0] else 0
+
+        cur.execute(f"""
+            SELECT IFNULL(SUM(total_amount), 0), COUNT(*) 
+            FROM sales 
+            WHERE {date_filter} AND sale_status = 'Completed' AND product_type = 'Non-Medical'
+        """, tuple(date_params))
+        monthly_nonmedical = cur.fetchone()
+        monthly_nonmedical_sales = float(monthly_nonmedical[0]) if monthly_nonmedical[0] else 0
+
+        monthly_sales = monthly_medical_sales + monthly_nonmedical_sales
+        monthly_count = monthly_medical[1] if monthly_medical[1] else 0
+
+        cur.execute(f"""
+            SELECT IFNULL(SUM(total_amount), 0), COUNT(*) 
+            FROM sales 
+            WHERE {date_filter} AND sale_status = 'Completed' AND product_type = 'Medical'
+        """, tuple(date_params))
+        yearly_medical = cur.fetchone()
+        yearly_medical_sales = float(yearly_medical[0]) if yearly_medical[0] else 0
+
+        cur.execute(f"""
+            SELECT IFNULL(SUM(total_amount), 0), COUNT(*) 
+            FROM sales 
+            WHERE {date_filter} AND sale_status = 'Completed' AND product_type = 'Non-Medical'
+        """, tuple(date_params))
+        yearly_nonmedical = cur.fetchone()
+        yearly_nonmedical_sales = float(yearly_nonmedical[0]) if yearly_nonmedical[0] else 0
+
+        yearly_sales = yearly_medical_sales + yearly_nonmedical_sales
+        yearly_count = yearly_medical[1] if yearly_medical[1] else 0
+
+        cur.execute(f"""
+            SELECT IFNULL(SUM(total_amount), 0), COUNT(*) 
+            FROM sales WHERE sale_status = 'Completed' AND product_type = 'Medical'
+        """)
+        overall_medical = cur.fetchone()
+        overall_medical_sales = float(overall_medical[0]) if overall_medical[0] else 0
+
+        cur.execute(f"""
+            SELECT IFNULL(SUM(total_amount), 0), COUNT(*) 
+            FROM sales WHERE sale_status = 'Completed' AND product_type = 'Non-Medical'
+        """)
+        overall_nonmedical = cur.fetchone()
+        overall_nonmedical_sales = float(overall_nonmedical[0]) if overall_nonmedical[0] else 0
+
+        overall_sales = overall_medical_sales + overall_nonmedical_sales
+        overall_count = overall_medical[1] if overall_medical[1] else 0
+    else:
+        cur.execute("""
+            SELECT IFNULL(SUM(total_amount), 0), COUNT(*) 
+            FROM sales 
+            WHERE DATE(sale_date) = CURDATE() AND sale_status = 'Completed' AND product_type = 'Medical'
+        """)
+        daily_medical = cur.fetchone()
+        daily_medical_sales = float(daily_medical[0]) if daily_medical[0] else 0
+
+        cur.execute("""
+            SELECT IFNULL(SUM(total_amount), 0), COUNT(*) 
+            FROM sales 
+            WHERE DATE(sale_date) = CURDATE() AND sale_status = 'Completed' AND product_type = 'Non-Medical'
+        """)
+        daily_nonmedical = cur.fetchone()
+        daily_nonmedical_sales = float(daily_nonmedical[0]) if daily_nonmedical[0] else 0
+
+        daily_sales = daily_medical_sales + daily_nonmedical_sales
+        daily_count = daily_medical[1] if daily_medical[1] else 0
+
+        cur.execute("""
+            SELECT IFNULL(SUM(total_amount), 0), COUNT(*) 
+            FROM sales 
+            WHERE sale_date >= CURDATE() - INTERVAL 7 DAY AND sale_status = 'Completed' AND product_type = 'Medical'
+        """)
+        weekly_medical = cur.fetchone()
+        weekly_medical_sales = float(weekly_medical[0]) if weekly_medical[0] else 0
+
+        cur.execute("""
+            SELECT IFNULL(SUM(total_amount), 0), COUNT(*) 
+            FROM sales 
+            WHERE sale_date >= CURDATE() - INTERVAL 7 DAY AND sale_status = 'Completed' AND product_type = 'Non-Medical'
+        """)
+        weekly_nonmedical = cur.fetchone()
+        weekly_nonmedical_sales = float(weekly_nonmedical[0]) if weekly_nonmedical[0] else 0
+
+        weekly_sales = weekly_medical_sales + weekly_nonmedical_sales
+        weekly_count = weekly_medical[1] if weekly_medical[1] else 0
+
+        cur.execute("""
+            SELECT IFNULL(SUM(total_amount), 0), COUNT(*) 
+            FROM sales 
+            WHERE MONTH(sale_date) = MONTH(CURDATE()) AND YEAR(sale_date) = YEAR(CURDATE()) AND sale_status = 'Completed' AND product_type = 'Medical'
+        """)
+        monthly_medical = cur.fetchone()
+        monthly_medical_sales = float(monthly_medical[0]) if monthly_medical[0] else 0
+
+        cur.execute("""
+            SELECT IFNULL(SUM(total_amount), 0), COUNT(*) 
+            FROM sales 
+            WHERE MONTH(sale_date) = MONTH(CURDATE()) AND YEAR(sale_date) = YEAR(CURDATE()) AND sale_status = 'Completed' AND product_type = 'Non-Medical'
+        """)
+        monthly_nonmedical = cur.fetchone()
+        monthly_nonmedical_sales = float(monthly_nonmedical[0]) if monthly_nonmedical[0] else 0
+
+        monthly_sales = monthly_medical_sales + monthly_nonmedical_sales
+        monthly_count = monthly_medical[1] if monthly_medical[1] else 0
+
+        cur.execute("""
+            SELECT IFNULL(SUM(total_amount), 0), COUNT(*) 
+            FROM sales 
+            WHERE YEAR(sale_date) = YEAR(CURDATE()) AND sale_status = 'Completed' AND product_type = 'Medical'
+        """)
+        yearly_medical = cur.fetchone()
+        yearly_medical_sales = float(yearly_medical[0]) if yearly_medical[0] else 0
+
+        cur.execute("""
+            SELECT IFNULL(SUM(total_amount), 0), COUNT(*) 
+            FROM sales 
+            WHERE YEAR(sale_date) = YEAR(CURDATE()) AND sale_status = 'Completed' AND product_type = 'Non-Medical'
+        """)
+        yearly_nonmedical = cur.fetchone()
+        yearly_nonmedical_sales = float(yearly_nonmedical[0]) if yearly_nonmedical[0] else 0
+
+        yearly_sales = yearly_medical_sales + yearly_nonmedical_sales
+        yearly_count = yearly_medical[1] if yearly_medical[1] else 0
+
+        cur.execute("""
+            SELECT IFNULL(SUM(total_amount), 0), COUNT(*) 
+            FROM sales WHERE sale_status = 'Completed' AND product_type = 'Medical'
+        """)
+        overall_medical = cur.fetchone()
+        overall_medical_sales = float(overall_medical[0]) if overall_medical[0] else 0
+
+        cur.execute("""
+            SELECT IFNULL(SUM(total_amount), 0), COUNT(*) 
+            FROM sales WHERE sale_status = 'Completed' AND product_type = 'Non-Medical'
+        """)
+        overall_nonmedical = cur.fetchone()
+        overall_nonmedical_sales = float(overall_nonmedical[0]) if overall_nonmedical[0] else 0
+
+        overall_sales = overall_medical_sales + overall_nonmedical_sales
+        overall_count = overall_medical[1] if overall_medical[1] else 0
+
     cur.execute("""
         SELECT p.product_name, SUM(si.quantity) as total_qty, SUM(si.quantity * si.price) as total_sales
         FROM sale_items si
@@ -916,37 +1451,102 @@ def sales_dashboard():
         LIMIT 10
     """)
     popular = cur.fetchall()
-    
-    # Daily sales for chart - Medical (last 30 days)
-    cur.execute("""
-        SELECT DATE(sale_date) as day, SUM(total_amount) as daily_total
-        FROM sales
-        WHERE sale_date >= CURDATE() - INTERVAL 30 DAY AND sale_status = 'Completed' AND product_type = 'Medical'
-        GROUP BY DATE(sale_date)
-        ORDER BY day ASC
-    """)
-    chart_medical = cur.fetchall()
-    medical_labels = [str(row[0]) for row in chart_medical]
-    medical_values = [float(row[1]) for row in chart_medical]
-    
-    # Daily sales for chart - Non-Medical (last 30 days)
-    cur.execute("""
-        SELECT DATE(sale_date) as day, SUM(total_amount) as daily_total
-        FROM sales
-        WHERE sale_date >= CURDATE() - INTERVAL 30 DAY AND sale_status = 'Completed' AND product_type = 'Non-Medical'
-        GROUP BY DATE(sale_date)
-        ORDER BY day ASC
-    """)
-    chart_nonmedical = cur.fetchall()
-    nonmedical_labels = [str(row[0]) for row in chart_nonmedical]
-    nonmedical_values = [float(row[1]) for row in chart_nonmedical]
-    
-    # Use medical labels as primary
+
+    if custom_range:
+        cur.execute(f"""
+            SELECT DATE(sale_date) as day, SUM(total_amount) as daily_total
+            FROM sales
+            WHERE {date_filter} AND sale_status = 'Completed' AND product_type = 'Medical'
+            GROUP BY DATE(sale_date)
+            ORDER BY day ASC
+        """, tuple(date_params))
+        chart_medical = cur.fetchall()
+        medical_labels = [str(row[0]) for row in chart_medical]
+        medical_values = [float(row[1]) for row in chart_medical]
+
+        cur.execute(f"""
+            SELECT DATE(sale_date) as day, SUM(total_amount) as daily_total
+            FROM sales
+            WHERE {date_filter} AND sale_status = 'Completed' AND product_type = 'Non-Medical'
+            GROUP BY DATE(sale_date)
+            ORDER BY day ASC
+        """, tuple(date_params))
+        chart_nonmedical = cur.fetchall()
+        nonmedical_labels = [str(row[0]) for row in chart_nonmedical]
+        nonmedical_values = [float(row[1]) for row in chart_nonmedical]
+    else:
+        cur.execute("""
+            SELECT DATE(sale_date) as day, SUM(total_amount) as daily_total
+            FROM sales
+            WHERE sale_date >= CURDATE() - INTERVAL 30 DAY AND sale_status = 'Completed' AND product_type = 'Medical'
+            GROUP BY DATE(sale_date)
+            ORDER BY day ASC
+        """)
+        chart_medical = cur.fetchall()
+        medical_labels = [str(row[0]) for row in chart_medical]
+        medical_values = [float(row[1]) for row in chart_medical]
+
+        cur.execute("""
+            SELECT DATE(sale_date) as day, SUM(total_amount) as daily_total
+            FROM sales
+            WHERE sale_date >= CURDATE() - INTERVAL 30 DAY AND sale_status = 'Completed' AND product_type = 'Non-Medical'
+            GROUP BY DATE(sale_date)
+            ORDER BY day ASC
+        """)
+        chart_nonmedical = cur.fetchall()
+        nonmedical_labels = [str(row[0]) for row in chart_nonmedical]
+        nonmedical_values = [float(row[1]) for row in chart_nonmedical]
+
     chart_labels = medical_labels
     chart_values = medical_values
-    
+
+    if export == 'csv':
+        if custom_range:
+            cur.execute("""
+                SELECT s.receipt_number, s.sale_date, s.total_amount, s.sale_status, s.product_type,
+                       GROUP_CONCAT(DISTINCT p.product_name SEPARATOR ', ') as products
+                FROM sales s
+                JOIN sale_items si ON s.id = si.sale_id
+                JOIN products p ON si.product_id = p.id
+                WHERE s.sale_status = 'Completed'
+                AND DATE(s.sale_date) >= %s AND DATE(s.sale_date) <= %s
+                GROUP BY s.id
+                ORDER BY s.sale_date DESC
+            """, tuple(date_params))
+        else:
+            cur.execute("""
+                SELECT s.receipt_number, s.sale_date, s.total_amount, s.sale_status, s.product_type,
+                       GROUP_CONCAT(DISTINCT p.product_name SEPARATOR ', ') as products
+                FROM sales s
+                JOIN sale_items si ON s.id = si.sale_id
+                JOIN products p ON si.product_id = p.id
+                WHERE s.sale_status = 'Completed'
+                GROUP BY s.id
+                ORDER BY s.sale_date DESC
+            """)
+        export_data = cur.fetchall()
+        cur.close()
+
+        from io import StringIO, BytesIO
+        text_output = StringIO()
+        writer = csv.writer(text_output)
+        writer.writerow(['Receipt #', 'Date', 'Total', 'Status', 'Type', 'Products'])
+        for row in export_data:
+            writer.writerow([
+                row[0],
+                row[1].strftime('%Y-%m-%d %H:%M') if row[1] else '',
+                f"{row[2]:.2f}",
+                row[3],
+                row[4],
+                row[5] or ''
+            ])
+        csv_bytes = text_output.getvalue().encode('utf-8-sig')
+        output = BytesIO(csv_bytes)
+        output.seek(0)
+        return send_file(output, mimetype='text/csv; charset=utf-8', as_attachment=True, download_name=f"sales_report_{datetime.now().strftime('%Y%m%d')}.csv")
+
     cur.close()
-    
+
     return render_template('sales_dashboard.html',
                            low_stock_count=low_stock_count,
                            expiring_count=expiring_count,
@@ -969,49 +1569,94 @@ def sales_dashboard():
                            chart_labels=chart_labels, chart_values=chart_values,
                            medical_labels=medical_labels, medical_values=medical_values,
                            nonmedical_labels=nonmedical_labels, nonmedical_values=nonmedical_values,
+                           date_from=date_from, date_to=date_to,
                            active_main='sales', active_sub='sales_dashboard')
 
 @app.route('/non_medical_sales')
 @admin_required
 def non_medical_sales():
     cur = mysql.connection.cursor()
-    
-    # Get sales with product names
-    cur.execute("""
-        SELECT s.id, s.receipt_number, GROUP_CONCAT(p.product_name SEPARATOR ', ') as products, 
+    date_from = request.args.get('date_from', '').strip()
+    date_to = request.args.get('date_to', '').strip()
+    export = request.args.get('export', '').strip()
+
+    where = ["s.sale_status = 'Completed'"]
+    params = []
+    if date_from:
+        where.append("DATE(s.sale_date) >= %s")
+        params.append(date_from)
+    if date_to:
+        where.append("DATE(s.sale_date) <= %s")
+        params.append(date_to)
+    where_clause = " AND ".join(where)
+
+    cur.execute(f"""
+        SELECT s.id, s.receipt_number, 
+               GROUP_CONCAT(DISTINCT CASE WHEN p.product_type = 'Non-Medical' THEN p.product_name END SEPARATOR ', ') as products, 
                s.total_amount, s.sale_status, s.product_type, s.sale_date
         FROM sales s
         LEFT JOIN sale_items si ON s.id = si.sale_id
         LEFT JOIN products p ON si.product_id = p.id
-        WHERE s.product_type = 'Non-Medical'
+        WHERE p.product_type = 'Non-Medical' AND {where_clause}
         GROUP BY s.id
         ORDER BY s.sale_date DESC
-    """)
+    """, tuple(params))
     sales = cur.fetchall()
-    
+
     cur.execute("SELECT COUNT(*) FROM products WHERE stock <= %s", (LOW_STOCK_THRESHOLD,))
     low_stock_count = cur.fetchone()[0]
-    
+
     cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date <= CURDATE() + INTERVAL 30 DAY AND expiration_date IS NOT NULL")
     expiring_count = cur.fetchone()[0]
-    
-    # Get daily sales for chart (last 30 days)
-    cur.execute("""
-        SELECT DATE(sale_date) as day, SUM(total_amount) as daily_total
-        FROM sales
-        WHERE product_type='Non-Medical' AND sale_date >= CURDATE() - INTERVAL 30 DAY AND sale_status = 'Completed'
-        GROUP BY DATE(sale_date)
-        ORDER BY day ASC
-    """)
-    chart_data = cur.fetchall()
-    chart_labels = [str(row[0]) for row in chart_data]
-    chart_values = [float(row[1]) for row in chart_data]
-    
+
+    chart_labels = []
+    chart_values = []
+    if not export:
+        cur.execute(f"""
+            SELECT DATE(sale_date) as day, SUM(total_amount) as daily_total
+            FROM sales s
+            WHERE s.sale_status = 'Completed' 
+            AND s.product_type = 'Non-Medical'
+            AND s.sale_date >= CURDATE() - INTERVAL 30 DAY
+            GROUP BY DATE(sale_date)
+            ORDER BY day ASC
+        """)
+        chart_data = cur.fetchall()
+        chart_labels = [str(row[0]) for row in chart_data]
+        chart_values = [float(row[1]) for row in chart_data]
+
+    if export == 'csv':
+        cur.execute("""
+            SELECT s.receipt_number, s.sale_date, s.total_amount, s.sale_status,
+                   GROUP_CONCAT(DISTINCT p.product_name SEPARATOR ', ') as products
+            FROM sales s
+            JOIN sale_items si ON s.id = si.sale_id
+            JOIN products p ON si.product_id = p.id
+            WHERE s.sale_status = 'Completed' AND p.product_type = 'Non-Medical'
+            GROUP BY s.id
+            ORDER BY s.sale_date DESC
+        """)
+        export_data = cur.fetchall()
+        cur.close()
+
+        from io import StringIO, BytesIO
+        text_output = StringIO()
+        writer = csv.writer(text_output)
+        writer.writerow(['Receipt #', 'Products', 'Total', 'Date', 'Status'])
+        for s in export_data:
+            writer.writerow([s[0], s[4] or '', f"{s[2]:.2f}", s[1].strftime('%Y-%m-%d %H:%M') if s[1] else '', s[3]])
+        csv_bytes = text_output.getvalue().encode('utf-8-sig')
+        output = BytesIO(csv_bytes)
+        output.seek(0)
+        return send_file(output, mimetype='text/csv; charset=utf-8', as_attachment=True, download_name=f"non_medical_sales_{datetime.now().strftime('%Y%m%d')}.csv")
+
     cur.close()
+
     return render_template('sales_non_medical.html', sales=sales,
                            low_stock_count=low_stock_count,
                            expiring_count=expiring_count,
                            chart_labels=chart_labels, chart_values=chart_values,
+                           date_from=date_from, date_to=date_to,
                            active_main='sales', active_sub='non_medical_sales')
 
 # =============================
@@ -1022,63 +1667,355 @@ def non_medical_sales():
 @admin_required
 def out_of_stock():
     category_filter = request.args.get('category', 'all')
+    tab = request.args.get('tab', 'active')
+    admin_id = session.get('admin_id')
 
     cur = mysql.connection.cursor()
-
+    
+    base_query = "SELECT * FROM products WHERE stock = 0"
     if category_filter == 'Medical':
-        cur.execute("SELECT * FROM products WHERE stock <= %s AND product_type = 'Medical' ORDER BY stock ASC", (LOW_STOCK_THRESHOLD,))
+        base_query += " AND product_type = 'Medical'"
     elif category_filter == 'Non-Medical':
-        cur.execute("SELECT * FROM products WHERE stock <= %s AND product_type = 'Non-Medical' ORDER BY stock ASC", (LOW_STOCK_THRESHOLD,))
+        base_query += " AND product_type = 'Non-Medical'"
+    base_query += " ORDER BY stock ASC"
+    
+    if tab == 'acknowledged':
+        cur.execute(f"""
+            SELECT p.* FROM products p
+            JOIN alert_logs al ON al.product_id = p.id AND al.alert_type = 'out_of_stock'
+            WHERE al.acknowledged_by IS NOT NULL
+            {f"AND p.product_type = '{category_filter}'" if category_filter in ['Medical', 'Non-Medical'] else ""}
+            ORDER BY al.acknowledged_at DESC
+        """)
+    elif tab == 'dismissed':
+        cur.execute(f"""
+            SELECT p.* FROM products p
+            JOIN alert_logs al ON al.product_id = p.id AND al.alert_type = 'out_of_stock'
+            WHERE al.dismissed_by IS NOT NULL
+            {f"AND p.product_type = '{category_filter}'" if category_filter in ['Medical', 'Non-Medical'] else ""}
+            ORDER BY al.dismissed_at DESC
+        """)
     else:
-        cur.execute("SELECT * FROM products WHERE stock <= %s ORDER BY stock ASC", (LOW_STOCK_THRESHOLD,))
+        if admin_id:
+            cur.execute(f"""
+                SELECT p.* FROM products p
+                WHERE p.stock = 0
+                AND p.id NOT IN (
+                    SELECT product_id FROM alert_visibility WHERE admin_id = {admin_id} AND alert_type = 'out_of_stock' AND is_hidden = 1
+                )
+                {f"AND p.product_type = '{category_filter}'" if category_filter in ['Medical', 'Non-Medical'] else ""}
+                ORDER BY p.stock ASC
+            """)
+        else:
+            cur.execute(base_query)
     products = cur.fetchall()
 
-    cur.execute("SELECT COUNT(*) FROM products WHERE stock <= %s", (LOW_STOCK_THRESHOLD,))
+    cur.execute("SELECT COUNT(*) FROM products WHERE stock = 0")
+    out_of_stock_count = cur.fetchone()[0]
+
+    cur.execute("SELECT COUNT(*) FROM products WHERE stock > 0 AND stock <= %s", (LOW_STOCK_THRESHOLD,))
     low_stock_count = cur.fetchone()[0]
 
-    cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date <= CURDATE() + INTERVAL 30 DAY AND expiration_date IS NOT NULL")
-    expiring_count = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date < CURDATE() AND expiration_date IS NOT NULL")
+    expired_count = cur.fetchone()[0]
+
+    cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date >= CURDATE() AND expiration_date <= CURDATE() + INTERVAL 7 DAY AND expiration_date IS NOT NULL")
+    expiring_critical_count = cur.fetchone()[0]
+
+    cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date > CURDATE() + INTERVAL 7 DAY AND expiration_date <= CURDATE() + INTERVAL 30 DAY AND expiration_date IS NOT NULL")
+    expiring_warning_count = cur.fetchone()[0]
 
     cur.close()
     return render_template('inventory_out_of_stock.html', products=products,
+                           out_of_stock_count=out_of_stock_count,
                            low_stock_count=low_stock_count,
-                           expiring_count=expiring_count,
+                           expired_count=expired_count,
+                           expiring_critical_count=expiring_critical_count,
+                           expiring_warning_count=expiring_warning_count,
                            active_main='alerts', active_sub='out_of_stock',
-                           category_filter=category_filter)
+                           category_filter=category_filter, tab=tab)
+
+@app.route('/low_stock')
+@admin_required
+def low_stock():
+    category_filter = request.args.get('category', 'all')
+    tab = request.args.get('tab', 'active')
+    admin_id = session.get('admin_id')
+
+    cur = mysql.connection.cursor()
+    
+    base_query = "SELECT * FROM products WHERE stock > 0 AND stock <= %s"
+    params = (LOW_STOCK_THRESHOLD,)
+    
+    if tab == 'acknowledged':
+        placeholders = ','.join(['%s'] * len(params))
+        cur.execute(f"""
+            SELECT p.* FROM products p
+            JOIN alert_logs al ON al.product_id = p.id AND al.alert_type = 'low_stock'
+            WHERE al.acknowledged_by IS NOT NULL
+            {f"AND p.product_type = '{category_filter}'" if category_filter in ['Medical', 'Non-Medical'] else ""}
+            ORDER BY al.acknowledged_at DESC
+        """)
+    elif tab == 'dismissed':
+        cur.execute(f"""
+            SELECT p.* FROM products p
+            JOIN alert_logs al ON al.product_id = p.id AND al.alert_type = 'low_stock'
+            WHERE al.dismissed_by IS NOT NULL
+            {f"AND p.product_type = '{category_filter}'" if category_filter in ['Medical', 'Non-Medical'] else ""}
+            ORDER BY al.dismissed_at DESC
+        """)
+    else:
+        if admin_id:
+            cur.execute(f"""
+                SELECT p.* FROM products p
+                WHERE p.stock > 0 AND p.stock <= %s
+                AND p.id NOT IN (
+                    SELECT product_id FROM alert_visibility WHERE admin_id = {admin_id} AND alert_type = 'low_stock' AND is_hidden = 1
+                )
+                {f"AND p.product_type = '{category_filter}'" if category_filter in ['Medical', 'Non-Medical'] else ""}
+                ORDER BY p.stock ASC
+            """, (LOW_STOCK_THRESHOLD,))
+        else:
+            if category_filter == 'Medical':
+                cur.execute("SELECT * FROM products WHERE stock > 0 AND stock <= %s AND product_type = 'Medical' ORDER BY stock ASC", (LOW_STOCK_THRESHOLD,))
+            elif category_filter == 'Non-Medical':
+                cur.execute("SELECT * FROM products WHERE stock > 0 AND stock <= %s AND product_type = 'Non-Medical' ORDER BY stock ASC", (LOW_STOCK_THRESHOLD,))
+            else:
+                cur.execute("SELECT * FROM products WHERE stock > 0 AND stock <= %s ORDER BY stock ASC", (LOW_STOCK_THRESHOLD,))
+    products = cur.fetchall()
+
+    cur.execute("SELECT COUNT(*) FROM products WHERE stock = 0")
+    out_of_stock_count = cur.fetchone()[0]
+
+    cur.execute("SELECT COUNT(*) FROM products WHERE stock > 0 AND stock <= %s", (LOW_STOCK_THRESHOLD,))
+    low_stock_count = cur.fetchone()[0]
+
+    cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date < CURDATE() AND expiration_date IS NOT NULL")
+    expired_count = cur.fetchone()[0]
+
+    cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date >= CURDATE() AND expiration_date <= CURDATE() + INTERVAL 7 DAY AND expiration_date IS NOT NULL")
+    expiring_critical_count = cur.fetchone()[0]
+
+    cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date > CURDATE() + INTERVAL 7 DAY AND expiration_date <= CURDATE() + INTERVAL 30 DAY AND expiration_date IS NOT NULL")
+    expiring_warning_count = cur.fetchone()[0]
+
+    cur.close()
+    return render_template('inventory_low_stock.html', products=products,
+                           out_of_stock_count=out_of_stock_count,
+                           low_stock_count=low_stock_count,
+                           expired_count=expired_count,
+                           expiring_critical_count=expiring_critical_count,
+                           expiring_warning_count=expiring_warning_count,
+                           active_main='alerts', active_sub='low_stock',
+                           category_filter=category_filter, tab=tab)
+
+@app.route('/expired_products')
+@admin_required
+def expired_products():
+    category_filter = request.args.get('category', 'all')
+    tab = request.args.get('tab', 'active')
+    admin_id = session.get('admin_id')
+
+    cur = mysql.connection.cursor()
+    
+    if tab == 'acknowledged':
+        cur.execute(f"""
+            SELECT p.* FROM products p
+            JOIN alert_logs al ON al.product_id = p.id AND al.alert_type = 'expired'
+            WHERE al.acknowledged_by IS NOT NULL
+            {f"AND p.product_type = '{category_filter}'" if category_filter in ['Medical', 'Non-Medical'] else ""}
+            ORDER BY al.acknowledged_at DESC
+        """)
+    elif tab == 'dismissed':
+        cur.execute(f"""
+            SELECT p.* FROM products p
+            JOIN alert_logs al ON al.product_id = p.id AND al.alert_type = 'expired'
+            WHERE al.dismissed_by IS NOT NULL
+            {f"AND p.product_type = '{category_filter}'" if category_filter in ['Medical', 'Non-Medical'] else ""}
+            ORDER BY al.dismissed_at DESC
+        """)
+    else:
+        if admin_id:
+            cur.execute(f"""
+                SELECT p.* FROM products p
+                WHERE p.expiration_date < CURDATE() AND p.expiration_date IS NOT NULL
+                AND p.id NOT IN (
+                    SELECT product_id FROM alert_visibility WHERE admin_id = {admin_id} AND alert_type = 'expired' AND is_hidden = 1
+                )
+                {f"AND p.product_type = '{category_filter}'" if category_filter in ['Medical', 'Non-Medical'] else ""}
+                ORDER BY p.expiration_date ASC
+            """)
+        else:
+            if category_filter == 'Medical':
+                cur.execute("SELECT * FROM products WHERE expiration_date < CURDATE() AND expiration_date IS NOT NULL AND product_type = 'Medical' ORDER BY expiration_date ASC")
+            elif category_filter == 'Non-Medical':
+                cur.execute("SELECT * FROM products WHERE expiration_date < CURDATE() AND expiration_date IS NOT NULL AND product_type = 'Non-Medical' ORDER BY expiration_date ASC")
+            else:
+                cur.execute("SELECT * FROM products WHERE expiration_date < CURDATE() AND expiration_date IS NOT NULL ORDER BY expiration_date ASC")
+    products = cur.fetchall()
+
+    cur.execute("SELECT COUNT(*) FROM products WHERE stock = 0")
+    out_of_stock_count = cur.fetchone()[0]
+
+    cur.execute("SELECT COUNT(*) FROM products WHERE stock > 0 AND stock <= %s", (LOW_STOCK_THRESHOLD,))
+    low_stock_count = cur.fetchone()[0]
+
+    cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date < CURDATE() AND expiration_date IS NOT NULL")
+    expired_count = cur.fetchone()[0]
+
+    cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date >= CURDATE() AND expiration_date <= CURDATE() + INTERVAL 7 DAY AND expiration_date IS NOT NULL")
+    expiring_critical_count = cur.fetchone()[0]
+
+    cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date > CURDATE() + INTERVAL 7 DAY AND expiration_date <= CURDATE() + INTERVAL 30 DAY AND expiration_date IS NOT NULL")
+    expiring_warning_count = cur.fetchone()[0]
+
+    cur.close()
+    return render_template('inventory_expired.html', products=products,
+                           out_of_stock_count=out_of_stock_count,
+                           low_stock_count=low_stock_count,
+                           expired_count=expired_count,
+                           expiring_critical_count=expiring_critical_count,
+                           expiring_warning_count=expiring_warning_count,
+                           active_main='alerts', active_sub='expired_products',
+                           category_filter=category_filter, tab=tab)
 
 @app.route('/expiring_medical')
 @admin_required
 def expiring_medical():
     from datetime import date
     category_filter = request.args.get('category', 'all')
+    level = request.args.get('level', 'all')
+    tab = request.args.get('tab', 'active')
+    admin_id = session.get('admin_id')
     
     cur = mysql.connection.cursor()
     
-    if category_filter == 'all':
-        cur.execute("SELECT * FROM products WHERE expiration_date <= CURDATE() + INTERVAL 30 DAY AND expiration_date IS NOT NULL")
-        products = cur.fetchall()
-    elif category_filter == 'Medical':
-        cur.execute("SELECT * FROM products WHERE expiration_date <= CURDATE() + INTERVAL 30 DAY AND expiration_date IS NOT NULL AND product_type = 'Medical'")
-        products = cur.fetchall()
-    elif category_filter == 'Non-Medical':
-        cur.execute("SELECT * FROM products WHERE expiration_date <= CURDATE() + INTERVAL 30 DAY AND expiration_date IS NOT NULL AND product_type = 'Non-Medical'")
-        products = cur.fetchall()
-    else:
-        cur.execute("SELECT * FROM products WHERE expiration_date <= CURDATE() + INTERVAL 30 DAY AND expiration_date IS NOT NULL")
-        products = cur.fetchall()
+    base_level = level if level != 'all' else None
     
-    cur.execute("SELECT COUNT(*) FROM products WHERE stock <= %s", (LOW_STOCK_THRESHOLD,))
+    if tab == 'acknowledged':
+        cur.execute(f"""
+            SELECT p.*, DATEDIFF(p.expiration_date, CURDATE()) as days_left FROM products p
+            JOIN alert_logs al ON al.product_id = p.id AND al.alert_type = 'expiring_medical'
+            WHERE al.acknowledged_by IS NOT NULL
+            {f"AND p.product_type = '{category_filter}'" if category_filter in ['Medical', 'Non-Medical'] else ""}
+            ORDER BY al.acknowledged_at DESC
+        """)
+    elif tab == 'dismissed':
+        cur.execute(f"""
+            SELECT p.*, DATEDIFF(p.expiration_date, CURDATE()) as days_left FROM products p
+            JOIN alert_logs al ON al.product_id = p.id AND al.alert_type = 'expiring_medical'
+            WHERE al.dismissed_by IS NOT NULL
+            {f"AND p.product_type = '{category_filter}'" if category_filter in ['Medical', 'Non-Medical'] else ""}
+            ORDER BY al.dismissed_at DESC
+        """)
+    else:
+        if level == 'expired':
+            if category_filter == 'Medical':
+                cur.execute("SELECT *, DATEDIFF(expiration_date, CURDATE()) as days_left FROM products WHERE expiration_date < CURDATE() AND expiration_date IS NOT NULL AND product_type = 'Medical' ORDER BY expiration_date ASC")
+            elif category_filter == 'Non-Medical':
+                cur.execute("SELECT *, DATEDIFF(expiration_date, CURDATE()) as days_left FROM products WHERE expiration_date < CURDATE() AND expiration_date IS NOT NULL AND product_type = 'Non-Medical' ORDER BY expiration_date ASC")
+            else:
+                cur.execute("SELECT *, DATEDIFF(expiration_date, CURDATE()) as days_left FROM products WHERE expiration_date < CURDATE() AND expiration_date IS NOT NULL ORDER BY expiration_date ASC")
+        elif level == 'critical':
+            if category_filter == 'Medical':
+                cur.execute("SELECT *, DATEDIFF(expiration_date, CURDATE()) as days_left FROM products WHERE expiration_date >= CURDATE() AND expiration_date <= CURDATE() + INTERVAL 7 DAY AND expiration_date IS NOT NULL AND product_type = 'Medical' ORDER BY expiration_date ASC")
+            elif category_filter == 'Non-Medical':
+                cur.execute("SELECT *, DATEDIFF(expiration_date, CURDATE()) as days_left FROM products WHERE expiration_date >= CURDATE() AND expiration_date <= CURDATE() + INTERVAL 7 DAY AND expiration_date IS NOT NULL AND product_type = 'Non-Medical' ORDER BY expiration_date ASC")
+            else:
+                cur.execute("SELECT *, DATEDIFF(expiration_date, CURDATE()) as days_left FROM products WHERE expiration_date >= CURDATE() AND expiration_date <= CURDATE() + INTERVAL 7 DAY AND expiration_date IS NOT NULL ORDER BY expiration_date ASC")
+        elif level == 'warning':
+            if category_filter == 'Medical':
+                cur.execute("SELECT *, DATEDIFF(expiration_date, CURDATE()) as days_left FROM products WHERE expiration_date > CURDATE() + INTERVAL 7 DAY AND expiration_date <= CURDATE() + INTERVAL 30 DAY AND expiration_date IS NOT NULL AND product_type = 'Medical' ORDER BY expiration_date ASC")
+            elif category_filter == 'Non-Medical':
+                cur.execute("SELECT *, DATEDIFF(expiration_date, CURDATE()) as days_left FROM products WHERE expiration_date > CURDATE() + INTERVAL 7 DAY AND expiration_date <= CURDATE() + INTERVAL 30 DAY AND expiration_date IS NOT NULL AND product_type = 'Non-Medical' ORDER BY expiration_date ASC")
+            else:
+                cur.execute("SELECT *, DATEDIFF(expiration_date, CURDATE()) as days_left FROM products WHERE expiration_date > CURDATE() + INTERVAL 7 DAY AND expiration_date <= CURDATE() + INTERVAL 30 DAY AND expiration_date IS NOT NULL ORDER BY expiration_date ASC")
+        else:
+            if admin_id:
+                cur.execute(f"""
+                    SELECT p.*, DATEDIFF(p.expiration_date, CURDATE()) as days_left FROM products p
+                    WHERE p.expiration_date <= CURDATE() + INTERVAL 30 DAY AND p.expiration_date IS NOT NULL
+                    AND p.id NOT IN (
+                        SELECT product_id FROM alert_visibility WHERE admin_id = {admin_id} AND alert_type = 'expiring_medical' AND is_hidden = 1
+                    )
+                    {f"AND p.product_type = '{category_filter}'" if category_filter in ['Medical', 'Non-Medical'] else ""}
+                    ORDER BY p.expiration_date ASC
+                """)
+            else:
+                if category_filter == 'all':
+                    cur.execute("SELECT *, DATEDIFF(expiration_date, CURDATE()) as days_left FROM products WHERE expiration_date <= CURDATE() + INTERVAL 30 DAY AND expiration_date IS NOT NULL ORDER BY expiration_date ASC")
+                elif category_filter == 'Medical':
+                    cur.execute("SELECT *, DATEDIFF(expiration_date, CURDATE()) as days_left FROM products WHERE expiration_date <= CURDATE() + INTERVAL 30 DAY AND expiration_date IS NOT NULL AND product_type = 'Medical' ORDER BY expiration_date ASC")
+                elif category_filter == 'Non-Medical':
+                    cur.execute("SELECT *, DATEDIFF(expiration_date, CURDATE()) as days_left FROM products WHERE expiration_date <= CURDATE() + INTERVAL 30 DAY AND expiration_date IS NOT NULL AND product_type = 'Non-Medical' ORDER BY expiration_date ASC")
+                else:
+                    cur.execute("SELECT *, DATEDIFF(expiration_date, CURDATE()) as days_left FROM products WHERE expiration_date <= CURDATE() + INTERVAL 30 DAY AND expiration_date IS NOT NULL ORDER BY expiration_date ASC")
+    products = cur.fetchall()
+    
+    cur.execute("SELECT COUNT(*) FROM products WHERE stock = 0")
+    out_of_stock_count = cur.fetchone()[0]
+    
+    cur.execute("SELECT COUNT(*) FROM products WHERE stock > 0 AND stock <= %s", (LOW_STOCK_THRESHOLD,))
     low_stock_count = cur.fetchone()[0]
     
-    cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date <= CURDATE() + INTERVAL 30 DAY AND expiration_date IS NOT NULL")
-    expiring_count = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date < CURDATE() AND expiration_date IS NOT NULL")
+    expired_count = cur.fetchone()[0]
+    
+    cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date >= CURDATE() AND expiration_date <= CURDATE() + INTERVAL 7 DAY AND expiration_date IS NOT NULL")
+    expiring_critical_count = cur.fetchone()[0]
+    
+    cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date > CURDATE() + INTERVAL 7 DAY AND expiration_date <= CURDATE() + INTERVAL 30 DAY AND expiration_date IS NOT NULL")
+    expiring_warning_count = cur.fetchone()[0]
     
     cur.close()
     return render_template('inventory_expiring.html', products=products,
+                           out_of_stock_count=out_of_stock_count,
                            low_stock_count=low_stock_count,
-                           expiring_count=expiring_count,
-                           active_main='alerts', active_sub='expiring_medical',
-                           now=date.today, category_filter=category_filter)
+                           expired_count=expired_count,
+                           expiring_critical_count=expiring_critical_count,
+                           expiring_warning_count=expiring_warning_count,
+                            active_main='alerts', active_sub='expiring_medical',
+                            now=date.today, category_filter=category_filter, level=level, tab=tab)
+
+@app.route('/alert_history')
+@admin_required
+def alert_history():
+    cur = mysql.connection.cursor()
+    
+    cur.execute("""
+        SELECT al.id, al.alert_type, al.alert_level, al.product_id, p.product_name, 
+               al.message, al.acknowledged_by, al.acknowledged_at, 
+               al.dismissed_by, al.dismissed_at, al.dismiss_reason, al.created_at
+        FROM alert_logs al
+        JOIN products p ON al.product_id = p.id
+        ORDER BY al.created_at DESC
+        LIMIT 100
+    """)
+    logs = cur.fetchall()
+    
+    cur.execute("SELECT COUNT(*) FROM products WHERE stock = 0")
+    out_of_stock_count = cur.fetchone()[0]
+    
+    cur.execute("SELECT COUNT(*) FROM products WHERE stock > 0 AND stock <= %s", (LOW_STOCK_THRESHOLD,))
+    low_stock_count = cur.fetchone()[0]
+    
+    cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date < CURDATE() AND expiration_date IS NOT NULL")
+    expired_count = cur.fetchone()[0]
+    
+    cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date >= CURDATE() AND expiration_date <= CURDATE() + INTERVAL 7 DAY AND expiration_date IS NOT NULL")
+    expiring_critical_count = cur.fetchone()[0]
+    
+    cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date > CURDATE() + INTERVAL 7 DAY AND expiration_date <= CURDATE() + INTERVAL 30 DAY AND expiration_date IS NOT NULL")
+    expiring_warning_count = cur.fetchone()[0]
+    
+    cur.close()
+    return render_template('alert_history.html', logs=logs,
+                           out_of_stock_count=out_of_stock_count,
+                           low_stock_count=low_stock_count,
+                           expired_count=expired_count,
+                           expiring_critical_count=expiring_critical_count,
+                           expiring_warning_count=expiring_warning_count,
+                           active_main='alerts', active_sub='alert_history')
 
 # =============================
 # ADMIN MANAGEMENT
@@ -1259,15 +2196,16 @@ def edit_cashier():
     return redirect(url_for('delete_cashier'))
 
 @app.route('/admin/change_password', methods=['GET','POST'])
-@admin_required
 def admin_change_password():
+    if 'admin_user' not in session and 'pending_admin_id' not in session:
+        return redirect(url_for('admin_login'))
     cur = mysql.connection.cursor()
     cur.execute("SELECT COUNT(*) FROM products WHERE stock <= %s", (LOW_STOCK_THRESHOLD,))
     low_stock_count = cur.fetchone()[0]
     cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date <= CURDATE() + INTERVAL 30 DAY AND expiration_date IS NOT NULL")
     expiring_count = cur.fetchone()[0]
     cur.close()
-    admin_id = session.get('admin_id')
+    admin_id = session.get('admin_id') or session.get('pending_admin_id')
 
     if request.method == 'POST':
         old_password = request.form.get('old_password', '').strip()
@@ -1292,7 +2230,7 @@ def admin_change_password():
             return render_template('change_admin_password.html', low_stock_count=low_stock_count, expiring_count=expiring_count, active_main='management', active_sub='change_admin_password')
 
         hashed = generate_password_hash(new_password)
-        cur.execute("UPDATE admins SET password=%s WHERE id=%s", (hashed, admin_id))
+        cur.execute("UPDATE admins SET password=%s, force_password_change=0 WHERE id=%s", (hashed, admin_id))
         mysql.connection.commit()
         
         ip_address = request.remote_addr
@@ -1306,15 +2244,17 @@ def admin_change_password():
             pass
         
         cur.close()
-        flash("Password updated successfully", "success")
-        return redirect(url_for('admin_dashboard'))
+        session.clear()
+        flash("Password updated successfully. Please login again.", "success")
+        return redirect(url_for('admin_login'))
 
     return render_template('change_admin_password.html', low_stock_count=low_stock_count, expiring_count=expiring_count, active_main='management', active_sub='change_admin_password')
 
 @app.route('/cashier/change_password', methods=['GET', 'POST'])
-@cashier_required
 def cashier_change_password():
-    cashier_id = session.get('cashier_id')
+    if 'cashier_user' not in session and 'pending_cashier_id' not in session:
+        return redirect(url_for('cashier_login'))
+    cashier_id = session.get('cashier_id') or session.get('pending_cashier_id')
 
     if request.method == 'POST':
         old_password = request.form.get('old_password', '').strip()
@@ -1339,7 +2279,7 @@ def cashier_change_password():
             return render_template('change_cashier_password.html')
 
         hashed = generate_password_hash(new_password)
-        cur.execute("UPDATE cashiers SET password=%s WHERE id=%s", (hashed, cashier_id))
+        cur.execute("UPDATE cashiers SET password=%s, force_password_change=0 WHERE id=%s", (hashed, cashier_id))
         mysql.connection.commit()
         
         try:
@@ -1352,8 +2292,9 @@ def cashier_change_password():
             pass
         
         cur.close()
-        flash("Password updated successfully", "success")
-        return redirect(url_for('cashier_dashboard'))
+        session.clear()
+        flash("Password updated successfully. Please login again.", "success")
+        return redirect(url_for('cashier_login'))
 
     return render_template('change_cashier_password.html')
 
@@ -1406,7 +2347,7 @@ def change_admin_password():
             stored_answer = admin[2] if len(admin) > 2 else None
             if stored_answer and check_password_hash(stored_answer, security_answer):
                 hashed = generate_password_hash(new_pass)
-                cur.execute("UPDATE admins SET password=%s WHERE username=%s", (hashed, username))
+                cur.execute("UPDATE admins SET password=%s, force_password_change=0 WHERE username=%s", (hashed, username))
                 mysql.connection.commit()
                 
                 ip_address = request.remote_addr
@@ -1470,7 +2411,7 @@ def change_cashier_password():
 
                 if check_password_hash(row[3], security_answer):
                     hashed = generate_password_hash(new_password)
-                    cur.execute("UPDATE cashiers SET password=%s WHERE id=%s", (hashed, row[0]))
+                    cur.execute("UPDATE cashiers SET password=%s, force_password_change=0 WHERE id=%s", (hashed, row[0]))
                     mysql.connection.commit()
                     flash("Password updated successfully", "success")
                 else:
@@ -1492,6 +2433,13 @@ def cashier_login():
     if request.method == 'POST':
         username = clean_input(request.form.get('username'))
         password = clean_input(request.form.get('password'))
+        ip_address = request.remote_addr
+        if request.headers.get('X-Forwarded-For'):
+            ip_address = request.headers.get('X-Forwarded-For')
+
+        if check_login_lockout(ip_address, username):
+            flash("Account temporarily locked due to too many failed attempts. Please try again later.", "error")
+            return redirect(url_for('cashier_login'))
 
         if username == "" or password == "":
             flash("All fields are required", "error")
@@ -1503,11 +2451,13 @@ def cashier_login():
         cur.close()
 
         if not cashier or not check_password_hash(cashier[3], password):
+            record_login_attempt(ip_address, username, False)
             flash("Invalid login credentials", "error")
             return redirect(url_for('cashier_login'))
 
         cashier_status = ((cashier[4] or 'active')).lower()
         if cashier_status != 'active':
+            record_login_attempt(ip_address, username, False)
             flash("Cashier account is inactive. Contact the administrator.", "error")
             return redirect(url_for('cashier_login'))
 
@@ -1519,6 +2469,23 @@ def cashier_login():
             cur.execute("UPDATE cashiers SET security_question=%s, security_answer=%s WHERE id=%s", ('What is the name of the owner?', hashed_answer, cashier[0]))
             mysql.connection.commit()
         cur.close()
+
+        force_change = False
+        try:
+            cur = mysql.connection.cursor()
+            cur.execute("SELECT force_password_change FROM cashiers WHERE id=%s", (cashier[0],))
+            fc_row = cur.fetchone()
+            cur.close()
+            if fc_row and fc_row[0]:
+                force_change = True
+        except Exception:
+            pass
+        
+        if force_change:
+            session['pending_cashier_id'] = cashier[0]
+            session['pending_cashier_user'] = cashier[1]
+            flash("You must change your password before continuing.", "error")
+            return redirect(url_for('cashier_change_password'))
 
         session['cashier_user'] = cashier[1]
         session['cashier_id'] = cashier[0]
@@ -1539,6 +2506,7 @@ def cashier_login():
         """, (cashier[0], ip_address))
         mysql.connection.commit()
         cur.close()
+        record_login_attempt(ip_address, username, True)
 
         return redirect(url_for('cashier_dashboard'))
 
@@ -1623,36 +2591,42 @@ def cashier_dashboard():
 @cashier_required
 def cashier_history():
     cur = mysql.connection.cursor()
-
-    # Get daily sales (today only for chart)
-    cur.execute("""
+    cashier_id = session.get('cashier_id')
+    receipt_search = request.args.get('receipt_number', '').strip()
+    date_from = request.args.get('date_from', '').strip()
+    date_to = request.args.get('date_to', '').strip()
+    where = ["cashier_id = %s", "sale_status = 'Completed'"]
+    params = [cashier_id]
+    if receipt_search:
+        where.append("receipt_number LIKE %s")
+        params.append(f"%{receipt_search}%")
+    if date_from:
+        where.append("DATE(sale_date) >= %s")
+        params.append(date_from)
+    if date_to:
+        where.append("DATE(sale_date) <= %s")
+        params.append(date_to)
+    where_clause = " AND ".join(where)
+    cur.execute(f"""
         SELECT DATE(sale_date) as sale_day,
                IFNULL(SUM(total_amount),0) as total_sales,
                COUNT(id) as total_transactions
         FROM sales
-        WHERE cashier_id = %s
-        AND sale_status = 'Completed'
-        AND DATE(sale_date) = CURDATE()
+        WHERE {where_clause}
         GROUP BY DATE(sale_date)
         ORDER BY sale_day ASC
-    """, (session['cashier_id'],))
+    """, tuple(params))
     daily_data = cur.fetchall()
-
     labels = [str(row[0]) for row in daily_data]
     sales_values = [float(row[1]) for row in daily_data]
     transaction_counts = [int(row[2]) for row in daily_data]
-
-    # Get today's transactions only
-    cur.execute("""
+    cur.execute(f"""
         SELECT id, receipt_number, total_amount, sale_date
         FROM sales
-        WHERE cashier_id = %s
-        AND DATE(sale_date) = CURDATE()
-        AND sale_status = 'Completed'
+        WHERE {where_clause}
         ORDER BY sale_date DESC
-    """, (session['cashier_id'],))
+    """, tuple(params))
     sales = cur.fetchall()
-
     sales_data = []
     for sale in sales:
         sale_id = sale[0]
@@ -1670,14 +2644,16 @@ def cashier_history():
             "sale_date": sale[3],
             "items": items
         })
-
     cur.close()
     return render_template(
         "cashier_history.html",
         sales=sales_data,
         chart_labels=labels,
         chart_sales=sales_values,
-        chart_transactions=transaction_counts
+        chart_transactions=transaction_counts,
+        receipt_search=receipt_search,
+        date_from=date_from,
+        date_to=date_to
     )
 
 @app.route('/search_product')
@@ -1980,69 +2956,39 @@ def complete_sale():
         if tendered < total_amount:
             return jsonify({'success': False, 'message': 'Amount tendered is less than total'})
 
-        receipt_numbers = []
+        receipt_number = f"REC-{datetime.now().strftime('%Y%m%d')}-{random.randint(1000, 9999)}"
+        sale_product_type = 'Medical' if medical_items else 'Non-Medical'
 
-        if medical_items:
-            receipt_number = f"REC-{datetime.now().strftime('%Y%m%d')}-{random.randint(1000, 9999)}"
-            receipt_numbers.append(receipt_number)
-            medical_total = round(sum(item[2] * item[1] for item in medical_items), 2)
+        cur.execute("""
+            INSERT INTO sales (receipt_number, cashier_id, total_amount, sale_status, product_type, sale_date)
+            VALUES (%s, %s, %s, 'Pending', %s, NOW())
+        """, (receipt_number, session['cashier_id'], total_amount, sale_product_type))
+
+        sale_id = cur.lastrowid
+
+        for product_id, requested_quantity in quantity_by_product.items():
+            row = products[product_id]
+            price = float(row[3])
+            cur.execute("""
+                INSERT INTO sale_items (sale_id, product_id, quantity, price)
+                VALUES (%s, %s, %s, %s)
+            """, (sale_id, product_id, requested_quantity, price))
 
             cur.execute("""
-                INSERT INTO sales (receipt_number, cashier_id, total_amount, sale_status, product_type, sale_date)
-                VALUES (%s, %s, %s, 'Pending', 'Medical', NOW())
-            """, (receipt_number, session['cashier_id'], medical_total))
-
-            sale_id = cur.lastrowid
-
-            for product_id, quantity, price in medical_items:
-                cur.execute("""
-                    INSERT INTO sale_items (sale_id, product_id, quantity, price)
-                    VALUES (%s, %s, %s, %s)
-                """, (sale_id, product_id, quantity, price))
-
-                cur.execute("""
-                    UPDATE products SET stock = stock - %s WHERE id = %s
-                """, (quantity, product_id))
-
-                cur.execute("""
-                    INSERT INTO stock_movements (product_id, movement_type, quantity, reason)
-                    VALUES (%s, 'OUT', %s, 'Sale')
-                """, (product_id, quantity))
-
-        if non_medical_items:
-            receipt_number = f"REC-{datetime.now().strftime('%Y%m%d')}-{random.randint(1000, 9999)}"
-            receipt_numbers.append(receipt_number)
-            non_medical_total = round(sum(item[2] * item[1] for item in non_medical_items), 2)
+                UPDATE products SET stock = stock - %s WHERE id = %s
+            """, (requested_quantity, product_id))
 
             cur.execute("""
-                INSERT INTO sales (receipt_number, cashier_id, total_amount, sale_status, product_type, sale_date)
-                VALUES (%s, %s, %s, 'Pending', 'Non-Medical', NOW())
-            """, (receipt_number, session['cashier_id'], non_medical_total))
-
-            sale_id = cur.lastrowid
-
-            for product_id, quantity, price in non_medical_items:
-                cur.execute("""
-                    INSERT INTO sale_items (sale_id, product_id, quantity, price)
-                    VALUES (%s, %s, %s, %s)
-                """, (sale_id, product_id, quantity, price))
-
-                cur.execute("""
-                    UPDATE products SET stock = stock - %s WHERE id = %s
-                """, (quantity, product_id))
-
-                cur.execute("""
-                    INSERT INTO stock_movements (product_id, movement_type, quantity, reason)
-                    VALUES (%s, 'OUT', %s, 'Sale')
-                """, (product_id, quantity))
+                INSERT INTO stock_movements (product_id, movement_type, quantity, reason)
+                VALUES (%s, 'OUT', %s, 'Sale')
+            """, (product_id, requested_quantity))
 
         mysql.connection.commit()
-        main_receipt = receipt_numbers[0] if receipt_numbers else 'N/A'
         change = round(tendered - total_amount, 2)
 
         return jsonify({
             'success': True,
-            'receipt_number': main_receipt,
+            'receipt_number': receipt_number,
             'total': round(total_amount, 2),
             'tendered': round(tendered, 2),
             'change': change,
@@ -2058,6 +3004,226 @@ def complete_sale():
         return jsonify({'success': False, 'message': f'Error: {str(e)}'})
     finally:
         cur.close()
+
+# =============================
+# TRANSACTION HOLD / RESUME
+# =============================
+
+@app.route('/api/hold_transaction', methods=['POST'])
+@cashier_required
+def hold_transaction():
+    data = request.get_json() or {}
+    name = data.get('name', f'Hold {datetime.now().strftime("%H:%M")}')
+    cart = data.get('cart', [])
+    if not cart:
+        return jsonify({'success': False, 'message': 'Cart is empty'}), 400
+    if 'held_transactions' not in session:
+        session['held_transactions'] = []
+    session['held_transactions'].append({
+        'name': name,
+        'cart': cart,
+        'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M')
+    })
+    session.modified = True
+    return jsonify({'success': True, 'message': f'Transaction held: {name}'})
+
+@app.route('/api/resume_transaction', methods=['POST'])
+@cashier_required
+def resume_transaction():
+    data = request.get_json() or {}
+    index = data.get('index')
+    held = session.get('held_transactions', [])
+    if index is None or int(index) < 0 or int(index) >= len(held):
+        return jsonify({'success': False, 'message': 'Invalid hold index'}), 400
+    transaction = held.pop(int(index))
+    session.modified = True
+    return jsonify({'success': True, 'cart': transaction['cart']})
+
+@app.route('/api/held_transactions', methods=['GET'])
+@cashier_required
+def get_held_transactions():
+    held = session.get('held_transactions', [])
+    return jsonify({'success': True, 'holds': held})
+
+# =============================
+# VOID TRANSACTION (Admin Override Required)
+# =============================
+
+@app.route('/api/void_sale', methods=['POST'])
+def void_sale():
+    if 'admin_user' not in session:
+        return jsonify({'success': False, 'message': 'Admin override required. Please login as admin first.'}), 403
+    data = request.get_json() or {}
+    sale_id = data.get('sale_id')
+    reason = clean_input(data.get('reason', ''))
+    if not sale_id:
+        return jsonify({'success': False, 'message': 'Sale ID is required'}), 400
+    cur = mysql.connection.cursor()
+    try:
+        cur.execute("SELECT id, receipt_number, sale_status, total_amount, cashier_id FROM sales WHERE id=%s", (sale_id,))
+        sale = cur.fetchone()
+        if not sale:
+            return jsonify({'success': False, 'message': 'Sale not found'}), 404
+        if sale[2] == 'Voided':
+            return jsonify({'success': False, 'message': 'Sale is already voided'}), 400
+        if sale[2] == 'Refunded':
+            return jsonify({'success': False, 'message': 'Sale is already refunded'}), 400
+        cur.execute("SELECT product_id, quantity FROM sale_items WHERE sale_id=%s", (sale_id,))
+        items = cur.fetchall()
+        for product_id, quantity in items:
+            cur.execute("UPDATE products SET stock = stock + %s WHERE id = %s", (quantity, product_id))
+            cur.execute("INSERT INTO stock_movements (product_id, movement_type, quantity, reason) VALUES (%s, 'IN', %s, %s)", (product_id, quantity, f'Void - {reason or "No reason"}'))
+        voided_by = session.get('admin_id') or session.get('cashier_id')
+        cur.execute("UPDATE sales SET sale_status='Voided', voided_at=NOW(), voided_by=%s, void_reason=%s WHERE id=%s", (voided_by, reason, sale_id))
+        mysql.connection.commit()
+        ip_address = request.remote_addr
+        if request.headers.get('X-Forwarded-For'):
+            ip_address = request.headers.get('X-Forwarded-For')
+        try:
+            if 'admin_id' in session:
+                cur.execute("INSERT INTO admin_activity (admin_id, action, ip_address, details) VALUES (%s, %s, %s, %s)", (session['admin_id'], 'Void Sale', ip_address, f'Voided sale {sale[1]} (ID: {sale_id})'))
+            else:
+                cur.execute("INSERT INTO cashier_activity (cashier_id, login_time, ip_address) VALUES (%s, NOW(), %s)", (session['cashier_id'], ip_address))
+            mysql.connection.commit()
+        except Exception:
+            pass
+        return jsonify({'success': True, 'message': f'Sale {sale[1]} has been voided. Stock restored.'})
+    except Exception as e:
+        mysql.connection.rollback()
+        return jsonify({'success': False, 'message': str(e)}), 500
+    finally:
+        cur.close()
+
+# =============================
+# REFUND / RETURN PROCESSING
+# =============================
+
+@app.route('/api/refund_sale', methods=['POST'])
+def refund_sale():
+    if 'admin_user' not in session and 'cashier_user' not in session:
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+    data = request.get_json() or {}
+    sale_id = data.get('sale_id')
+    reason = clean_input(data.get('reason', ''))
+    if not sale_id:
+        return jsonify({'success': False, 'message': 'Sale ID is required'}), 400
+    cur = mysql.connection.cursor()
+    try:
+        cur.execute("SELECT id, receipt_number, sale_status, total_amount, cashier_id FROM sales WHERE id=%s", (sale_id,))
+        sale = cur.fetchone()
+        if not sale:
+            return jsonify({'success': False, 'message': 'Sale not found'}), 404
+        if sale[2] == 'Voided':
+            return jsonify({'success': False, 'message': 'Sale is already voided'}), 400
+        if sale[2] == 'Refunded':
+            return jsonify({'success': False, 'message': 'Sale is already refunded'}), 400
+        cur.execute("SELECT product_id, quantity FROM sale_items WHERE sale_id=%s", (sale_id,))
+        items = cur.fetchall()
+        for product_id, quantity in items:
+            cur.execute("UPDATE products SET stock = stock + %s WHERE id = %s", (quantity, product_id))
+            cur.execute("INSERT INTO stock_movements (product_id, movement_type, quantity, reason) VALUES (%s, 'IN', %s, %s)", (product_id, quantity, f'Refund - {reason or "No reason"}'))
+        refunded_by = session.get('admin_id') or session.get('cashier_id')
+        cur.execute("UPDATE sales SET sale_status='Refunded', refunded_at=NOW(), refunded_by=%s, refund_reason=%s WHERE id=%s", (refunded_by, reason, sale_id))
+        mysql.connection.commit()
+        ip_address = request.remote_addr
+        if request.headers.get('X-Forwarded-For'):
+            ip_address = request.headers.get('X-Forwarded-For')
+        try:
+            if 'admin_id' in session:
+                cur.execute("INSERT INTO admin_activity (admin_id, action, ip_address, details) VALUES (%s, %s, %s, %s)", (session['admin_id'], 'Refund Sale', ip_address, f'Refunded sale {sale[1]} (ID: {sale_id})'))
+            else:
+                cur.execute("INSERT INTO cashier_activity (cashier_id, login_time, ip_address) VALUES (%s, NOW(), %s)", (session['cashier_id'], ip_address))
+            mysql.connection.commit()
+        except Exception:
+            pass
+        return jsonify({'success': True, 'message': f'Sale {sale[1]} has been refunded. Stock restored.'})
+    except Exception as e:
+        mysql.connection.rollback()
+        return jsonify({'success': False, 'message': str(e)}), 500
+    finally:
+        cur.close()
+
+# =============================
+# REPRINT RECEIPT
+# =============================
+
+@app.route('/reprint_receipt/<int:sale_id>')
+@cashier_required
+def reprint_receipt(sale_id):
+    cur = mysql.connection.cursor()
+    try:
+        cur.execute("SELECT receipt_number, total_amount, sale_date, sale_status FROM sales WHERE id=%s AND cashier_id=%s", (sale_id, session.get('cashier_id')))
+        sale = cur.fetchone()
+        if not sale:
+            cur.close()
+            return jsonify({'success': False, 'message': 'Sale not found'}), 404
+        cur.execute("SELECT si.quantity, si.price, p.product_name FROM sale_items si JOIN products p ON si.product_id = p.id WHERE si.sale_id=%s", (sale_id,))
+        items = cur.fetchall()
+        receipt_items = []
+        for qty, price, name in items:
+            receipt_items.append({'name': name, 'quantity': qty, 'price': float(price), 'subtotal': round(float(price) * int(qty), 2)})
+        data = {
+            'receipt_number': sale[0],
+            'total': float(sale[1]),
+            'tendered': float(sale[1]),
+            'change': 0,
+            'items': receipt_items,
+            'date': sale[2].strftime('%Y-%m-%d %H:%M:%S') if sale[2] else ''
+        }
+        return render_template('reprint_receipt.html', data=data)
+    finally:
+        cur.close()
+
+@app.route('/api/receipt_data/<int:sale_id>')
+@cashier_required
+def receipt_data(sale_id):
+    cur = mysql.connection.cursor()
+    try:
+        cur.execute("SELECT receipt_number, total_amount, sale_date FROM sales WHERE id=%s AND cashier_id=%s", (sale_id, session.get('cashier_id')))
+        sale = cur.fetchone()
+        if not sale:
+            return jsonify({'success': False, 'message': 'Sale not found'}), 404
+        cur.execute("SELECT si.quantity, si.price, p.product_name FROM sale_items si JOIN products p ON si.product_id = p.id WHERE si.sale_id=%s", (sale_id,))
+        items = cur.fetchall()
+        receipt_items = []
+        for qty, price, name in items:
+            receipt_items.append({'name': name, 'quantity': qty, 'price': float(price), 'subtotal': round(float(price) * int(qty), 2)})
+        return jsonify({'success': True, 'data': {'receipt_number': sale[0], 'total': float(sale[1]), 'tendered': float(sale[1]), 'change': 0, 'items': receipt_items, 'date': sale[2].strftime('%Y-%m-%d %H:%M:%S') if sale[2] else ''}})
+    finally:
+        cur.close()
+
+# =============================
+# CASHIER METRICS
+# =============================
+
+@app.route('/cashier_metrics')
+@cashier_required
+def cashier_metrics():
+    cur = mysql.connection.cursor()
+    cashier_id = session.get('cashier_id')
+    cur.execute("SELECT IFNULL(SUM(total_amount),0), COUNT(*) FROM sales WHERE cashier_id=%s AND sale_status='Completed'", (cashier_id,))
+    my_total, my_count = cur.fetchone()
+    my_avg = round(float(my_total) / my_count, 2) if my_count > 0 else 0
+    cur.execute("""
+        SELECT c.full_name, c.username, IFNULL(SUM(s.total_amount),0) as total, COUNT(s.id) as txn_count
+        FROM sales s
+        JOIN cashiers c ON s.cashier_id = c.id
+        WHERE s.sale_status = 'Completed'
+        GROUP BY s.cashier_id
+        ORDER BY total DESC
+    """)
+    rankings = cur.fetchall()
+    cur.execute("SELECT COUNT(*) FROM products WHERE stock <= %s", (LOW_STOCK_THRESHOLD,))
+    low_stock_count = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date <= CURDATE() + INTERVAL 30 DAY AND expiration_date IS NOT NULL")
+    expiring_count = cur.fetchone()[0]
+    cur.close()
+    return render_template('cashier_metrics.html',
+                           my_total=my_total, my_count=my_count, my_avg=my_avg,
+                           rankings=rankings,
+                           low_stock_count=low_stock_count,
+                           expiring_count=expiring_count,
+                           active_main='performance', active_sub='cashier_metrics')
 
 # =============================
 # LOGOUT
@@ -2103,6 +3269,8 @@ def admin_logout():
     session.pop('admin_user', None)
     session.pop('admin_id', None)
     session.pop('role', None)
+    session.pop('pending_admin_id', None)
+    session.pop('pending_admin_user', None)
     
     return redirect(url_for('admin_login'))
 
@@ -2111,7 +3279,7 @@ def cashier_logout():
     """Cashier logout - clears cashier session and logs activity"""
     if 'cashier_user' in session:
         cur = mysql.connection.cursor()
-        cashier_id = session.get('cashier_id')
+        cashier_id = session.get('cashier_id') or session.get('pending_cashier_id')
         
         # Get IP address
         ip_address = request.remote_addr
@@ -2132,6 +3300,8 @@ def cashier_logout():
     session.pop('cashier_user', None)
     session.pop('cashier_id', None)
     session.pop('role', None)
+    session.pop('pending_cashier_id', None)
+    session.pop('pending_cashier_user', None)
     
     return redirect(url_for('cashier_login'))
 
@@ -2296,6 +3466,57 @@ def receipt_customization():
             receipt_footer = request.form.get('receipt_footer', '').strip()
             store_address = request.form.get('store_address', '').strip()
             store_contact = request.form.get('store_contact', '').strip()
+            return_policy = request.form.get('return_policy', '').strip()
+            website = request.form.get('website', '').strip()
+            social_media = request.form.get('social_media', '').strip()
+            currency_symbol = request.form.get('currency_symbol', '₱').strip()
+            tax_rate = request.form.get('tax_rate', '0').strip()
+            tax_label = request.form.get('tax_label', 'Tax').strip()
+            discount_amount = request.form.get('discount_amount', '0').strip()
+            discount_label = request.form.get('discount_label', 'Discount').strip()
+            font_size = request.form.get('font_size', 'medium').strip()
+            paper_size = request.form.get('paper_size', '80').strip()
+            print_alignment = request.form.get('print_alignment', 'center').strip()
+            line_style = request.form.get('line_style', 'dashed').strip()
+            show_receipt_number = '1' if request.form.get('show_receipt_number') else '0'
+            show_date = '1' if request.form.get('show_date') else '0'
+            show_cashier = '1' if request.form.get('show_cashier') else '0'
+            show_customer = '1' if request.form.get('show_customer') else '0'
+            show_medical_items = '1' if request.form.get('show_medical_items') else '0'
+            show_logo = '1' if request.form.get('show_logo') else '0'
+            show_footer = '1' if request.form.get('show_footer') else '0'
+            show_return_policy = '1' if request.form.get('show_return_policy') else '0'
+            show_website = '1' if request.form.get('show_website') else '0'
+            show_social = '1' if request.form.get('show_social') else '0'
+            show_barcode = '1' if request.form.get('show_barcode') else '0'
+            show_subtotal = '1' if request.form.get('show_subtotal') else '0'
+            show_tax = '1' if request.form.get('show_tax') else '0'
+            show_discount = '1' if request.form.get('show_discount') else '0'
+            show_divider_after_header = '1' if request.form.get('show_divider_after_header') else '0'
+            show_divider_after_items = '1' if request.form.get('show_divider_after_items') else '0'
+            show_divider_after_total = '1' if request.form.get('show_divider_after_total') else '0'
+            show_divider_before_footer = '1' if request.form.get('show_divider_before_footer') else '0'
+            tin = request.form.get('tin', '').strip()
+            vat_status = request.form.get('vat_status', 'VAT Registered').strip()
+            document_title = request.form.get('document_title', 'SALES INVOICE').strip()
+            title_alignment = request.form.get('title_alignment', 'Center').strip()
+            title_style = request.form.get('title_style', 'Bold').strip()
+            invoice_prefix = request.form.get('invoice_prefix', 'INV-').strip()
+            next_invoice_no = request.form.get('next_invoice_no', '0000123').strip()
+            invoice_digits = request.form.get('invoice_digits', '7').strip()
+            show_date_time = request.form.get('show_date_time', 'Both').strip()
+            date_format = request.form.get('date_format', 'MMM DD, YYYY').strip()
+            time_format = request.form.get('time_format', '12-hour').strip()
+            footer_alignment = request.form.get('footer_alignment', 'Center').strip()
+            footer_style = request.form.get('footer_style', 'Normal').strip()
+            show_item_header = '1' if request.form.get('show_item_header') else '0'
+            show_tax_breakdown = '1' if request.form.get('show_tax_breakdown') else '0'
+            show_cashier_name = '1' if request.form.get('show_cashier_name') else '0'
+            show_payment_method = '1' if request.form.get('show_payment_method') else '0'
+            show_change = '1' if request.form.get('show_change') else '0'
+            show_separator_lines = '1' if request.form.get('show_separator_lines') else '0'
+            line_spacing = request.form.get('line_spacing', 'Compact').strip()
+            print_density = request.form.get('print_density', 'Normal').strip()
 
             settings_to_update = [
                 ('receipt_header', receipt_header),
@@ -2303,6 +3524,57 @@ def receipt_customization():
                 ('receipt_footer', receipt_footer),
                 ('store_address', store_address),
                 ('store_contact', store_contact),
+                ('return_policy', return_policy),
+                ('website', website),
+                ('social_media', social_media),
+                ('currency_symbol', currency_symbol),
+                ('tax_rate', tax_rate),
+                ('tax_label', tax_label),
+                ('discount_amount', discount_amount),
+                ('discount_label', discount_label),
+                ('font_size', font_size),
+                ('paper_size', paper_size),
+                ('print_alignment', print_alignment),
+                ('line_style', line_style),
+                ('show_receipt_number', show_receipt_number),
+                ('show_date', show_date),
+                ('show_cashier', show_cashier),
+                ('show_customer', show_customer),
+                ('show_medical_items', show_medical_items),
+                ('show_logo', show_logo),
+                ('show_footer', show_footer),
+                ('show_return_policy', show_return_policy),
+                ('show_website', show_website),
+                ('show_social', show_social),
+                ('show_barcode', show_barcode),
+                ('show_subtotal', show_subtotal),
+                ('show_tax', show_tax),
+                ('show_discount', show_discount),
+                ('show_divider_after_header', show_divider_after_header),
+                ('show_divider_after_items', show_divider_after_items),
+                ('show_divider_after_total', show_divider_after_total),
+                ('show_divider_before_footer', show_divider_before_footer),
+                ('tin', tin),
+                ('vat_status', vat_status),
+                ('document_title', document_title),
+                ('title_alignment', title_alignment),
+                ('title_style', title_style),
+                ('invoice_prefix', invoice_prefix),
+                ('next_invoice_no', next_invoice_no),
+                ('invoice_digits', invoice_digits),
+                ('show_date_time', show_date_time),
+                ('date_format', date_format),
+                ('time_format', time_format),
+                ('footer_alignment', footer_alignment),
+                ('footer_style', footer_style),
+                ('show_item_header', show_item_header),
+                ('show_tax_breakdown', show_tax_breakdown),
+                ('show_cashier_name', show_cashier_name),
+                ('show_payment_method', show_payment_method),
+                ('show_change', show_change),
+                ('show_separator_lines', show_separator_lines),
+                ('line_spacing', line_spacing),
+                ('print_density', print_density),
             ]
 
             for key, value in settings_to_update:
@@ -2334,6 +3606,81 @@ def receipt_customization():
                            expiring_count=expiring_count,
                            active_main='management',
                            active_sub='receipt_customization')
+
+@app.route('/api/receipt_settings')
+def receipt_settings_api():
+    cur = mysql.connection.cursor()
+    try:
+        cur.execute("SELECT setting_key, setting_value FROM store_settings")
+        rows = cur.fetchall()
+        settings = {row[0]: row[1] for row in rows}
+        return jsonify({
+            'header': settings.get('receipt_header', 'PHARMACON'),
+            'subtitle': settings.get('receipt_subtitle', "A's PharmaHealth & Convenience"),
+            'footer': settings.get('receipt_footer', 'Thank you for your purchase!\nPlease come again.'),
+            'storeName': settings.get('store_name', 'PharmaCon'),
+            'storeAddress': settings.get('store_address', ''),
+            'storeContact': settings.get('store_contact', ''),
+            'return_policy': settings.get('return_policy', ''),
+            'website': settings.get('website', ''),
+            'social_media': settings.get('social_media', ''),
+            'currency_symbol': settings.get('currency_symbol', '₱'),
+            'tax_rate': settings.get('tax_rate', '0'),
+            'tax_label': settings.get('tax_label', 'Tax'),
+            'discount_amount': settings.get('discount_amount', '0'),
+            'discount_label': settings.get('discount_label', 'Discount'),
+            'font_size': settings.get('font_size', 'medium'),
+            'paper_size': settings.get('paper_size', '80'),
+            'print_alignment': settings.get('print_alignment', 'center'),
+            'line_style': settings.get('line_style', 'dashed'),
+            'show_receipt_number': settings.get('show_receipt_number', '1') == '1',
+            'show_date': settings.get('show_date', '1') == '1',
+            'show_cashier': settings.get('show_cashier', '1') == '1',
+            'show_customer': settings.get('show_customer', '0') == '1',
+            'show_medical_items': settings.get('show_medical_items', '1') == '1',
+            'show_logo': settings.get('show_logo', '0') == '1',
+            'show_footer': settings.get('show_footer', '1') == '1',
+            'show_return_policy': settings.get('show_return_policy', '0') == '1',
+            'show_website': settings.get('show_website', '0') == '1',
+            'show_social': settings.get('show_social', '0') == '1',
+            'show_barcode': settings.get('show_barcode', '0') == '1',
+            'show_subtotal': settings.get('show_subtotal', '0') == '1',
+            'show_tax': settings.get('show_tax', '0') == '1',
+            'show_discount': settings.get('show_discount', '0') == '1',
+            'show_divider_after_header': settings.get('show_divider_after_header', '1') == '1',
+            'show_divider_after_items': settings.get('show_divider_after_items', '1') == '1',
+            'show_divider_after_total': settings.get('show_divider_after_total', '1') == '1',
+            'show_divider_before_footer': settings.get('show_divider_before_footer', '1') == '1',
+            'tin': settings.get('tin', ''),
+            'vat_status': settings.get('vat_status', 'VAT Registered'),
+            'document_title': settings.get('document_title', 'SALES INVOICE'),
+            'title_alignment': settings.get('title_alignment', 'Center'),
+            'title_style': settings.get('title_style', 'Bold'),
+            'invoice_prefix': settings.get('invoice_prefix', 'INV-'),
+            'next_invoice_no': settings.get('next_invoice_no', '0000123'),
+            'invoice_digits': settings.get('invoice_digits', '7'),
+            'show_date_time': settings.get('show_date_time', 'Both'),
+            'date_format': settings.get('date_format', 'MMM DD, YYYY'),
+            'time_format': settings.get('time_format', '12-hour'),
+            'footer_alignment': settings.get('footer_alignment', 'Center'),
+            'footer_style': settings.get('footer_style', 'Normal'),
+            'show_item_header': settings.get('show_item_header', '1') == '1',
+            'show_tax_breakdown': settings.get('show_tax_breakdown', '1') == '1',
+            'show_cashier_name': settings.get('show_cashier_name', '1') == '1',
+            'show_payment_method': settings.get('show_payment_method', '1') == '1',
+            'show_change': settings.get('show_change', '1') == '1',
+            'show_separator_lines': settings.get('show_separator_lines', '1') == '1',
+            'line_spacing': settings.get('line_spacing', 'Compact'),
+            'print_density': settings.get('print_density', 'Normal'),
+            'logo': settings.get('receipt_logo', ''),
+        })
+    finally:
+        cur.close()
+
+@app.route('/uploads/receipts/<filename>')
+def serve_receipt_logo(filename):
+    uploads_dir = os.path.join(current_app.root_path, 'static', 'uploads', 'receipts')
+    return send_from_directory(uploads_dir, filename)
 
 # =============================
 # RECEIPT PRINT CONFIRMATION
@@ -2546,7 +3893,10 @@ if __name__ == '__main__':
                     setting_key VARCHAR(100) NOT NULL UNIQUE,
                     setting_value TEXT,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-                )
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            """)
+            cur.execute("""
+                ALTER TABLE store_settings CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
             """)
             cur.execute("""
                 INSERT INTO store_settings (setting_key, setting_value) VALUES
@@ -2555,7 +3905,58 @@ if __name__ == '__main__':
                 ('receipt_footer', 'Thank you for your purchase!\\nPlease come again.'),
                 ('store_name', 'PharmaCon'),
                 ('store_address', ''),
-                ('store_contact', '')
+                ('store_contact', ''),
+                ('return_policy', ''),
+                ('website', ''),
+                ('social_media', ''),
+                ('currency_symbol', '₱'),
+                ('tax_rate', '0'),
+                ('tax_label', 'Tax'),
+                ('discount_amount', '0'),
+                ('discount_label', 'Discount'),
+                ('font_size', 'medium'),
+                ('paper_size', '80'),
+                ('print_alignment', 'center'),
+                ('line_style', 'dashed'),
+                ('show_receipt_number', '1'),
+                ('show_date', '1'),
+                ('show_cashier', '1'),
+                ('show_customer', '0'),
+                ('show_medical_items', '1'),
+                ('show_logo', '0'),
+                ('show_footer', '1'),
+                ('show_return_policy', '0'),
+                ('show_website', '0'),
+                ('show_social', '0'),
+                ('show_barcode', '0'),
+                ('show_subtotal', '0'),
+                ('show_tax', '0'),
+                ('show_discount', '0'),
+                ('show_divider_after_header', '1'),
+                ('show_divider_after_items', '1'),
+                ('show_divider_after_total', '1'),
+                ('show_divider_before_footer', '1'),
+                ('tin', ''),
+                ('vat_status', 'VAT Registered'),
+                ('document_title', 'SALES INVOICE'),
+                ('title_alignment', 'Center'),
+                ('title_style', 'Bold'),
+                ('invoice_prefix', 'INV-'),
+                ('next_invoice_no', '0000123'),
+                ('invoice_digits', '7'),
+                ('show_date_time', 'Both'),
+                ('date_format', 'MMM DD, YYYY'),
+                ('time_format', '12-hour'),
+                ('footer_alignment', 'Center'),
+                ('footer_style', 'Normal'),
+                ('show_item_header', '1'),
+                ('show_tax_breakdown', '1'),
+                ('show_cashier_name', '1'),
+                ('show_payment_method', '1'),
+                ('show_change', '1'),
+                ('show_separator_lines', '1'),
+                ('line_spacing', 'Compact'),
+                ('print_density', 'Normal')
                 ON DUPLICATE KEY UPDATE setting_value = setting_value
             """)
             cur.execute("SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'sales' AND column_name = 'receipt_printed'")
@@ -2576,8 +3977,131 @@ if __name__ == '__main__':
             cur.execute("SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'cashiers' AND column_name = 'security_answer'")
             if cur.fetchone()[0] == 0:
                 cur.execute("ALTER TABLE cashiers ADD COLUMN security_answer VARCHAR(255)")
+            cur.execute("SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'admins' AND column_name = 'force_password_change'")
+            if cur.fetchone()[0] == 0:
+                cur.execute("ALTER TABLE admins ADD COLUMN force_password_change TINYINT(1) DEFAULT 0")
+            cur.execute("SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'cashiers' AND column_name = 'force_password_change'")
+            if cur.fetchone()[0] == 0:
+                cur.execute("ALTER TABLE cashiers ADD COLUMN force_password_change TINYINT(1) DEFAULT 0")
+            cur.execute("SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'sales' AND column_name = 'voided_at'")
+            if cur.fetchone()[0] == 0:
+                cur.execute("ALTER TABLE sales ADD COLUMN voided_at TIMESTAMP NULL DEFAULT NULL")
+            cur.execute("SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'sales' AND column_name = 'voided_by'")
+            if cur.fetchone()[0] == 0:
+                cur.execute("ALTER TABLE sales ADD COLUMN voided_by INT NULL DEFAULT NULL")
+            cur.execute("SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'sales' AND column_name = 'void_reason'")
+            if cur.fetchone()[0] == 0:
+                cur.execute("ALTER TABLE sales ADD COLUMN void_reason TEXT NULL DEFAULT NULL")
+            cur.execute("SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'sales' AND column_name = 'refunded_at'")
+            if cur.fetchone()[0] == 0:
+                cur.execute("ALTER TABLE sales ADD COLUMN refunded_at TIMESTAMP NULL DEFAULT NULL")
+            cur.execute("SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'sales' AND column_name = 'refunded_by'")
+            if cur.fetchone()[0] == 0:
+                cur.execute("ALTER TABLE sales ADD COLUMN refunded_by INT NULL DEFAULT NULL")
+            cur.execute("SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'sales' AND column_name = 'refund_reason'")
+            if cur.fetchone()[0] == 0:
+                cur.execute("ALTER TABLE sales ADD COLUMN refund_reason TEXT NULL DEFAULT NULL")
+            cur.execute("SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'sales' AND column_name = 'original_sale_id'")
+            if cur.fetchone()[0] == 0:
+                cur.execute("ALTER TABLE sales ADD COLUMN original_sale_id INT NULL DEFAULT NULL")
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS login_attempts (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    ip_address VARCHAR(45) DEFAULT NULL,
+                    username_attempted VARCHAR(100) DEFAULT NULL,
+                    attempted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    locked_until TIMESTAMP NULL DEFAULT NULL,
+                    INDEX idx_ip_attempted (ip_address, attempted_at),
+                    INDEX idx_username_attempted (username_attempted, attempted_at)
+                )
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS alert_logs (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    alert_type VARCHAR(50) NOT NULL,
+                    alert_level VARCHAR(20) NOT NULL,
+                    product_id INT NOT NULL,
+                    message TEXT NOT NULL,
+                    acknowledged_by INT DEFAULT NULL,
+                    acknowledged_at TIMESTAMP NULL DEFAULT NULL,
+                    dismissed_by INT DEFAULT NULL,
+                    dismissed_at TIMESTAMP NULL DEFAULT NULL,
+                    dismiss_reason TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
+                    UNIQUE KEY unique_alert (alert_type, product_id)
+                )
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS alert_settings (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    setting_name VARCHAR(100) NOT NULL UNIQUE,
+                    setting_value VARCHAR(255) NOT NULL,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+                )
+            """)
+            cur.execute("SELECT COUNT(*) FROM alert_settings")
+            if cur.fetchone()[0] == 0:
+                cur.execute("INSERT INTO alert_settings (setting_name, setting_value) VALUES ('low_stock_threshold', '10'), ('critical_stock_threshold', '5'), ('expiry_critical_days', '7'), ('expiry_warning_days', '30')")
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS alert_acknowledgments (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    product_id INT NOT NULL,
+                    alert_type VARCHAR(50) NOT NULL,
+                    action VARCHAR(20) NOT NULL,
+                    reason TEXT,
+                    user_id INT NOT NULL,
+                    user_type VARCHAR(20) NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
+                    UNIQUE KEY unique_ack (alert_type, product_id)
+                )
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS alert_visibility (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    product_id INT NOT NULL,
+                    alert_type VARCHAR(50) NOT NULL,
+                    admin_id INT NOT NULL,
+                    is_hidden TINYINT(1) DEFAULT 1,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
+                    FOREIGN KEY (admin_id) REFERENCES admins(id) ON DELETE CASCADE
+                )
+            """)
+            try:
+                cur.execute("ALTER TABLE alert_logs ADD UNIQUE KEY unique_alert (alert_type, product_id)")
+            except Exception:
+                pass
+            try:
+                cur.execute("ALTER TABLE alert_acknowledgments ADD UNIQUE KEY unique_ack (alert_type, product_id)")
+            except Exception:
+                pass
+            try:
+                cur.execute("ALTER TABLE alert_visibility ADD UNIQUE KEY unique_visibility (product_id, alert_type, admin_id)")
+            except Exception:
+                pass
             mysql.connection.commit()
             cur.close()
         except Exception as e:
             print(f"Store settings init error: {e}")
-    app.run(debug=True)
+
+@app.route('/help_tour')
+def help_tour_guide():
+    cur = mysql.connection.cursor()
+    try:
+        cur.execute("SELECT COUNT(*) FROM products WHERE stock <= %s", (LOW_STOCK_THRESHOLD,))
+        low_stock_count = cur.fetchone()[0]
+        cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date <= CURDATE() + INTERVAL 30 DAY AND expiration_date IS NOT NULL")
+        expiring_count = cur.fetchone()[0]
+    except Exception:
+        low_stock_count = 0
+        expiring_count = 0
+    finally:
+        cur.close()
+    return render_template('help_tour.html',
+                           low_stock_count=low_stock_count,
+                           expiring_count=expiring_count)
+
+app.run(debug=True)
