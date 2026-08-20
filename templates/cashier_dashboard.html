@@ -445,16 +445,16 @@
                         count += data.low_stock.length;
                         html += '<div class="notification-section"><div class="notification-section-title">Low Stock (' + data.low_stock.length + ')</div>';
                         data.low_stock.forEach(item => {
-                            html += `<div class="notification-item low-stock" data-id="${item.id}" data-type="low_stock">
-                                <div onclick="window.location.href='/low_stock'" class="notification-info">
+html += `<div class="notification-item low-stock" style="display:flex;justify-content:space-between;align-items:center;" data-id="${item.id}" data-type="low_stock">
+                                <div onclick="window.location.href='/low_stock'" class="notification-info" style="flex:1;">
                                     <div class="notification-item-title">${item.name}</div>
                                     <div class="notification-item-detail">Stock: ${item.stock} | Barcode: ${item.barcode}</div>
                                 </div>
                                 <span class="notification-status low">LOW</span>
-                                <div class="notification-actions">
+                                <div style="display:flex;gap:4px;">
                                         <button class="btn btn-sm btn-primary" onclick="event.stopPropagation(); acknowledgeCashierNotification('low_stock', ${item.id})" title="Acknowledge">Ack</button>
                                         <button class="btn btn-sm btn-danger" onclick="event.stopPropagation(); dismissCashierNotification('low_stock', ${item.id})" title="Dismiss">Dismiss</button>
-                                    </div>
+                                    </div>`;
                                 </div>
                             </div>`;
                         });
@@ -465,13 +465,13 @@
                         count += data.expiring.length;
                         html += '<div class="notification-section"><div class="notification-section-title">Expiring Soon (' + data.expiring.length + ')</div>';
                         data.expiring.forEach(item => {
-                            html += `<div class="notification-item expiring" data-id="${item.id}" data-type="expiring_medical">
-                                <div onclick="window.location.href='/expiring_medical'" class="notification-info">
+html += `<div class="notification-item expiring" style="display:flex;justify-content:space-between;align-items:center;" data-id="${item.id}" data-type="expiring_medical">
+                                <div onclick="window.location.href='/expiring_medical'" class="notification-info" style="flex:1;">
                                     <div class="notification-item-title">${item.name}</div>
                                     <div class="notification-item-detail">Expires: ${item.expiry} | Barcode: ${item.barcode}</div>
                                 </div>
                                 <span class="notification-status warning">WARNING</span>
-                                <div class="notification-actions">
+                                <div style="display:flex;gap:4px;">`
                                     <button class="btn btn-sm btn-primary" onclick="event.stopPropagation(); acknowledgeCashierNotification('expiring_medical', ${item.id})" title="Acknowledge">Ack</button>
                                     <button class="btn btn-sm btn-danger" onclick="event.stopPropagation(); dismissCashierNotification('expiring_medical', ${item.id})" title="Dismiss">Dismiss</button>
                                 </div>
@@ -482,15 +482,14 @@
 
                     if (data.expired.length > 0) {
                         count += data.expired.length;
-                        html += '<div class="notification-section"><div class="notification-section-title">Expired (' + data.expired.length + ')</div>';
+html += '<div class="notification-section"><div class="notification-section-title">Expired (' + data.expired.length + ')</div>';
                         data.expired.forEach(item => {
-                            html += `<div class="notification-item expired" data-id="${item.id}" data-type="expired">
-                                <div onclick="window.location.href='/expired_products'" class="notification-info">
-                                    <div class="notification-item-title">${item.name}</div>
-                                    <div class="notification-item-detail">Expired: ${item.expiry} | Barcode: ${item.barcode}</div>
+                            html += `<div class="notification-item" style="border-left-color:#ef4444; background:#fef2f2; display:flex;justify-content:space-between;align-items:center;" data-id="${item.id}" data-type="expired">
+                                <div onclick="window.location.href='/expired_products'" class="notification-info" style="flex:1;">
+                                    <div class="notification-item-title" style="color:#991b1b;">${item.name}</div>
+                                    <div class="notification-item-detail" style="color:#b91c1c;">Expired: ${item.expiry} | Barcode: ${item.barcode}</div>
                                 </div>
-                                <span class="notification-status danger">EXPIRED</span>
-                                <div class="notification-actions">
+                                <div style="display:flex;gap:4px;">`
                                     <button class="btn btn-sm btn-primary" onclick="event.stopPropagation(); acknowledgeCashierNotification('expired', ${item.id})" title="Acknowledge">Ack</button>
                                     <button class="btn btn-sm btn-danger" onclick="event.stopPropagation(); dismissCashierNotification('expired', ${item.id})" title="Dismiss">Dismiss</button>
                                 </div>

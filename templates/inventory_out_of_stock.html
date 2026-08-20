@@ -33,7 +33,7 @@
                     <th>Barcode</th>
                     <th>Price</th>
                     <th>Stock</th>
-                    <th>Alert Status</th>
+<th>Alert Status</th>
                     <th>Actions</th>
                 </tr>
             </thead>
@@ -54,7 +54,7 @@
                     <span class="badge badge-danger">OUT OF STOCK</span>
                 </td>
                 <td>
-                    {% if tab == 'acknowledged' %}
+{% if tab == 'acknowledged' %}
                     <span class="badge badge-success">Acknowledged</span>
                     {% elif tab == 'dismissed' %}
                     <span class="badge badge-secondary">Dismissed</span>
@@ -78,7 +78,7 @@
         </table>
     </div>
     {% else %}
-    <div class="empty-state">
+<div class="empty-state">
         <div class="empty-state-icon">📦</div>
         <div class="empty-state-title">No out-of-stock products found</div>
         <div class="empty-state-text">All products are in stock or no alerts match the selected filter.</div>

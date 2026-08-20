@@ -10,12 +10,12 @@
             <h1 class="page-title">All Products</h1>
             <p class="page-subtitle">View and manage all products in inventory</p>
         </div>
-        <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+<div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
             <form method="GET" action="{{ url_for('all_products') }}" style="display: flex; gap: 8px;">
-                <input type="text" name="search" placeholder="Search by name or barcode..." value="{{ search or '' }}" class="form-input" style="min-width: 220px;">
-                <button type="submit" class="btn btn-primary">Search</button>
+                <input type="text" name="search" placeholder="Search by name or barcode..." value="{{ search or '' }}" class="form-input" style="padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 14px; min-width: 220px;">
+                <button type="submit" class="btn btn-primary" style="padding: 10px 18px; font-size: 14px;">Search</button>
                 {% if search %}
-                <a href="{{ url_for('all_products') }}" class="btn btn-secondary">Clear</a>
+                <a href="{{ url_for('all_products') }}" class="btn btn-secondary" style="padding: 10px 18px; font-size: 14px;">Clear</a>
                 {% endif %}
             </form>
             <a href="{{ url_for('add_product') }}" class="btn btn-primary" id="tour-add-product-btn">+ Add Product</a>
@@ -74,7 +74,7 @@
                     {% endif %}
                 </td>
                 <td>
-                    <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+<div style="display: flex; gap: 6px; flex-wrap: wrap;">
                         <button onclick="openEditModal({{ p[0] }})" class="btn btn-primary btn-sm" id="tour-edit-btn-{{ p[0] }}">Edit</button>
                         <form method="POST" action="{{ url_for('delete_product', id=p[0]) }}" style="display: inline;">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
