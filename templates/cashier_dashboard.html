@@ -3,27 +3,38 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>PharmaCon POS - Cashier Dashboard</title>
+    <link rel="stylesheet" href="/static/css/help-tour.css">
     <style>
         :root {
-            --accent: #f97316;
-            --accent-dark: #ea580c;
-            --success: #22c55e;
+            --accent: #10b981;
+            --accent-dark: #059669;
+            --accent-light: #d1fae5;
+            --success: #10b981;
+            --success-dark: #059669;
             --danger: #ef4444;
-            --bg: #f1f5f9;
+            --danger-soft: #fef2f2;
+            --warning: #f59e0b;
+            --warning-soft: #fffbeb;
+            --bg: #ffffff;
+            --bg-secondary: #f9fafb;
+            --bg-tinted: #f0fdf4;
             --surface: #ffffff;
-            --border: #e2e8f0;
-            --text: #0f172a;
-            --text-secondary: #64748b;
-            --text-muted: #94a3b8;
-            --shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
-            --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
-            --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
-            --radius: 8px;
-            --radius-lg: 12px;
+            --border: #e5e7eb;
+            --border-light: #f3f4f6;
+            --text: #111827;
+            --text-secondary: #4b5563;
+            --text-muted: #9ca3af;
+            --shadow: 0 1px 3px 0 rgb(0 0 0 / 0.06), 0 1px 2px -1px rgb(0 0 0 / 0.06);
+            --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.06), 0 2px 4px -2px rgb(0 0 0 / 0.06);
+            --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.06), 0 4px 6px -4px rgb(0 0 0 / 0.06);
+            --radius: 10px;
+            --radius-lg: 14px;
         }
 
         * { margin: 0; padding: 0; box-sizing: border-box; }
+        *:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
         body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
 
         /* Header */
@@ -31,9 +42,9 @@
         .brand { font-weight: 800; font-size: 20px; letter-spacing: -0.5px; }
         .brand span { color: var(--accent); }
         .header-actions { display: flex; align-items: center; gap: 16px; }
-        .status-pill { display: flex; align-items: center; gap: 8px; padding: 6px 14px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 9999px; }
+        .status-pill { display: flex; align-items: center; gap: 8px; padding: 6px 14px; background: var(--accent-light); border: 1px solid var(--accent); border-radius: 9999px; }
         .status-dot { width: 8px; height: 8px; background: var(--success); border-radius: 50%; }
-        .status-text { font-size: 11px; font-weight: 700; color: #166534; text-transform: uppercase; letter-spacing: 0.5px; }
+        .status-text { font-size: 11px; font-weight: 700; color: var(--accent-dark); text-transform: uppercase; letter-spacing: 0.5px; }
 
         /* Layout */
         .layout { display: grid; grid-template-columns: 64px 1fr 360px; gap: 16px; padding: 16px 24px; height: calc(100vh - 60px); }
@@ -107,20 +118,21 @@
         .checkout-btn:active { transform: scale(0.98); }
 
         /* Modals */
-        .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center; padding: 20px; }
+        .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center; padding: 20px; overflow-y: auto; }
         .modal-overlay.show { display: flex; }
-        .modal { background: var(--surface); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); max-width: 420px; width: 100%; }
-        .modal-header { padding: 20px 24px; border-bottom: 1px solid var(--border); }
+        .modal { background: var(--surface); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); max-width: 420px; width: 100%; max-height: 100%; display: flex; flex-direction: column; }
+        .modal-header { padding: 20px 24px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
         .modal-title { font-size: 18px; font-weight: 800; }
         .modal-subtitle { font-size: 13px; color: var(--text-secondary); margin-top: 4px; }
-        .modal-body { padding: 24px; }
-        .modal-footer { padding: 16px 24px; border-top: 1px solid var(--border); display: flex; gap: 10px; justify-content: flex-end; }
-        .receipt-item { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 14px; }
-        .receipt-total-row { display: flex; justify-content: space-between; padding: 12px 0; font-size: 16px; font-weight: 700; border-top: 2px solid var(--text); margin-top: 8px; }
-        .receipt-footer { text-align: center; font-size: 12px; color: var(--text-secondary); padding-top: 16px; border-top: 1px dashed var(--border); margin-top: 16px; }
+        .modal-body { padding: 24px; overflow-y: auto; flex: 1; }
+        .modal-footer { padding: 16px 24px; border-top: 1px solid var(--border); display: flex; gap: 10px; justify-content: flex-end; flex-shrink: 0; flex-wrap: wrap; }
+        .modal-footer .btn { flex: 1 1 auto; min-width: 80px; }
+        .receipt-item { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--border); }
+        .receipt-total-row { display: flex; justify-content: space-between; padding: 12px 0; font-weight: 700; border-top: 2px solid var(--text); margin-top: 8px; }
+        .receipt-footer { text-align: center; color: var(--text-secondary); padding-top: 16px; border-top: 1px dashed var(--border); margin-top: 16px; }
 
         .payment-input { width: 100%; padding: 14px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 18px; font-weight: 700; outline: none; margin-top: 8px; }
-        .payment-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(249,115,22,0.1); }
+        .payment-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(16,185,129,0.1); }
         .payment-error { color: var(--danger); font-size: 13px; margin-top: 8px; }
 
         /* Scrollbar */
@@ -131,26 +143,35 @@
         /* Notification */
         .notification-btn { position: relative; }
         .notification-badge { position: absolute; top: -2px; right: -2px; min-width: 18px; height: 18px; background: var(--danger); color: white; font-size: 10px; font-weight: 700; border-radius: 50%; display: flex; align-items: center; justify-content: center; padding: 0 4px; }
-        .notification-dropdown { display: none; position: absolute; top: calc(100% + 8px); right: 0; width: 320px; max-height: 400px; overflow-y: auto; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); z-index: 200; }
+        .notification-dropdown { display: none; position: absolute; top: calc(100% + 8px); right: 0; width: 320px; max-height: 400px; overflow-y: auto; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); z-index: 2000; }
         .notification-dropdown.show { display: block; }
         .notification-header { padding: 12px 16px; border-bottom: 1px solid var(--border); font-weight: 700; font-size: 14px; }
         .notification-section { padding: 10px 16px; border-bottom: 1px solid var(--border); }
         .notification-section-title { font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--text-muted); margin-bottom: 6px; letter-spacing: 0.5px; }
-        .notification-item { padding: 8px 10px; border-radius: var(--radius); cursor: pointer; transition: background 0.15s; border-left: 3px solid transparent; }
+        .notification-item { padding: 12px 14px; border-radius: var(--radius); cursor: pointer; transition: background 0.15s; border-left: 3px solid transparent; display: flex; align-items: center; justify-content: space-between; gap: 14px; }
         .notification-item:hover { background: var(--bg); }
         .notification-item.low-stock { border-left-color: var(--danger); }
         .notification-item.expiring { border-left-color: var(--warning); }
-        .notification-item.expired { border-left-color: #ef4444; background: #fef2f2; }
+        .notification-item.expired { border-left-color: #ef4444; }
         .notification-item-title { font-weight: 600; font-size: 13px; }
         .notification-item-detail { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+        .notification-actions { display: flex; gap: 8px; flex-shrink: 0; }
+        .notification-status { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; border-radius: 9999px; font-size: 11px; font-weight: 700; letter-spacing: 0.3px; text-transform: uppercase; flex-shrink: 0; }
+        .notification-status.low { background: var(--danger-soft); color: var(--danger); }
+        .notification-status.warning { background: var(--warning-soft); color: #92400e; }
+        .notification-status.danger { background: var(--danger-soft); color: var(--danger); }
+        .notification-status.out-of-stock { background: #fee2e2; color: #991b1b; }
+        .notification-actions { display: flex; gap: 8px; flex-shrink: 0; align-items: center; }
+        .notification-info { flex: 1; min-width: 0; }
+        .notification-info .notification-item-detail { font-size: 12px; color: var(--text-secondary); margin-top: 3px; }
         .no-notifications { padding: 24px; text-align: center; color: var(--text-muted); font-size: 13px; }
 
         /* Modal Buttons */
         .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 10px 18px; border-radius: var(--radius); font-size: 14px; font-weight: 600; cursor: pointer; border: 1px solid transparent; transition: all 0.15s; }
         .btn-primary { background: var(--accent); color: white; border-color: var(--accent); }
         .btn-primary:hover { background: var(--accent-dark); }
-        .btn-secondary { background: #64748b; color: white; border-color: #64748b; }
-        .btn-secondary:hover { background: #475569; border-color: #475569; }
+        .btn-secondary { background: white; color: var(--text-secondary); border: 1px solid var(--border); }
+        .btn-secondary:hover { background: var(--bg-alt); border-color: var(--text-muted); }
         .btn-success { background: var(--success); color: white; border-color: var(--success); }
         .btn-success:hover { background: #16a34a; }
         .btn-success { background: var(--success); color: white; border-color: var(--success); }
@@ -169,7 +190,8 @@
                 </button>
                 <div class="notification-dropdown" id="cashierNotificationDropdown" style="position: absolute; top: calc(100% + 8px); right: 0; width: 320px;">
                     <div class="notification-header">
-                        <span>Notifications</span>
+                        <span>Notifications (<span id="cashierUnreadCount">0</span> unread)</span>
+                        <button onclick="markAllCashierAsRead()" style="font-size: 11px; padding: 2px 8px; background: var(--accent); color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 600;">Mark all read</button>
                     </div>
                     <div id="cashierNotificationList">
                         <div class="no-notifications">Loading...</div>
@@ -192,6 +214,12 @@
             <a href="{{ url_for('cashier_history') }}" class="nav-icon" title="Sales History">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
             </a>
+            <a href="{{ url_for('cashier_metrics') }}" class="nav-icon" title="Performance">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+            </a>
+            <button class="nav-icon" onclick="openResumeModal()" title="Resume Held">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+            </button>
             <div class="nav-icon logout" onclick="handleLogout()" title="Logout">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
             </div>
@@ -241,7 +269,10 @@
                     <span class="cart-total-label">Total</span>
                     <span class="cart-total-value">₱<span id="display-total">0.00</span></span>
                 </div>
-                <button class="checkout-btn" onclick="checkout()">CHECKOUT</button>
+                <div style="display: flex; gap: 8px;">
+                    <button class="btn btn-secondary" onclick="openHoldModal()" style="flex: 1;">HOLD</button>
+                    <button class="checkout-btn" id="tour-checkout-btn" onclick="checkout()" style="flex: 2;">CHECKOUT</button>
+                </div>
             </div>
         </aside>
     </div>
@@ -269,13 +300,16 @@
     <!-- Receipt Modal -->
     <div id="receipt-modal" class="modal-overlay">
         <div class="modal">
-            <div class="modal-header">
+            <div class="modal-header" id="modal-receipt-header">
+                <div id="modal-receipt-logo" style="display: none; margin-bottom: 8px;"></div>
                 <div class="modal-title" id="modal-receipt-title">PHARMACON</div>
                 <div class="modal-subtitle" id="modal-receipt-subtitle">A's PharmaHealth & Convenience</div>
+                <div id="modal-receipt-address" style="font-size: 12px; color: var(--text-secondary); margin-top: 4px;"></div>
+                <div id="modal-receipt-contact" style="font-size: 12px; color: var(--text-secondary);"></div>
                 <div id="receipt-number" style="margin-top: 8px; font-size: 13px; font-weight: 700; color: var(--text-secondary);">REC-000000</div>
                 <div id="receipt-date" style="font-size: 12px; color: var(--text-secondary);"></div>
             </div>
-            <div class="modal-body">
+            <div class="modal-body" id="modal-receipt-body">
                 <div id="receipt-items"></div>
                 <div class="receipt-total-row"><span>TOTAL</span><span>₱<span id="receipt-total">0.00</span></span></div>
                 <div class="receipt-total-row"><span style="font-weight: 600; font-size: 14px; color: var(--text-secondary);">CUSTOMER PAID</span><span style="font-weight: 600; font-size: 14px;">₱<span id="receipt-tendered">0.00</span></span></div>
@@ -290,6 +324,39 @@
         </div>
     </div>
 
+    <!-- Hold Transaction Modal -->
+    <div id="hold-modal" class="modal-overlay">
+        <div class="modal">
+            <div class="modal-header">
+                <div class="modal-title">Hold Transaction</div>
+                <div class="modal-subtitle">Save current cart and serve another customer.</div>
+            </div>
+            <div class="modal-body">
+                <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Hold Name</label>
+                <input id="hold-name" type="text" placeholder="e.g. Customer A" class="payment-input">
+                <div id="hold-error" class="payment-error"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeHoldModal()">Cancel</button>
+                <button class="btn btn-primary" onclick="confirmHold()">Hold Cart</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Resume Transaction Modal -->
+    <div id="resume-modal" class="modal-overlay">
+        <div class="modal" style="max-width: 480px;">
+            <div class="modal-header">
+                <div class="modal-title">Resume Transaction</div>
+                <div class="modal-subtitle">Select a held transaction to continue.</div>
+            </div>
+            <div class="modal-body" id="resume-list" style="max-height: 300px; overflow-y: auto;"></div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeResumeModal()">Close</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Receipt Settings (from database) -->
     <script>
         const RECEIPT_SETTINGS = {
@@ -298,7 +365,60 @@
             footer: {{ (settings.receipt_footer or 'Thank you for your purchase!\nPlease come again.') | tojson }},
             storeName: {{ (settings.store_name or 'PharmaCon') | tojson }},
             storeAddress: {{ (settings.store_address or '') | tojson }},
-            storeContact: {{ (settings.store_contact or '') | tojson }}
+            storeContact: {{ (settings.store_contact or '') | tojson }},
+            return_policy: {{ (settings.return_policy or '') | tojson }},
+            website: {{ (settings.website or '') | tojson }},
+            social_media: {{ (settings.social_media or '') | tojson }},
+            currency_symbol: {{ (settings.currency_symbol or '₱') | tojson }},
+            tax_rate: {{ (settings.tax_rate or '0') | tojson }},
+            tax_label: {{ (settings.tax_label or 'Tax') | tojson }},
+            discount_amount: {{ (settings.discount_amount or '0') | tojson }},
+            discount_label: {{ (settings.discount_label or 'Discount') | tojson }},
+            logo: {{ (settings.receipt_logo or '') | tojson }},
+            font_size: {{ (settings.font_size or 'medium') | tojson }},
+            paper_size: {{ (settings.paper_size or '80') | tojson }},
+            print_alignment: {{ (settings.print_alignment or 'center') | tojson }},
+            line_style: {{ (settings.line_style or 'dashed') | tojson }},
+            show_receipt_number: {{ 'true' if settings.show_receipt_number != '0' else 'false' | tojson }},
+            show_date: {{ 'true' if settings.show_date != '0' else 'false' | tojson }},
+            show_cashier: {{ 'true' if settings.show_cashier != '0' else 'false' | tojson }},
+            show_customer: {{ 'true' if settings.show_customer != '0' else 'false' | tojson }},
+            show_medical_items: {{ 'true' if settings.show_medical_items != '0' else 'false' | tojson }},
+            show_logo: {{ 'true' if settings.show_logo != '0' else 'false' | tojson }},
+            show_footer: {{ 'true' if settings.show_footer != '0' else 'false' | tojson }},
+            show_return_policy: {{ 'true' if settings.show_return_policy != '0' else 'false' | tojson }},
+            show_website: {{ 'true' if settings.show_website != '0' else 'false' | tojson }},
+            show_social: {{ 'true' if settings.show_social != '0' else 'false' | tojson }},
+            show_barcode: {{ 'true' if settings.show_barcode != '0' else 'false' | tojson }},
+            show_subtotal: {{ 'true' if settings.show_subtotal != '0' else 'false' | tojson }},
+            show_tax: {{ 'true' if settings.show_tax != '0' else 'false' | tojson }},
+            show_discount: {{ 'true' if settings.show_discount != '0' else 'false' | tojson }},
+            show_divider_after_header: {{ 'true' if settings.show_divider_after_header != '0' else 'false' | tojson }},
+            show_divider_after_items: {{ 'true' if settings.show_divider_after_items != '0' else 'false' | tojson }},
+            show_divider_after_total: {{ 'true' if settings.show_divider_after_total != '0' else 'false' | tojson }},
+            show_divider_before_footer: {{ 'true' if settings.show_divider_before_footer != '0' else 'false' | tojson }},
+            tin: {{ (settings.tin or '') | tojson }},
+            vat_status: {{ (settings.vat_status or 'VAT Registered') | tojson }},
+            document_title: {{ (settings.document_title or 'SALES INVOICE') | tojson }},
+            title_alignment: {{ (settings.title_alignment or 'Center') | tojson }},
+            title_style: {{ (settings.title_style or 'Bold') | tojson }},
+            invoice_prefix: {{ (settings.invoice_prefix or 'INV-') | tojson }},
+            next_invoice_no: {{ (settings.next_invoice_no or '0000123') | tojson }},
+            invoice_digits: {{ (settings.invoice_digits or '7') | tojson }},
+            show_date_time: {{ (settings.show_date_time or 'Both') | tojson }},
+            date_format: {{ (settings.date_format or 'MMM DD, YYYY') | tojson }},
+            time_format: {{ (settings.time_format or '12-hour') | tojson }},
+            footer_alignment: {{ (settings.footer_alignment or 'Center') | tojson }},
+            footer_style: {{ (settings.footer_style or 'Normal') | tojson }},
+            show_item_header: {{ 'true' if settings.show_item_header != '0' else 'false' | tojson }},
+            show_tax_breakdown: {{ 'true' if settings.show_tax_breakdown != '0' else 'false' | tojson }},
+            show_cashier_name: {{ 'true' if settings.show_cashier_name != '0' else 'false' | tojson }},
+            show_payment_method: {{ 'true' if settings.show_payment_method != '0' else 'false' | tojson }},
+            show_change: {{ 'true' if settings.show_change != '0' else 'false' | tojson }},
+            show_separator_lines: {{ 'true' if settings.show_separator_lines != '0' else 'false' | tojson }},
+            line_spacing: {{ (settings.line_spacing or 'Compact') | tojson }},
+            print_density: {{ (settings.print_density or 'Normal') | tojson }},
+            receipt_template: {{ (settings.receipt_template or '') | tojson }}
         };
     </script>
 
@@ -317,48 +437,138 @@
                 .then(data => {
                     const list = document.getElementById('cashierNotificationList');
                     const badge = document.getElementById('cashier-notif-badge');
+                    const unreadCount = document.getElementById('cashierUnreadCount');
                     let html = '';
                     let count = 0;
 
                     if (data.low_stock.length > 0) {
                         count += data.low_stock.length;
-                        html += '<div class="notification-section"><div class="notification-section-title">Low Stock</div>';
+                        html += '<div class="notification-section"><div class="notification-section-title">Low Stock (' + data.low_stock.length + ')</div>';
                         data.low_stock.forEach(item => {
-                            html += `<div class="notification-item low-stock" onclick="window.location.href='/out_of_stock'"><div class="notification-item-title">${item.name}</div><div class="notification-item-detail">Stock: ${item.stock} | Barcode: ${item.barcode}</div></div>`;
+                            html += `<div class="notification-item low-stock" data-id="${item.id}" data-type="low_stock">
+                                <div onclick="window.location.href='/low_stock'" class="notification-info">
+                                    <div class="notification-item-title">${item.name}</div>
+                                    <div class="notification-item-detail">Stock: ${item.stock} | Barcode: ${item.barcode}</div>
+                                </div>
+                                <span class="notification-status low">LOW</span>
+                                <div class="notification-actions">
+                                        <button class="btn btn-sm btn-primary" onclick="event.stopPropagation(); acknowledgeCashierNotification('low_stock', ${item.id})" title="Acknowledge">Ack</button>
+                                        <button class="btn btn-sm btn-danger" onclick="event.stopPropagation(); dismissCashierNotification('low_stock', ${item.id})" title="Dismiss">Dismiss</button>
+                                    </div>
+                                </div>
+                            </div>`;
                         });
                         html += '</div>';
                     }
 
                     if (data.expiring.length > 0) {
                         count += data.expiring.length;
-                        html += '<div class="notification-section"><div class="notification-section-title">Expiring Soon</div>';
+                        html += '<div class="notification-section"><div class="notification-section-title">Expiring Soon (' + data.expiring.length + ')</div>';
                         data.expiring.forEach(item => {
-                            html += `<div class="notification-item expiring" onclick="window.location.href='/expiring_medical'"><div class="notification-item-title">${item.name}</div><div class="notification-item-detail">Expires: ${item.expiry} | Barcode: ${item.barcode}</div></div>`;
+                            html += `<div class="notification-item expiring" data-id="${item.id}" data-type="expiring_medical">
+                                <div onclick="window.location.href='/expiring_medical'" class="notification-info">
+                                    <div class="notification-item-title">${item.name}</div>
+                                    <div class="notification-item-detail">Expires: ${item.expiry} | Barcode: ${item.barcode}</div>
+                                </div>
+                                <span class="notification-status warning">WARNING</span>
+                                <div class="notification-actions">
+                                    <button class="btn btn-sm btn-primary" onclick="event.stopPropagation(); acknowledgeCashierNotification('expiring_medical', ${item.id})" title="Acknowledge">Ack</button>
+                                    <button class="btn btn-sm btn-danger" onclick="event.stopPropagation(); dismissCashierNotification('expiring_medical', ${item.id})" title="Dismiss">Dismiss</button>
+                                </div>
+                            </div>`;
                         });
                         html += '</div>';
                     }
 
                     if (data.expired.length > 0) {
                         count += data.expired.length;
-                        html += '<div class="notification-section"><div class="notification-section-title" style="color:#ef4444;">Expired</div>';
+                        html += '<div class="notification-section"><div class="notification-section-title">Expired (' + data.expired.length + ')</div>';
                         data.expired.forEach(item => {
-                            html += `<div class="notification-item" style="border-left-color:#ef4444; background:#fef2f2;" onclick="window.location.href='/expiring_medical'"><div class="notification-item-title" style="color:#991b1b;">${item.name}</div><div class="notification-item-detail">Expired on: ${item.expiry} | Barcode: ${item.barcode}</div></div>`;
+                            html += `<div class="notification-item expired" data-id="${item.id}" data-type="expired">
+                                <div onclick="window.location.href='/expired_products'" class="notification-info">
+                                    <div class="notification-item-title">${item.name}</div>
+                                    <div class="notification-item-detail">Expired: ${item.expiry} | Barcode: ${item.barcode}</div>
+                                </div>
+                                <span class="notification-status danger">EXPIRED</span>
+                                <div class="notification-actions">
+                                    <button class="btn btn-sm btn-primary" onclick="event.stopPropagation(); acknowledgeCashierNotification('expired', ${item.id})" title="Acknowledge">Ack</button>
+                                    <button class="btn btn-sm btn-danger" onclick="event.stopPropagation(); dismissCashierNotification('expired', ${item.id})" title="Dismiss">Dismiss</button>
+                                </div>
+                            </div>`;
                         });
                         html += '</div>';
                     }
 
                     if (!html) {
-                        html = '<div class="no-notifications">No notifications</div>';
+                        html = '<div class="no-notifications">All caught up! No unread alerts.</div>';
                     }
 
                     list.innerHTML = html;
                     if (count > 0) {
                         badge.style.display = 'flex';
                         badge.innerText = count;
+                        if (unreadCount) unreadCount.innerText = count;
                     } else {
                         badge.style.display = 'none';
+                        if (unreadCount) unreadCount.innerText = '0';
                     }
                 });
+        }
+
+        function acknowledgeCashierNotification(type, productId) {
+            fetch('/api/alert/acknowledge', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').getAttribute('content') },
+                body: JSON.stringify({ alert_type: type, product_id: productId })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    location.reload();
+                } else {
+                    alert(data.message);
+                }
+            });
+        }
+
+        function dismissCashierNotification(type, productId) {
+            const reason = prompt('Enter reason for dismissing this alert:');
+            if (reason === null) return;
+            if (!reason.trim()) { alert('Reason is required'); return; }
+            fetch('/api/alert/dismiss', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').getAttribute('content') },
+                body: JSON.stringify({ alert_type: type, product_id: productId, reason: reason.trim() })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    location.reload();
+                } else {
+                    alert(data.message);
+                }
+            });
+        }
+
+        function markAllCashierAsRead() {
+            const items = document.querySelectorAll('#cashierNotificationList .notification-item');
+            const promises = [];
+            items.forEach(item => {
+                const type = item.getAttribute('data-type');
+                const id = item.getAttribute('data-id');
+                if (type && id) {
+                    promises.push(
+                        fetch('/api/alert/acknowledge', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').getAttribute('content') },
+                            body: JSON.stringify({ alert_type: type, product_id: parseInt(id) })
+                        }).then(res => res.json())
+                    );
+                }
+            });
+            Promise.all(promises).then(() => {
+                location.reload();
+            });
         }
 
         document.addEventListener('click', function(e) {
@@ -382,7 +592,7 @@
         let receiptMarkedPrinted = false;
 
         document.addEventListener('click', (event) => {
-            if (!event.target.closest('#payment-modal') && !event.target.closest('#receipt-modal') && !event.target.closest('#selected-product') && !event.target.closest('.search-panel')) {
+            if (!event.target.closest('#payment-modal') && !event.target.closest('#receipt-modal') && !event.target.closest('#selected-product') && !event.target.closest('.search-panel') && !event.target.closest('#hold-modal') && !event.target.closest('#resume-modal')) {
                 scanner.focus();
             }
         });
@@ -580,26 +790,316 @@
 
         function closePayment() { document.getElementById('payment-modal').classList.remove('show'); document.getElementById('payment-error').innerText = ''; }
 
+        function formatDate(dateStr, pattern) {
+            if (!dateStr || !pattern) return '';
+            const d = new Date(dateStr);
+            if (isNaN(d.getTime())) return '';
+            const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+            const fullMonths = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+            let result = pattern;
+            result = result.replace('YYYY', d.getFullYear());
+            result = result.replace('YY', String(d.getFullYear()).slice(-2));
+            result = result.replace('MMMM', fullMonths[d.getMonth()]);
+            result = result.replace('MMM', months[d.getMonth()]);
+            result = result.replace('MM', String(d.getMonth() + 1).padStart(2, '0'));
+            result = result.replace('DD', String(d.getDate()).padStart(2, '0'));
+            result = result.replace('D', d.getDate());
+            return result;
+        }
+
+        function formatTime(dateStr, format) {
+            if (!dateStr || !format) return '';
+            const d = new Date(dateStr);
+            if (isNaN(d.getTime())) return '';
+            let hours = d.getHours();
+            const minutes = String(d.getMinutes()).padStart(2, '0');
+            if (format === '12-hour') {
+                const ampm = hours >= 12 ? 'PM' : 'AM';
+                hours = hours % 12 || 12;
+                return hours + ':' + minutes + ' ' + ampm;
+            }
+            return String(hours).padStart(2, '0') + ':' + minutes;
+        }
+
         function showReceipt(data) {
-            document.getElementById('receipt-number').innerText = data.receipt_number;
-            document.getElementById('receipt-date').innerText = data.date;
             document.getElementById('receipt-total').innerText = data.total.toFixed(2);
             document.getElementById('receipt-tendered').innerText = Number(data.tendered || 0).toFixed(2);
             document.getElementById('receipt-change').innerText = Number(data.change || 0).toFixed(2);
 
-            document.getElementById('modal-receipt-title').innerText = RECEIPT_SETTINGS.header;
-            document.getElementById('modal-receipt-subtitle').innerText = RECEIPT_SETTINGS.subtitle;
-            document.getElementById('modal-receipt-footer').innerHTML = RECEIPT_SETTINGS.footer.replace(/\n/g, '<br>');
+            const fontSizes = { small: '10px', medium: '12px', large: '14px' };
+            const paperWidths = { '58': '224px', '80': '312px', 'a4': '595px' };
+            const baseFontSize = fontSizes[RECEIPT_SETTINGS.font_size] || '12px';
+            const modal = document.querySelector('#receipt-modal .modal');
+            modal.style.fontSize = baseFontSize;
+            modal.style.width = paperWidths[RECEIPT_SETTINGS.paper_size] || '312px';
+
+            const alignment = RECEIPT_SETTINGS.print_alignment || 'center';
+            document.getElementById('modal-receipt-header').style.textAlign = alignment;
+            document.getElementById('modal-receipt-body').style.textAlign = alignment;
+            document.getElementById('receipt-items').style.textAlign = alignment;
+
+            const header = document.getElementById('modal-receipt-header');
+            header.innerHTML = '';
+            if (RECEIPT_SETTINGS.show_logo && RECEIPT_SETTINGS.logo) {
+                const logo = document.createElement('div');
+                logo.id = 'modal-receipt-logo';
+                logo.style.cssText = 'display:block;margin-bottom:8px;';
+                logo.innerHTML = '<img src="/uploads/receipts/' + RECEIPT_SETTINGS.logo + '" style="max-height:60px;max-width:120px;object-fit:contain;">';
+                header.appendChild(logo);
+            }
+            if (RECEIPT_SETTINGS.header) {
+                const title = document.createElement('div');
+                title.className = 'modal-title';
+                title.id = 'modal-receipt-title';
+                title.innerText = RECEIPT_SETTINGS.header;
+                title.style.fontSize = baseFontSize;
+                header.appendChild(title);
+            }
+            if (RECEIPT_SETTINGS.subtitle) {
+                const subtitle = document.createElement('div');
+                subtitle.className = 'modal-subtitle';
+                subtitle.id = 'modal-receipt-subtitle';
+                subtitle.innerText = RECEIPT_SETTINGS.subtitle;
+                subtitle.style.fontSize = baseFontSize;
+                header.appendChild(subtitle);
+            }
+            if (RECEIPT_SETTINGS.storeAddress) {
+                const addr = document.createElement('div');
+                addr.id = 'modal-receipt-address';
+                addr.style.cssText = 'font-size:' + baseFontSize + ';color:var(--text-secondary);margin-top:4px;';
+                addr.innerText = RECEIPT_SETTINGS.storeAddress;
+                header.appendChild(addr);
+            }
+            if (RECEIPT_SETTINGS.storeContact) {
+                const contact = document.createElement('div');
+                contact.id = 'modal-receipt-contact';
+                contact.style.cssText = 'font-size:' + baseFontSize + ';color:var(--text-secondary);';
+                contact.innerText = RECEIPT_SETTINGS.storeContact;
+                header.appendChild(contact);
+            }
+            if (RECEIPT_SETTINGS.tin && document.querySelector('input[name="show_tin"]')?.checked !== false) {
+                const tinEl = document.createElement('div');
+                tinEl.id = 'modal-receipt-tin';
+                tinEl.style.cssText = 'font-size:' + baseFontSize + ';color:var(--text-secondary);margin-top:4px;';
+                tinEl.innerText = 'TIN: ' + RECEIPT_SETTINGS.tin;
+                header.appendChild(tinEl);
+            }
+            if (RECEIPT_SETTINGS.vat_status && document.querySelector('input[name="show_vat_status"]')?.checked !== false) {
+                const vatEl = document.createElement('div');
+                vatEl.id = 'modal-receipt-vat';
+                vatEl.style.cssText = 'font-size:' + baseFontSize + ';color:var(--text-secondary);margin-top:4px;';
+                vatEl.innerText = RECEIPT_SETTINGS.vat_status;
+                header.appendChild(vatEl);
+            }
+            if (RECEIPT_SETTINGS.document_title) {
+                const docTitleEl = document.createElement('div');
+                docTitleEl.id = 'modal-receipt-doctitle';
+                docTitleEl.style.cssText = 'font-size:' + baseFontSize + ';font-weight:' + (RECEIPT_SETTINGS.title_style === 'Bold' ? 'bold' : 'normal') + ';text-align:' + (RECEIPT_SETTINGS.title_alignment || 'center').toLowerCase() + ';margin-top:8px;';
+                docTitleEl.innerText = RECEIPT_SETTINGS.document_title;
+                header.appendChild(docTitleEl);
+            }
+            const showDateTime = RECEIPT_SETTINGS.show_date_time || 'Both';
+            const hasInvoiceMeta = (RECEIPT_SETTINGS.invoice_prefix && RECEIPT_SETTINGS.next_invoice_no);
+            if (hasInvoiceMeta && showDateTime !== 'None') {
+                const invEl = document.createElement('div');
+                invEl.style.cssText = 'font-size:' + baseFontSize + ';color:var(--text-secondary);margin-top:4px;';
+                invEl.innerText = 'Invoice No.: ' + RECEIPT_SETTINGS.invoice_prefix + RECEIPT_SETTINGS.next_invoice_no;
+                header.appendChild(invEl);
+            }
+            if ((showDateTime === 'Both' || showDateTime === 'Date Only') && RECEIPT_SETTINGS.date_format) {
+                const dateEl = document.createElement('div');
+                dateEl.id = 'receipt-date';
+                dateEl.style.cssText = 'font-size:' + baseFontSize + ';color:var(--text-secondary);';
+                dateEl.innerText = 'Date: ' + formatDate(data.date, RECEIPT_SETTINGS.date_format);
+                header.appendChild(dateEl);
+            }
+            if ((showDateTime === 'Both' || showDateTime === 'Time Only')) {
+                const timeEl = document.createElement('div');
+                timeEl.id = 'receipt-time';
+                timeEl.style.cssText = 'font-size:' + baseFontSize + ';color:var(--text-secondary);';
+                timeEl.innerText = 'Time: ' + formatTime(data.date, RECEIPT_SETTINGS.time_format || '12-hour');
+                header.appendChild(timeEl);
+            }
+            if (RECEIPT_SETTINGS.show_cashier_name && data.cashier) {
+                const cashierEl = document.createElement('div');
+                cashierEl.style.cssText = 'font-size:' + baseFontSize + ';color:var(--text-secondary);margin-top:4px;';
+                cashierEl.innerText = 'Cashier: ' + data.cashier;
+                header.appendChild(cashierEl);
+            }
+
+            const body = document.getElementById('modal-receipt-body');
+            body.innerHTML = '';
+
+            if (RECEIPT_SETTINGS.show_customer && data.customer) {
+                const cust = document.createElement('div');
+                cust.style.cssText = 'text-align:' + alignment + ';font-size:' + baseFontSize + ';margin-bottom:8px;';
+                cust.innerText = 'Customer: ' + data.customer;
+                body.appendChild(cust);
+            }
+            if (RECEIPT_SETTINGS.show_cashier && data.cashier) {
+                const cash = document.createElement('div');
+                cash.style.cssText = 'text-align:' + alignment + ';font-size:' + baseFontSize + ';margin-bottom:8px;';
+                cash.innerText = 'Cashier: ' + data.cashier;
+                body.appendChild(cash);
+            }
+
+            if (RECEIPT_SETTINGS.show_divider_after_header) {
+                const div = document.createElement('div');
+                div.style.cssText = 'border-top:1px ' + (RECEIPT_SETTINGS.line_style || 'dashed') + ' #333;margin:8px 0;';
+                body.appendChild(div);
+            }
+
+            const itemsDiv = document.createElement('div');
+            itemsDiv.id = 'receipt-items';
+            itemsDiv.style.textAlign = alignment;
+            if (RECEIPT_SETTINGS.show_item_header) {
+                const itemHeader = document.createElement('div');
+                itemHeader.style.cssText = 'display:flex;justify-content:space-between;padding:4px 0;font-weight:700;font-size:' + baseFontSize + ';border-bottom:1px solid var(--border);';
+                itemHeader.innerHTML = '<span>Item</span><span>Qty</span><span>Price</span><span>Amount</span>';
+                itemsDiv.appendChild(itemHeader);
+            }
+            if (RECEIPT_SETTINGS.show_medical_items && data.items && data.items.some(i => i.is_medical)) {
+                const medLabel = document.createElement('div');
+                medLabel.style.cssText = 'font-weight:700;font-size:' + baseFontSize + ';margin-top:8px;';
+                medLabel.innerText = 'MEDICAL ITEMS';
+                itemsDiv.appendChild(medLabel);
+            }
+            data.items.forEach(item => {
+                if (RECEIPT_SETTINGS.show_medical_items && item.is_medical === false && !itemsDiv.querySelector('.non-medical-label')) {
+                    const nmLabel = document.createElement('div');
+                    nmLabel.className = 'non-medical-label';
+                    nmLabel.style.cssText = 'font-weight:700;font-size:' + baseFontSize + ';margin-top:8px;';
+                    nmLabel.innerText = 'NON-MEDICAL ITEMS';
+                    itemsDiv.appendChild(nmLabel);
+                }
+                const row = document.createElement('div');
+                row.className = 'receipt-item';
+                row.style.cssText = 'display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);font-size:' + baseFontSize + ';';
+                row.innerHTML = '<div><div>' + item.name + '</div><div style="color:var(--text-secondary);">' + item.quantity + ' x ' + RECEIPT_SETTINGS.currency_symbol + item.price.toFixed(2) + '</div></div><div>' + RECEIPT_SETTINGS.currency_symbol + item.subtotal.toFixed(2) + '</div>';
+                itemsDiv.appendChild(row);
+            });
+            body.appendChild(itemsDiv);
+
+            if (RECEIPT_SETTINGS.show_divider_after_items) {
+                const div = document.createElement('div');
+                div.style.cssText = 'border-top:1px ' + (RECEIPT_SETTINGS.line_style || 'dashed') + ' #333;margin:8px 0;';
+                body.appendChild(div);
+            }
+
+            if (RECEIPT_SETTINGS.show_separator_lines) {
+                const div = document.createElement('div');
+                div.style.cssText = 'border-top:1px ' + (RECEIPT_SETTINGS.line_style || 'dashed') + ' #333;margin:8px 0;';
+                body.appendChild(div);
+            }
+
+            if (true) {
+                const sub = document.createElement('div');
+                sub.className = 'receipt-total-row';
+                sub.style.cssText = 'display:flex;justify-content:space-between;padding:4px 0;font-weight:700;font-size:' + baseFontSize + ';';
+                sub.innerHTML = '<span style="font-weight:600;">Subtotal:</span><span>' + RECEIPT_SETTINGS.currency_symbol + data.total.toFixed(2) + '</span>';
+                body.appendChild(sub);
+            }
+
+            if (RECEIPT_SETTINGS.show_tax_breakdown) {
+                const vatRate = 0.12;
+                const vatTotal = (data.total / (1 + vatRate)).toFixed(2);
+                const vatAmount = (data.total - parseFloat(vatTotal)).toFixed(2);
+                
+                const vatEl = document.createElement('div');
+                vatEl.className = 'receipt-total-row';
+                vatEl.style.cssText = 'display:flex;justify-content:space-between;padding:4px 0;font-weight:700;font-size:' + baseFontSize + ';';
+                vatEl.innerHTML = '<span>VATable Sales:</span><span>' + RECEIPT_SETTINGS.currency_symbol + vatTotal + '</span>';
+                body.appendChild(vatEl);
+
+                const vatTaxEl = document.createElement('div');
+                vatTaxEl.className = 'receipt-total-row';
+                vatTaxEl.style.cssText = 'display:flex;justify-content:space-between;padding:4px 0;font-weight:700;font-size:' + baseFontSize + ';';
+                vatTaxEl.innerHTML = '<span>VAT (' + (vatRate * 100) + '%):</span><span>' + RECEIPT_SETTINGS.currency_symbol + vatAmount + '</span>';
+                body.appendChild(vatTaxEl);
+            }
+
+            const grandTotal = document.createElement('div');
+            grandTotal.className = 'receipt-total-row';
+            grandTotal.style.cssText = 'display:flex;justify-content:space-between;padding:8px 0;font-size:' + baseFontSize + ';font-weight:700;border-top:2px solid var(--text);margin-top:8px;';
+            grandTotal.innerHTML = '<span>TOTAL:</span><span>' + RECEIPT_SETTINGS.currency_symbol + data.total.toFixed(2) + '</span>';
+            body.appendChild(grandTotal);
+
+            if (RECEIPT_SETTINGS.show_separator_lines) {
+                const div = document.createElement('div');
+                div.style.cssText = 'border-top:1px ' + (RECEIPT_SETTINGS.line_style || 'dashed') + ' #333;margin:8px 0;';
+                body.appendChild(div);
+            }
+
+            if (RECEIPT_SETTINGS.show_payment_method) {
+                const payEl = document.createElement('div');
+                payEl.className = 'receipt-total-row';
+                payEl.style.cssText = 'display:flex;justify-content:space-between;padding:4px 0;font-weight:700;font-size:' + baseFontSize + ';';
+                payEl.innerHTML = '<span style="font-weight:600;">Payment Method:</span><span>Cash</span>';
+                body.appendChild(payEl);
+            }
+
+            if (RECEIPT_SETTINGS.show_change) {
+                const tenderedRow = document.createElement('div');
+                tenderedRow.className = 'receipt-total-row';
+                tenderedRow.style.cssText = 'display:flex;justify-content:space-between;padding:4px 0;font-weight:700;font-size:' + baseFontSize + ';';
+                tenderedRow.innerHTML = '<span style="font-weight:600;color:var(--text-secondary);">Amount Paid:</span><span style="font-weight:600;">' + RECEIPT_SETTINGS.currency_symbol + Number(data.tendered || 0).toFixed(2) + '</span>';
+                body.appendChild(tenderedRow);
+
+                const changeRow = document.createElement('div');
+                changeRow.className = 'receipt-total-row';
+                changeRow.style.cssText = 'display:flex;justify-content:space-between;padding:4px 0;font-weight:700;font-size:' + baseFontSize + ';';
+                changeRow.innerHTML = '<span style="font-weight:600;color:var(--text-secondary);">Change:</span><span style="font-weight:600;color:var(--success);">' + RECEIPT_SETTINGS.currency_symbol + Number(data.change || 0).toFixed(2) + '</span>';
+                body.appendChild(changeRow);
+            }
+
+            if (RECEIPT_SETTINGS.show_divider_after_total) {
+                const div = document.createElement('div');
+                div.style.cssText = 'border-top:1px ' + (RECEIPT_SETTINGS.line_style || 'dashed') + ' #333;margin:8px 0;';
+                body.appendChild(div);
+            }
+
+            if (RECEIPT_SETTINGS.show_divider_before_footer) {
+                const div = document.createElement('div');
+                div.style.cssText = 'border-top:1px ' + (RECEIPT_SETTINGS.line_style || 'dashed') + ' #333;margin:8px 0;';
+                body.appendChild(div);
+            }
+
+            if (RECEIPT_SETTINGS.show_footer && RECEIPT_SETTINGS.footer) {
+                const footer = document.createElement('div');
+                footer.className = 'receipt-footer';
+                footer.id = 'modal-receipt-footer';
+                footer.style.cssText = 'text-align:' + alignment + ';font-size:' + baseFontSize + ';color:var(--text-secondary);padding-top:16px;border-top:1px dashed var(--border);margin-top:16px;';
+                footer.innerHTML = RECEIPT_SETTINGS.footer.replace(/\n/g, '<br>');
+                body.appendChild(footer);
+            }
+            if (RECEIPT_SETTINGS.show_return_policy && RECEIPT_SETTINGS.return_policy) {
+                const rp = document.createElement('div');
+                rp.style.cssText = 'text-align:' + alignment + ';font-size:' + baseFontSize + ';color:var(--text-secondary);margin-top:8px;';
+                rp.innerText = RECEIPT_SETTINGS.return_policy;
+                body.appendChild(rp);
+            }
+            if (RECEIPT_SETTINGS.show_website && RECEIPT_SETTINGS.website) {
+                const web = document.createElement('div');
+                web.style.cssText = 'text-align:' + alignment + ';font-size:' + baseFontSize + ';color:var(--text-secondary);margin-top:4px;';
+                web.innerText = RECEIPT_SETTINGS.website;
+                body.appendChild(web);
+            }
+            if (RECEIPT_SETTINGS.show_social && RECEIPT_SETTINGS.social_media) {
+                const soc = document.createElement('div');
+                soc.style.cssText = 'text-align:' + alignment + ';font-size:' + baseFontSize + ';color:var(--text-secondary);margin-top:4px;';
+                soc.innerText = RECEIPT_SETTINGS.social_media;
+                body.appendChild(soc);
+            }
+            if (RECEIPT_SETTINGS.show_barcode) {
+                const bc = document.createElement('div');
+                bc.style.cssText = 'text-align:' + alignment + ';margin-top:12px;';
+                bc.innerHTML = '<svg width="120" height="60" viewBox="0 0 120 60"><text x="10" y="50" font-family="monospace" font-size="14">' + data.receipt_number + '</text></svg>';
+                body.appendChild(bc);
+            }
 
             currentReceiptNumber = data.receipt_number;
             currentData = data;
             receiptMarkedPrinted = false;
-
-            const itemsDiv = document.getElementById('receipt-items');
-            itemsDiv.innerHTML = '';
-            data.items.forEach(item => {
-                itemsDiv.innerHTML += `<div class="receipt-item"><div><div>${item.name}</div><div style="font-size:12px;color:var(--text-secondary);">${item.quantity} x ₱${item.price.toFixed(2)}</div></div><div>₱${item.subtotal.toFixed(2)}</div>`;
-            });
             document.getElementById('receipt-modal').classList.add('show');
         }
 
@@ -670,14 +1170,72 @@
             const subtitleText = RECEIPT_SETTINGS.subtitle;
             const storeAddress = RECEIPT_SETTINGS.storeAddress || '';
             const storeContact = RECEIPT_SETTINGS.storeContact || '';
+            const tinText = RECEIPT_SETTINGS.tin || '';
+            const vatStatusText = RECEIPT_SETTINGS.vat_status || '';
+            const docTitleText = RECEIPT_SETTINGS.document_title || '';
+            const invoicePrefixText = RECEIPT_SETTINGS.invoice_prefix || 'INV-';
+            const nextInvoiceText = RECEIPT_SETTINGS.next_invoice_no || '';
+            const showDateTime = RECEIPT_SETTINGS.show_date_time || 'Both';
             const footerText = RECEIPT_SETTINGS.footer.replace(/\n/g, '<br>');
-            const addressHtml = storeAddress ? `<div class="center" style="font-size: 9px;">${storeAddress}</div>` : '';
-            const contactHtml = storeContact ? `<div class="center" style="font-size: 9px;">${storeContact}</div>` : '';
-            let receiptHTML = `<!DOCTYPE html><html><head><title>Receipt</title><style>@page { margin: 0; size: 58mm auto; } body { width: 58mm; margin: 0; padding: 8px; font-family: 'Courier New', monospace; font-size: 11px; line-height: 1.3; color: #000; } .center { text-align: center; } .bold { font-weight: bold; } .divider { border-bottom: 1px dashed #000; margin: 8px 0; } .flex-between { display: flex; justify-content: space-between; } .mt-10 { margin-top: 10px; } .mt-5 { margin-top: 5px; }</style></head><body><div class="center bold" style="font-size: 13px;">${headerText}</div><div class="center" style="font-size: 9px;">${subtitleText}</div>${addressHtml}${contactHtml}<div class="divider"></div><div class="flex-between"><span>Receipt:</span><span>${receiptNumber}</span></div><div class="flex-between"><span>Date:</span><span>${dateStr}</span></div><div class="divider"></div><div>`;
+            const showItemHeader = RECEIPT_SETTINGS.show_item_header;
+            const showTaxBreakdown = RECEIPT_SETTINGS.show_tax_breakdown;
+            const showPayment = RECEIPT_SETTINGS.show_payment_method;
+            const showChange = RECEIPT_SETTINGS.show_change;
+            const showSeparators = RECEIPT_SETTINGS.show_separator_lines;
+            const currency = RECEIPT_SETTINGS.currency_symbol || '₱';
+
+            let receiptHTML = '<!DOCTYPE html><html><head><title>Receipt</title><style>@page{margin:0;size:58mm auto;}body{width:58mm;margin:0;padding:8px;font-family:"Courier New",monospace;font-size:11px;line-height:1.3;color:#000;}.center{text-align:center;}.bold{font-weight:bold;}.divider{border-bottom:1px dashed #000;margin:8px 0;}.flex-between{display:flex;justify-content:space-between;}</style></head><body>';
+
+            receiptHTML += '<div class="center bold" style="font-size:13px;">' + headerText + '</div>';
+            receiptHTML += '<div class="center" style="font-size:9px;">' + subtitleText + '</div>';
+            if (storeAddress) receiptHTML += '<div class="center" style="font-size:9px;">' + storeAddress + '</div>';
+            if (storeContact) receiptHTML += '<div class="center" style="font-size:9px;">' + storeContact + '</div>';
+            if (tinText) receiptHTML += '<div class="center" style="font-size:9px;">TIN: ' + tinText + '</div>';
+            if (vatStatusText) receiptHTML += '<div class="center" style="font-size:9px;">' + vatStatusText + '</div>';
+            if (showSeparators) receiptHTML += '<div class="divider"></div>';
+            if (docTitleText) receiptHTML += '<div class="center bold" style="font-size:12px;">' + docTitleText + '</div>';
+            const hasInvoiceMeta = invoicePrefixText && nextInvoiceText;
+            if (hasInvoiceMeta && showDateTime !== 'None') {
+                receiptHTML += '<div class="flex-between"><span>Invoice No.:</span><span>' + invoicePrefixText + nextInvoiceText + '</span></div>';
+            }
+            if ((showDateTime === 'Both' || showDateTime === 'Date Only') && RECEIPT_SETTINGS.date_format) {
+                receiptHTML += '<div class="flex-between"><span>Date:</span><span>' + formatDate(dateStr, RECEIPT_SETTINGS.date_format) + '</span></div>';
+            }
+            if ((showDateTime === 'Both' || showDateTime === 'Time Only')) {
+                receiptHTML += '<div class="flex-between"><span>Time:</span><span>' + formatTime(dateStr, RECEIPT_SETTINGS.time_format || '12-hour') + '</span></div>';
+            }
+            if (RECEIPT_SETTINGS.show_cashier_name) {
+                receiptHTML += '<div class="flex-between"><span>Cashier:</span><span>' + (data.cashier || 'Admin') + '</span></div>';
+            }
+            if (showSeparators) receiptHTML += '<div class="divider"></div>';
+            if (showItemHeader) {
+                receiptHTML += '<div class="flex-between" style="font-weight:bold;"><span>Item</span><span>Qty</span><span>Price</span><span>Amount</span></div>';
+            }
             data.items.forEach(item => {
-                receiptHTML += `<div class="flex-between"><span>${item.name.substring(0,20)}</span><span>₱${item.price.toFixed(2)}</span></div><div class="flex-between" style="font-size: 10px;"><span>${item.quantity} x ${item.price.toFixed(2)}</span><span>₱${item.subtotal.toFixed(2)}</span></div>`;
+                receiptHTML += '<div class="flex-between"><span>' + item.name.substring(0,20) + '</span><span>' + item.quantity + '</span><span>' + currency + item.price.toFixed(2) + '</span><span>' + currency + item.subtotal.toFixed(2) + '</span></div>';
             });
-            receiptHTML += `</div><div class="divider"></div><div class="flex-between bold" style="font-size: 13px;"><span>TOTAL</span><span>₱${data.total.toFixed(2)}</span></div><div class="flex-between" style="font-size: 11px;"><span>CUSTOMER PAID</span><span>₱${tendered.toFixed(2)}</span></div><div class="flex-between" style="font-size: 11px;"><span>CHANGE</span><span>₱${change.toFixed(2)}</span></div><div class="divider"></div><div class="center" style="font-size: 10px;">${footerText.replace(/<br>/g, '<br>')}</div><div class="center" style="font-size: 9px; margin-top: 5px;">--- END OF RECEIPT ---</div>`;
+            if (showSeparators) receiptHTML += '<div class="divider"></div>';
+            receiptHTML += '<div class="flex-between bold" style="font-size:12px;"><span>Subtotal:</span><span>' + currency + data.total.toFixed(2) + '</span></div>';
+            if (showTaxBreakdown) {
+                const vatRate = 0.12;
+                const vatTotal = (data.total / (1 + vatRate)).toFixed(2);
+                const vatAmount = (data.total - parseFloat(vatTotal)).toFixed(2);
+                receiptHTML += '<div class="flex-between"><span>VATable Sales:</span><span>' + currency + vatTotal + '</span></div>';
+                receiptHTML += '<div class="flex-between"><span>VAT (' + (vatRate * 100) + '%):</span><span>' + currency + vatAmount + '</span></div>';
+            }
+            receiptHTML += '<div class="flex-between bold" style="font-size:13px;border-top:2px solid #000;margin-top:4px;padding-top:4px;"><span>TOTAL:</span><span>' + currency + data.total.toFixed(2) + '</span></div>';
+            if (showSeparators) receiptHTML += '<div class="divider"></div>';
+            if (showPayment) {
+                receiptHTML += '<div class="flex-between"><span>Payment Method:</span><span>Cash</span></div>';
+            }
+            if (showChange) {
+                receiptHTML += '<div class="flex-between"><span>Amount Paid:</span><span>' + currency + Number(data.tendered || 0).toFixed(2) + '</span></div>';
+                receiptHTML += '<div class="flex-between"><span>Change:</span><span>' + currency + Number(data.change || 0).toFixed(2) + '</span></div>';
+            }
+            if (showSeparators) receiptHTML += '<div class="divider"></div>';
+            receiptHTML += '<div class="center" style="font-size:10px;">' + footerText + '</div>';
+            receiptHTML += '<div class="center" style="font-size:9px;margin-top:5px;">--- END OF RECEIPT ---</div>';
+            receiptHTML += '</body></html>';
 
             printFrame.onload = function() {
                 setTimeout(() => {
@@ -709,6 +1267,232 @@
                 }
             }, 3000);
         }
-    </script>
+
+        function openHoldModal() {
+            if (cart.length === 0) { alert('Cart is empty!'); return; }
+            document.getElementById('hold-name').value = '';
+            document.getElementById('hold-error').innerText = '';
+            document.getElementById('hold-modal').classList.add('show');
+            setTimeout(() => document.getElementById('hold-name').focus(), 100);
+        }
+
+        function closeHoldModal() {
+            document.getElementById('hold-modal').classList.remove('show');
+        }
+
+        function confirmHold() {
+            const name = document.getElementById('hold-name').value.trim() || 'Hold ' + new Date().toLocaleTimeString();
+            fetch('/api/hold_transaction', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').getAttribute('content') },
+                body: JSON.stringify({ name: name, cart: cart })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    cart = [];
+                    renderCart();
+                    closeHoldModal();
+                } else {
+                    document.getElementById('hold-error').innerText = data.message;
+                }
+            });
+        }
+
+        function openResumeModal() {
+            fetch('/api/held_transactions')
+                .then(res => res.json())
+                .then(data => {
+                    const list = document.getElementById('resume-list');
+                    list.innerHTML = '';
+                    if (data.holds && data.holds.length > 0) {
+                        data.holds.forEach((hold, idx) => {
+                            const div = document.createElement('div');
+                            div.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:12px;border-bottom:1px solid var(--border);';
+                            div.innerHTML = `<div><div style="font-weight:700;">${hold.name}</div><div style="font-size:12px;color:var(--text-secondary);">${hold.timestamp} - ${hold.cart.length} items</div></div><button class="btn btn-primary btn-sm" onclick="resumeTransaction(${idx})">Resume</button>`;
+                            list.appendChild(div);
+                        });
+                    } else {
+                        list.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:20px;">No held transactions</div>';
+                    }
+                    document.getElementById('resume-modal').classList.add('show');
+                });
+        }
+
+        function closeResumeModal() {
+            document.getElementById('resume-modal').classList.remove('show');
+        }
+
+        function resumeTransaction(index) {
+            fetch('/api/resume_transaction', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').getAttribute('content') },
+                body: JSON.stringify({ index: index })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    cart = data.cart;
+                    renderCart();
+                    closeResumeModal();
+                } else {
+                    alert(data.message);
+                }
+            });
+        }
+</script>
+
+<script>
+const HELP_TOUR_STEPS = [
+  {
+    selector: ".status-pill",
+    title: "System Status",
+    category: "getting-started",
+    purpose: "The System Ready indicator confirms the POS is online and connected, which is essential before starting transactions.",
+    how_to_use: [
+      "Verify the green pill reads System Ready before beginning a sale",
+      "Do not start transactions if the status shows offline or disconnected",
+      "Refresh the page or notify the admin if the status appears incorrect"
+    ],
+    description: "Shows the current system status.",
+    instruction: "The green System Ready pill indicates the system is online and ready."
+  },
+  {
+    selector: ".stat-bar .stat-card",
+    title: "Sales Today",
+    category: "core-features",
+    purpose: "Today's sales and transaction counts give you immediate feedback on register performance and daily progress.",
+    how_to_use: [
+      "Check the Sales Today card to see current revenue and transaction count",
+      "Use these stats to gauge busy periods and plan breaks accordingly",
+      "Monitor the total throughout the shift to stay aware of goals"
+    ],
+    description: "Shows total sales and transaction count for the current day.",
+    instruction: "This updates in real-time as sales are completed."
+  },
+  {
+    selector: ".search-panel",
+    title: "Product Search",
+    category: "core-features",
+    purpose: "Fast product lookup by name or barcode is the core of the POS workflow and keeps checkout lines moving.",
+    how_to_use: [
+      "Type a product name or scan a barcode into the search box",
+      "Press Enter to submit a barcode scan automatically",
+      "Click a search result or use the ADD button after selecting a product"
+    ],
+    description: "Search for products by name or scan a barcode.",
+    instruction: "Type a product name or scan a barcode. Press Enter to search."
+  },
+  {
+    selector: "#selected-product",
+    title: "Selected Product",
+    category: "core-features",
+    purpose: "The selected product panel confirms what you are adding to the cart and lets you adjust quantities before checkout.",
+    how_to_use: [
+      "Review the product name, price, stock, and expiration displayed after selection",
+      "Use the + and - buttons to adjust the quantity",
+      "Click ADD to move the item into the shopping cart"
+    ],
+    description: "Shows the currently selected product with quantity controls.",
+    instruction: "Adjust the quantity using + / - buttons, then click ADD."
+  },
+  {
+    selector: ".cart-panel",
+    title: "Shopping Cart",
+    category: "core-features",
+    purpose: "The cart shows all items in the current transaction, their subtotals, and the running total for the customer.",
+    how_to_use: [
+      "Review each cart item to confirm name, quantity, and price",
+      "Click the X button to remove any item added by mistake",
+      "Check the Total at the bottom before proceeding to checkout"
+    ],
+    description: "Shows all items added to the current transaction.",
+    instruction: "Each item shows name, quantity, price, and subtotal. Click X to remove."
+  },
+  {
+    selector: "#tour-checkout-btn",
+    title: "Checkout Button",
+    category: "core-features",
+    purpose: "Checkout transitions the cart into the payment flow, which is the final step before completing a sale.",
+    how_to_use: [
+      "Ensure the cart contains all items the customer wants to purchase",
+      "Click CHECKOUT to open the payment modal",
+      "Enter the amount received and confirm to generate the receipt"
+    ],
+    description: "Proceed to payment for the current cart.",
+    instruction: "Click CHECKOUT when ready to process payment."
+  },
+  {
+    selector: "#payment-amount",
+    title: "Payment Amount",
+    category: "core-features",
+    purpose: "Entering the correct amount received ensures accurate change calculation and prevents transaction errors.",
+    how_to_use: [
+      "Type the amount of cash or card payment received from the customer",
+      "The system automatically calculates the change due",
+      "Confirm the payment to complete the sale and print the receipt"
+    ],
+    description: "Enter the payment amount in this field.",
+    instruction: "Type the amount received, then click Confirm Payment."
+  },
+  {
+    selector: "#receipt-modal",
+    title: "Receipt Modal",
+    category: "core-features",
+    purpose: "The receipt confirms the transaction for both the store and the customer, providing a record of the sale.",
+    how_to_use: [
+      "Review the receipt items, total, and change before printing",
+      "Click Print to send the receipt to the thermal printer",
+      "Click Mark as Printed when done, or Close to dismiss"
+    ],
+    description: "Shows the completed transaction receipt.",
+    instruction: "Always print or mark as printed before closing the receipt."
+  }
+];
+window.HELP_TOUR_STEPS = HELP_TOUR_STEPS;
+window.HELP_TOUR_STORAGE_KEY = "helptour_cashier_dashboard";
+</script>
+
+<script src="/static/js/help-tour.js"></script>
+<script>
+(function() {
+    const token = document.querySelector('meta[name="csrf-token"]');
+    if (token) {
+        const csrfToken = token.getAttribute('content');
+        const originalFetch = window.fetch;
+        window.fetch = function(url, options) {
+            options = options || {};
+            options.headers = options.headers || {};
+            if (!options.headers['X-CSRFToken'] && !options.headers['x-csrftoken']) {
+                options.headers['X-CSRFToken'] = csrfToken;
+            }
+            return originalFetch(url, options);
+        };
+        const originalOpen = XMLHttpRequest.prototype.open;
+        XMLHttpRequest.prototype.open = function(method, url) {
+            this._method = method;
+            return originalOpen.apply(this, arguments);
+        };
+        const originalSetRequestHeader = XMLHttpRequest.prototype.setRequestHeader;
+        XMLHttpRequest.prototype.setRequestHeader = function(header, value) {
+            if (this._method && (this._method === 'POST' || this._method === 'PUT' || this._method === 'DELETE' || this._method === 'PATCH')) {
+                if (header.toLowerCase() === 'content-type') {
+                    originalSetRequestHeader.apply(this, arguments);
+                    originalSetRequestHeader.call(this, 'X-CSRFToken', csrfToken);
+                    return;
+                }
+            }
+            return originalSetRequestHeader.apply(this, arguments);
+        };
+    }
+})();
+</script>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    loadCashierNotifications();
+});
+</script>
+
 </body>
 </html>

@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Receipt</title>
+    <style>
+        @page { margin: 0; size: 58mm auto; }
+        body { width: 58mm; margin: 0; padding: 8px; font-family: 'Courier New', monospace; font-size: 11px; line-height: 1.3; color: #000; }
+        .center { text-align: center; }
+        .bold { font-weight: bold; }
+        .divider { border-bottom: 1px dashed #000; margin: 8px 0; }
+        .flex-between { display: flex; justify-content: space-between; }
+    </style>
+</head>
+<body>
+    <div class="center bold" style="font-size: 13px;">{{ data.receipt_number }}</div>
+    <div class="center" style="font-size: 9px;">{{ data.date }}</div>
+    <div class="divider"></div>
+    <div>
+        {% for item in data.items %}
+            <div class="flex-between"><span>{{ item.name }}</span><span>₱{{ "%.2f"|format(item.price) }}</span></div>
+            <div class="flex-between" style="font-size: 10px;"><span>{{ item.quantity }} x {{ "%.2f"|format(item.price) }}</span><span>₱{{ "%.2f"|format(item.subtotal) }}</span></div>
+        {% endfor %}
+    </div>
+    <div class="divider"></div>
+    <div class="flex-between bold" style="font-size: 13px;"><span>TOTAL</span><span>₱{{ "%.2f"|format(data.total) }}</span></div>
+    <div class="flex-between" style="font-size: 11px;"><span>CUSTOMER PAID</span><span>₱{{ "%.2f"|format(data.tendered) }}</span></div>
+    <div class="flex-between" style="font-size: 11px;"><span>CHANGE</span><span>₱{{ "%.2f"|format(data.change) }}</span></div>
+    <div class="divider"></div>
+    <div class="center" style="font-size: 10px;">--- END OF RECEIPT ---</div>
+    <script>window.print();</script>
+</body>
+</html>

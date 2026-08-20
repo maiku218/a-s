@@ -317,42 +317,55 @@ class SalesService(ISalesService):
         return items
 
     def _process_sale_impl(self, items: list, cashier: Cashier, cur) -> dict:
-        medical_items = []
-        non_medical_items = []
+        receipt_items = []
+        total_amount = 0.0
+        sale_product_type = 'Non-Medical'
 
         for item in items:
             cur.execute("SELECT product_type FROM products WHERE id = %s", (item['id'],))
             result = cur.fetchone()
             product_type = result[0] if result else 'Non-Medical'
             if product_type == 'Medical':
-                medical_items.append(item)
-            else:
-                non_medical_items.append(item)
+                sale_product_type = 'Medical'
 
-        receipt_numbers = []
-        receipt_items = []
-        total_amount = 0.0
+            subtotal = round(item['price'] * item['quantity'], 2)
+            total_amount += subtotal
+            receipt_items.append({
+                'name': item['name'],
+                'quantity': item['quantity'],
+                'price': item['price'],
+                'subtotal': subtotal
+            })
 
-        if medical_items:
-            receipt_number, sale_total, sale_items = self._create_sale(
-                cur, medical_items, cashier.id, 'Medical'
-            )
-            receipt_numbers.append(receipt_number)
-            total_amount += sale_total
-            receipt_items.extend(sale_items)
+        receipt_number = (f"REC-{datetime.now().strftime('%Y%m%d')}"
+                          f"-{random.randint(1000, 9999)}")
 
-        if non_medical_items:
-            receipt_number, sale_total, sale_items = self._create_sale(
-                cur, non_medical_items, cashier.id, 'Non-Medical'
-            )
-            receipt_numbers.append(receipt_number)
-            total_amount += sale_total
-            receipt_items.extend(sale_items)
+        cur.execute("""
+            INSERT INTO sales (receipt_number, cashier_id, total_amount,
+                               sale_status, product_type, sale_date)
+            VALUES (%s, %s, %s, 'Pending', %s, NOW())
+        """, (receipt_number, cashier.id, total_amount, sale_product_type))
+        sale_id = cur.lastrowid
+
+        for item in items:
+            cur.execute("""
+                INSERT INTO sale_items (sale_id, product_id, quantity, price)
+                VALUES (%s, %s, %s, %s)
+            """, (sale_id, item['id'], item['quantity'], item['price']))
+
+            cur.execute("""
+                UPDATE products SET stock = stock - %s WHERE id = %s
+            """, (item['quantity'], item['id']))
+
+            cur.execute("""
+                INSERT INTO stock_movements (product_id, movement_type, quantity, reason)
+                VALUES (%s, 'OUT', %s, 'Sale')
+            """, (item['id'], item['quantity']))
 
         self.mysql.connection.commit()
         return {
             'success': True,
-            'receipt_number': receipt_numbers[0] if receipt_numbers else 'N/A',
+            'receipt_number': receipt_number,
             'total': total_amount,
             'items': receipt_items,
             'date': datetime.now().strftime('%Y-%m-%d %H:%M:%S')

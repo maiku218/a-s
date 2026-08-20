@@ -1,51 +1,315 @@
 {% extends 'admin_dashboard.html' %}
 
 {% block content %}
-<div class="content-card">
+    <div class="card">
     <h1 style="margin: 0 0 10px 0;">Receipt Customization</h1>
     <p style="color: #666; font-size: 14px; margin-bottom: 25px;">
         Customize the appearance of your thermal receipts. Changes are saved automatically.
     </p>
 
     <form method="POST" enctype="multipart/form-data">
-        <input type="hidden" name="receipt_logo_existing" value="{{ settings.receipt_logo or '' }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
-            <div class="form-group">
-                <label style="font-weight: 600; margin-bottom: 8px; display: block;">Store Name (Header)</label>
-                <input type="text" name="receipt_header" value="{{ settings.receipt_header or 'PHARMACON' }}" 
-                       class="form-control" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px;">
+
+            <!-- LEFT COLUMN: Form Sections -->
+            <div style="display: flex; flex-direction: column; gap: 0;">
+
+                <!-- SECTION 1: Business / Store Information -->
+                <div style="display: flex; align-items: flex-start; gap: 12px; margin-bottom: 8px;">
+                    <div style="width: 28px; height: 28px; background: var(--accent); color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 14px; flex-shrink: 0;">1</div>
+                    <div style="font-weight: 700; font-size: 15px; margin-top: 2px;">Business / Store Information</div>
+                </div>
+                <div class="form-group">
+                    <label style="font-weight: 600; margin-bottom: 8px; display: block;">Store Name (Header)</label>
+                    <input type="text" name="receipt_header" value="{{ settings.receipt_header or 'PHARMACON' }}" class="form-control" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px;" oninput="updatePreview()">
+                </div>
+                <div class="form-group">
+                    <label style="font-weight: 600; margin-bottom: 8px; display: block;">Store Tagline (Subtitle)</label>
+                    <input type="text" name="receipt_subtitle" value="{{ settings.receipt_subtitle or 'A\'s PharmaHealth & Convenience' }}" class="form-control" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px;" oninput="updatePreview()">
+                </div>
+                <div class="form-group">
+                    <label style="font-weight: 600; margin-bottom: 8px; display: block;">Store Address</label>
+                    <input type="text" name="store_address" value="{{ settings.store_address or '' }}" class="form-control" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px;" oninput="updatePreview()">
+                </div>
+                <div class="form-group">
+                    <label style="font-weight: 600; margin-bottom: 8px; display: block;">Store Contact</label>
+                    <input type="text" name="store_contact" value="{{ settings.store_contact or '' }}" class="form-control" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px;" oninput="updatePreview()">
+                </div>
+                <div class="form-group">
+                    <label style="font-weight: 600; margin-bottom: 8px; display: block;">TIN</label>
+                    <input type="text" name="tin" value="{{ settings.tin or '' }}" class="form-control" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px;" oninput="updatePreview()">
+                </div>
+                <div class="form-group">
+                    <label style="font-weight: 600; margin-bottom: 8px; display: block;">VAT Status</label>
+                    <select name="vat_status" class="form-control" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px;" onchange="updatePreview()">
+                        <option value="VAT Registered" {{ 'selected' if settings.vat_status == 'VAT Registered' }}>VAT Registered</option>
+                        <option value="Non-VAT" {{ 'selected' if settings.vat_status == 'Non-VAT' }}>Non-VAT</option>
+                    </select>
+                </div>
+
+                <!-- SECTION 2: Receipt Header Options -->
+                <div style="display: flex; align-items: flex-start; gap: 12px; margin-top: 20px; margin-bottom: 8px;">
+                    <div style="width: 28px; height: 28px; background: var(--accent); color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 14px; flex-shrink: 0;">2</div>
+                    <div style="font-weight: 700; font-size: 15px; margin-top: 2px;">Receipt Header Options</div>
+                </div>
+                <div class="form-group">
+                    <div style="display: flex; flex-wrap: wrap; gap: 16px;">
+                        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; min-width: 200px;">
+                            <input type="checkbox" name="show_store_name" {{ 'checked' if settings.show_store_name != '0' }} onchange="updatePreview()"> Show Store Name
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; min-width: 200px;">
+                            <input type="checkbox" name="show_store_tagline" {{ 'checked' if settings.show_store_tagline != '0' }} onchange="updatePreview()"> Show Store Tagline
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; min-width: 200px;">
+                            <input type="checkbox" name="show_address" {{ 'checked' if settings.show_address != '0' }} onchange="updatePreview()"> Show Address
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; min-width: 200px;">
+                            <input type="checkbox" name="show_contact" {{ 'checked' if settings.show_contact != '0' }} onchange="updatePreview()"> Show Contact
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; min-width: 200px;">
+                            <input type="checkbox" name="show_tin" {{ 'checked' if settings.show_tin != '0' }} onchange="updatePreview()"> Show TIN
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; min-width: 200px;">
+                            <input type="checkbox" name="show_vat_status" {{ 'checked' if settings.show_vat_status != '0' }} onchange="updatePreview()"> Show VAT Status
+                        </label>
+                    </div>
+                </div>
+
+                <!-- SECTION 3: Document Title -->
+                <div style="display: flex; align-items: flex-start; gap: 12px; margin-top: 20px; margin-bottom: 8px;">
+                    <div style="width: 28px; height: 28px; background: var(--accent); color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 14px; flex-shrink: 0;">3</div>
+                    <div style="font-weight: 700; font-size: 15px; margin-top: 2px;">Document Title</div>
+                </div>
+                <div class="form-group">
+                    <label style="font-weight: 600; margin-bottom: 8px; display: block;">Document Title</label>
+                    <input type="text" name="document_title" value="{{ settings.document_title or 'SALES INVOICE' }}" class="form-control" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px;" oninput="updatePreview()">
+                </div>
+                <div class="form-group">
+                    <label style="font-weight: 600; margin-bottom: 8px; display: block;">Title Alignment</label>
+                    <select name="title_alignment" class="form-control" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px;" onchange="updatePreview()">
+                        <option value="Center" {{ 'selected' if settings.title_alignment == 'Center' }}>Center</option>
+                        <option value="Left" {{ 'selected' if settings.title_alignment == 'Left' }}>Left</option>
+                        <option value="Right" {{ 'selected' if settings.title_alignment == 'Right' }}>Right</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label style="font-weight: 600; margin-bottom: 8px; display: block;">Title Style</label>
+                    <select name="title_style" class="form-control" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px;" onchange="updatePreview()">
+                        <option value="Bold" {{ 'selected' if settings.title_style == 'Bold' }}>Bold</option>
+                        <option value="Normal" {{ 'selected' if settings.title_style == 'Normal' }}>Normal</option>
+                    </select>
+                </div>
+
+                <!-- SECTION 4: Invoice / Transaction Settings -->
+                <div style="display: flex; align-items: flex-start; gap: 12px; margin-top: 20px; margin-bottom: 8px;">
+                    <div style="width: 28px; height: 28px; background: var(--accent); color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 14px; flex-shrink: 0;">4</div>
+                    <div style="font-weight: 700; font-size: 15px; margin-top: 2px;">Invoice / Transaction Settings</div>
+                </div>
+                <div class="form-group">
+                    <label style="font-weight: 600; margin-bottom: 8px; display: block;">Invoice Prefix</label>
+                    <input type="text" name="invoice_prefix" value="{{ settings.invoice_prefix or 'INV-' }}" class="form-control" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px;" oninput="updatePreview()">
+                </div>
+                <div class="form-group">
+                    <label style="font-weight: 600; margin-bottom: 8px; display: block;">Next Invoice No.</label>
+                    <input type="text" name="next_invoice_no" value="{{ settings.next_invoice_no or '0000123' }}" class="form-control" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px;" oninput="updatePreview()">
+                </div>
+                <div class="form-group">
+                    <label style="font-weight: 600; margin-bottom: 8px; display: block;">Number of Digits</label>
+                    <input type="number" name="invoice_digits" value="{{ settings.invoice_digits or '7' }}" class="form-control" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px;" oninput="updatePreview()">
+                </div>
+                <div class="form-group">
+                    <label style="font-weight: 600; margin-bottom: 8px; display: block;">Show Date & Time</label>
+                    <select name="show_date_time" class="form-control" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px;" onchange="updatePreview()">
+                        <option value="Both" {{ 'selected' if settings.show_date_time == 'Both' }}>Both</option>
+                        <option value="Date Only" {{ 'selected' if settings.show_date_time == 'Date Only' }}>Date Only</option>
+                        <option value="Time Only" {{ 'selected' if settings.show_date_time == 'Time Only' }}>Time Only</option>
+                        <option value="None" {{ 'selected' if settings.show_date_time == 'None' }}>None</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label style="font-weight: 600; margin-bottom: 8px; display: block;">Date Format</label>
+                    <input type="text" name="date_format" value="{{ settings.date_format or 'MMM DD, YYYY' }}" class="form-control" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px;" oninput="updatePreview()">
+                </div>
+                <div class="form-group">
+                    <label style="font-weight: 600; margin-bottom: 8px; display: block;">Time Format</label>
+                    <select name="time_format" class="form-control" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px;" onchange="updatePreview()">
+                        <option value="12-hour" {{ 'selected' if settings.time_format == '12-hour' }}>12-hour</option>
+                        <option value="24-hour" {{ 'selected' if settings.time_format == '24-hour' }}>24-hour</option>
+                    </select>
+                </div>
+
+                <!-- SECTION 5: Receipt Footer -->
+                <div style="display: flex; align-items: flex-start; gap: 12px; margin-top: 20px; margin-bottom: 8px;">
+                    <div style="width: 28px; height: 28px; background: var(--accent); color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 14px; flex-shrink: 0;">5</div>
+                    <div style="font-weight: 700; font-size: 15px; margin-top: 2px;">Receipt Footer</div>
+                </div>
+                <div class="form-group">
+                    <label style="font-weight: 600; margin-bottom: 8px; display: block;">Footer Message</label>
+                    <textarea name="receipt_footer" rows="2" class="form-control" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px;" oninput="updatePreview()">{{ settings.receipt_footer or 'Thank you for your purchase!\nPlease come again.' }}</textarea>
+                </div>
+                <div class="form-group">
+                    <label style="font-weight: 600; margin-bottom: 8px; display: block;">Footer Alignment</label>
+                    <select name="footer_alignment" class="form-control" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px;" onchange="updatePreview()">
+                        <option value="Center" {{ 'selected' if settings.footer_alignment == 'Center' }}>Center</option>
+                        <option value="Left" {{ 'selected' if settings.footer_alignment == 'Left' }}>Left</option>
+                        <option value="Right" {{ 'selected' if settings.footer_alignment == 'Right' }}>Right</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label style="font-weight: 600; margin-bottom: 8px; display: block;">Footer Style</label>
+                    <select name="footer_style" class="form-control" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px;" onchange="updatePreview()">
+                        <option value="Normal" {{ 'selected' if settings.footer_style == 'Normal' }}>Normal</option>
+                        <option value="Bold" {{ 'selected' if settings.footer_style == 'Bold' }}>Bold</option>
+                    </select>
+                </div>
+
+                <!-- SECTION 6: Display Options -->
+                <div style="display: flex; align-items: flex-start; gap: 12px; margin-top: 20px; margin-bottom: 8px;">
+                    <div style="width: 28px; height: 28px; background: var(--accent); color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 14px; flex-shrink: 0;">6</div>
+                    <div style="font-weight: 700; font-size: 15px; margin-top: 2px;">Display Options</div>
+                </div>
+                <div class="form-group">
+                    <div style="display: flex; flex-wrap: wrap; gap: 16px;">
+                        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; min-width: 220px;">
+                            <input type="checkbox" name="show_item_header" {{ 'checked' if settings.show_item_header != '0' }} onchange="updatePreview()"> Show Item Header (Qty, Price, Amount)
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; min-width: 220px;">
+                            <input type="checkbox" name="show_tax_breakdown" {{ 'checked' if settings.show_tax_breakdown != '0' }} onchange="updatePreview()"> Show Tax Breakdown (VAT Details)
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; min-width: 220px;">
+                            <input type="checkbox" name="show_cashier_name" {{ 'checked' if settings.show_cashier_name != '0' }} onchange="updatePreview()"> Show Cashier Name
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; min-width: 220px;">
+                            <input type="checkbox" name="show_payment_method" {{ 'checked' if settings.show_payment_method != '0' }} onchange="updatePreview()"> Show Payment Method
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; min-width: 220px;">
+                            <input type="checkbox" name="show_change" {{ 'checked' if settings.show_change != '0' }} onchange="updatePreview()"> Show Change
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; min-width: 220px;">
+                            <input type="checkbox" name="show_separator_lines" {{ 'checked' if settings.show_separator_lines != '0' }} onchange="updatePreview()"> Show Separator Lines
+                        </label>
+                    </div>
+                </div>
+
+                <!-- SECTION 8: Paper & Print Settings -->
+                <div style="display: flex; align-items: flex-start; gap: 12px; margin-top: 20px; margin-bottom: 8px;">
+                    <div style="width: 28px; height: 28px; background: var(--accent); color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 14px; flex-shrink: 0;">8</div>
+                    <div style="font-weight: 700; font-size: 15px; margin-top: 2px;">Paper & Print Settings</div>
+                </div>
+                <div class="form-group">
+                    <label style="font-weight: 600; margin-bottom: 8px; display: block;">Paper Width</label>
+                    <select name="paper_size" class="form-control" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px;" onchange="updatePreview()">
+                        <option value="58" {{ 'selected' if settings.paper_size == '58' }}>58mm</option>
+                        <option value="80" {{ 'selected' if settings.paper_size == '80' or not settings.paper_size }}>80mm</option>
+                        <option value="a4" {{ 'selected' if settings.paper_size == 'a4' }}>A4</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label style="font-weight: 600; margin-bottom: 8px; display: block;">Font Size</label>
+                    <select name="font_size" class="form-control" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px;" onchange="updatePreview()">
+                        <option value="small" {{ 'selected' if settings.font_size == 'small' }}>Small</option>
+                        <option value="medium" {{ 'selected' if settings.font_size == 'medium' or not settings.font_size }}>Normal</option>
+                        <option value="large" {{ 'selected' if settings.font_size == 'large' }}>Large</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label style="font-weight: 600; margin-bottom: 8px; display: block;">Line Spacing</label>
+                    <select name="line_spacing" class="form-control" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px;" onchange="updatePreview()">
+                        <option value="Compact" {{ 'selected' if settings.line_spacing == 'Compact' }}>Compact</option>
+                        <option value="Normal" {{ 'selected' if settings.line_spacing == 'Normal' }}>Normal</option>
+                        <option value="Wide" {{ 'selected' if settings.line_spacing == 'Wide' }}>Wide</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label style="font-weight: 600; margin-bottom: 8px; display: block;">Print Density</label>
+                    <select name="print_density" class="form-control" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px;" onchange="updatePreview()">
+                        <option value="Normal" {{ 'selected' if settings.print_density == 'Normal' }}>Normal</option>
+                        <option value="Light" {{ 'selected' if settings.print_density == 'Light' }}>Light</option>
+                        <option value="Dark" {{ 'selected' if settings.print_density == 'Dark' }}>Dark</option>
+                    </select>
+                </div>
+
+                <!-- SECTION 9: Apply Template -->
+                <div style="display: flex; align-items: flex-start; gap: 12px; margin-top: 20px; margin-bottom: 8px;">
+                    <div style="width: 28px; height: 28px; background: var(--accent); color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 14px; flex-shrink: 0;">9</div>
+                    <div style="font-weight: 700; font-size: 15px; margin-top: 2px;">Apply Template</div>
+                </div>
+                <div class="form-group">
+                    <label style="font-weight: 600; margin-bottom: 8px; display: block;">Select a template...</label>
+                    <select name="receipt_template" class="form-control" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px;" onchange="updatePreview()">
+                        <option value="">Select a template...</option>
+                        <option value="default" {{ 'selected' if settings.receipt_template == 'default' }}>Default</option>
+                        <option value="detailed" {{ 'selected' if settings.receipt_template == 'detailed' }}>Detailed</option>
+                        <option value="minimal" {{ 'selected' if settings.receipt_template == 'minimal' }}>Minimal</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <button type="button" class="btn btn-secondary" style="padding: 10px 20px;">Load</button>
+                </div>
+
             </div>
-            <div class="form-group">
-                <label style="font-weight: 600; margin-bottom: 8px; display: block;">Store Tagline (Subtitle)</label>
-                <input type="text" name="receipt_subtitle" value="{{ settings.receipt_subtitle or 'A\'s PharmaHealth & Convenience' }}" 
-                       class="form-control" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px;">
+
+            <!-- RIGHT COLUMN: Receipt Preview (Section 7) -->
+            <div>
+                <!-- SECTION 7: Receipt Preview -->
+                <div style="display: flex; align-items: flex-start; gap: 12px; margin-bottom: 8px;">
+                    <div style="width: 28px; height: 28px; background: var(--accent); color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 14px; flex-shrink: 0;">7</div>
+                    <div style="font-weight: 700; font-size: 15px; margin-top: 2px;">Receipt Preview</div>
+                </div>
+                <div class="form-group">
+                    <div style="display: flex; justify-content: center; padding: 20px; background: #f8f9fa; border-radius: 8px;">
+                        <div id="receipt-preview" style="background: white; padding: 20px; border: 1px solid #ddd; box-shadow: 0 2px 8px rgba(0,0,0,0.1); font-family: 'Courier New', monospace; width: 312px; transition: all 0.3s;">
+                            <div id="preview-content" style="text-align: center;">
+                                <div id="preview-header" style="font-weight: bold; margin-bottom: 4px;">{{ settings.receipt_header or 'PHARMACON' }}</div>
+                                <div id="preview-subtitle" style="margin-bottom: 4px;">{{ settings.receipt_subtitle or 'A\'s PharmaHealth & Convenience' }}</div>
+                                <div id="preview-address" style="margin-bottom: 4px;">{{ settings.store_address or '' }}</div>
+                                <div id="preview-contact" style="margin-bottom: 4px;">{{ settings.store_contact or '' }}</div>
+                                <div id="preview-tin" style="margin-bottom: 4px; display: none;">TIN: {{ settings.tin or '' }}</div>
+                                <div id="preview-vatstatus" style="margin-bottom: 10px; display: none;">{{ settings.vat_status or 'VAT Registered' }}</div>
+                                <div style="border-top: 1px dashed #333; margin: 8px 0; display: none;" id="preview-divider1"></div>
+                                <div id="preview-doctitle" style="font-weight: bold; margin-bottom: 8px; display: none;">{{ settings.document_title or 'SALES INVOICE' }}</div>
+                                <div id="preview-invoice" style="margin-bottom: 4px; display: none;">Invoice No.: {{ settings.invoice_prefix or 'INV-' }}{{ settings.next_invoice_no or '0000123' }}</div>
+                                <div id="preview-date" style="margin-bottom: 4px; display: none;">Date: Aug 13, 2026</div>
+                                <div id="preview-time" style="margin-bottom: 4px; display: none;">Time: 02:35 PM</div>
+                                <div id="preview-cashier" style="margin-bottom: 8px; display: none;">Cashier: Admin</div>
+                                <div id="preview-items-header" style="display: none; margin-bottom: 4px; font-weight: bold;">
+                                    <div style="display: flex; justify-content: space-between;"><span>Item</span><span>Qty</span><span>Price</span><span>Amount</span></div>
+                                </div>
+                                <div id="preview-items" style="margin-bottom: 8px;">
+                                    <div style="display: flex; justify-content: space-between;"><span>Paracetamol 500mg</span><span>2</span><span>₱10.00</span><span>₱20.00</span></div>
+                                    <div style="display: flex; justify-content: space-between;"><span>Coke 500ml</span><span>1</span><span>₱25.00</span><span>₱25.00</span></div>
+                                    <div style="display: flex; justify-content: space-between;"><span>Bread</span><span>1</span><span>₱45.00</span><span>₱45.00</span></div>
+                                </div>
+                                <div id="preview-divider2" style="border-top: 1px dashed #333; margin: 8px 0; display: none;"></div>
+                                <div id="preview-subtotal" style="display: none; margin-bottom: 4px;"><span>Subtotal: </span><span>₱90.00</span></div>
+                                <div id="preview-taxbreakdown" style="display: none; margin-bottom: 4px;"><span>VATable Sales: </span><span>₱80.36</span></div>
+                                <div id="preview-vatline" style="display: none; margin-bottom: 4px;"><span>VAT (12%): </span><span>₱9.64</span></div>
+                                <div id="preview-total" style="font-weight: bold; margin-bottom: 8px; display: none;"><span>TOTAL: </span><span>₱90.00</span></div>
+                                <div id="preview-divider3" style="border-top: 1px dashed #333; margin: 8px 0; display: none;"></div>
+                                <div id="preview-payment" style="display: none; margin-bottom: 4px;">Payment Method: Cash</div>
+                                <div id="preview-amountpaid" style="display: none; margin-bottom: 4px;"><span>Amount Paid: </span><span>₱100.00</span></div>
+                                <div id="preview-change" style="display: none; margin-bottom: 8px;"><span>Change: </span><span>₱10.00</span></div>
+                                <div id="preview-divider4" style="border-top: 1px dashed #333; margin: 8px 0; display: none;"></div>
+                                <div id="preview-footer" style="white-space: pre-line; display: none;">{{ settings.receipt_footer or 'Thank you for your purchase!\nPlease come again.' }}</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
-            <div class="form-group">
-                <label style="font-weight: 600; margin-bottom: 8px; display: block;">Store Address</label>
-                <input type="text" name="store_address" value="{{ settings.store_address or '' }}" 
-                       class="form-control" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px;" placeholder="Enter store address">
-            </div>
-            <div class="form-group">
-                <label style="font-weight: 600; margin-bottom: 8px; display: block;">Store Contact</label>
-                <input type="text" name="store_contact" value="{{ settings.store_contact or '' }}" 
-                       class="form-control" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px;" placeholder="Phone / Email">
-            </div>
-            <div class="form-group" style="grid-column: 1 / -1;">
-                <label style="font-weight: 600; margin-bottom: 8px; display: block;">Receipt Footer Message</label>
-                <textarea name="receipt_footer" rows="2" class="form-control" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px;">{{ settings.receipt_footer or 'Thank you for your purchase!\nPlease come again.' }}</textarea>
-            </div>
+
         </div>
 
         <div style="margin-top: 25px; display: flex; gap: 10px;">
             <button type="submit" class="btn btn-primary">Save Settings</button>
-            <a href="/" class="btn btn-secondary" style="text-decoration: none;">Cancel</a>
+            <button type="reset" class="btn btn-secondary">Reset to Default</button>
+            <button type="button" class="btn btn-primary" onclick="printTestReceipt()">Print Test Receipt</button>
         </div>
     </form>
 
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% if messages %}
         {% for category, message in messages %}
-          <div class="alert {% if category == 'success' %}alert-success{% else %}alert-error{% endif %}">
+          <div class="alert {% if category == 'success' %}alert-success{% else %}alert-error{% endif %}" style="margin-top: 20px;">
             {{ message }}
           </div>
         {% endfor %}
@@ -53,24 +317,224 @@
     {% endwith %}
 </div>
 
-<style>
-.form-control:focus {
-    outline: none;
-    border-color: var(--orange);
-    box-shadow: 0 0 0 3px rgba(251, 146, 60, 0.1);
+<script>
+function formatDate(dateStr, pattern) {
+    if (!dateStr || !pattern) return '';
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return pattern;
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const fullMonths = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    let result = pattern;
+    result = result.replace('YYYY', d.getFullYear());
+    result = result.replace('YY', String(d.getFullYear()).slice(-2));
+    result = result.replace('MMMM', fullMonths[d.getMonth()]);
+    result = result.replace('MMM', months[d.getMonth()]);
+    result = result.replace('MM', String(d.getMonth() + 1).padStart(2, '0'));
+    result = result.replace('DD', String(d.getDate()).padStart(2, '0'));
+    result = result.replace('D', d.getDate());
+    return result;
 }
-.alert {
-    margin-top: 15px;
-    padding: 12px;
-    border-radius: 6px;
+
+function formatTime(dateStr, format) {
+    if (!dateStr || !format) return '';
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return '';
+    let hours = d.getHours();
+    const minutes = String(d.getMinutes()).padStart(2, '0');
+    if (format === '12-hour') {
+        const ampm = hours >= 12 ? 'PM' : 'AM';
+        hours = hours % 12 || 12;
+        return hours + ':' + minutes + ' ' + ampm;
+    }
+    return String(hours).padStart(2, '0') + ':' + minutes;
 }
-.alert-success {
-    background: #d1fae5;
-    color: #065f46;
+
+function updatePreview() {
+    const header = document.querySelector('input[name="receipt_header"]').value;
+    const subtitle = document.querySelector('input[name="receipt_subtitle"]').value;
+    const address = document.querySelector('input[name="store_address"]').value;
+    const contact = document.querySelector('input[name="store_contact"]').value;
+    const tin = document.querySelector('input[name="tin"]').value;
+    const vatStatus = document.querySelector('select[name="vat_status"]').value;
+    const docTitle = document.querySelector('input[name="document_title"]').value;
+    const titleAlign = document.querySelector('select[name="title_alignment"]').value;
+    const titleStyle = document.querySelector('select[name="title_style"]').value;
+    const invoicePrefix = document.querySelector('input[name="invoice_prefix"]').value;
+    const nextInvoice = document.querySelector('input[name="next_invoice_no"]').value;
+    const showDateTime = document.querySelector('select[name="show_date_time"]').value;
+    const dateFormat = document.querySelector('input[name="date_format"]').value;
+    const timeFormat = document.querySelector('select[name="time_format"]').value;
+    const footerMsg = document.querySelector('textarea[name="receipt_footer"]').value;
+    const footerAlign = document.querySelector('select[name="footer_alignment"]').value;
+    const footerStyle = document.querySelector('select[name="footer_style"]').value;
+    const fontSize = document.querySelector('select[name="font_size"]').value;
+    const paperSize = document.querySelector('select[name="paper_size"]').value;
+    const lineSpacing = document.querySelector('select[name="line_spacing"]').value;
+    const printDensity = document.querySelector('select[name="print_density"]').value;
+    const alignment = document.querySelector('select[name="print_alignment"]').value;
+
+    const showStoreName = document.querySelector('input[name="show_store_name"]').checked;
+    const showStoreTagline = document.querySelector('input[name="show_store_tagline"]').checked;
+    const showAddr = document.querySelector('input[name="show_address"]').checked;
+    const showContact = document.querySelector('input[name="show_contact"]').checked;
+    const showTin = document.querySelector('input[name="show_tin"]').checked;
+    const showVatStatus = document.querySelector('input[name="show_vat_status"]').checked;
+    const showItemHeader = document.querySelector('input[name="show_item_header"]').checked;
+    const showTaxBreakdown = document.querySelector('input[name="show_tax_breakdown"]').checked;
+    const showCashier = document.querySelector('input[name="show_cashier_name"]').checked;
+    const showPayment = document.querySelector('input[name="show_payment_method"]').checked;
+    const showChange = document.querySelector('input[name="show_change"]').checked;
+    const showSeparators = document.querySelector('input[name="show_separator_lines"]').checked;
+
+    const preview = document.getElementById('receipt-preview');
+    const fontSizes = { small: '10px', medium: '12px', large: '14px' };
+    const paperWidths = { '58': '224px', '80': '312px', 'a4': '595px' };
+    const lineHeights = { 'Compact': '1.2', 'Normal': '1.5', 'Wide': '2.0' };
+
+    preview.style.fontSize = fontSizes[fontSize] || '12px';
+    preview.style.width = paperWidths[paperSize] || '312px';
+    preview.style.lineHeight = lineHeights[lineSpacing] || '1.5';
+    preview.style.opacity = printDensity === 'Light' ? '0.8' : printDensity === 'Dark' ? '1' : '1';
+
+    const content = document.getElementById('preview-content');
+    content.style.textAlign = alignment;
+
+    const size = fontSizes[fontSize] || '12px';
+    const isBold = titleStyle === 'Bold';
+
+    const headerEl = document.getElementById('preview-header');
+    headerEl.style.fontSize = size;
+    headerEl.style.fontWeight = isBold ? 'bold' : 'normal';
+    headerEl.textContent = header || 'PHARMACON';
+    headerEl.style.display = showStoreName ? 'block' : 'none';
+
+    const subtitleEl = document.getElementById('preview-subtitle');
+    subtitleEl.style.fontSize = size;
+    subtitleEl.textContent = subtitle || "A's PharmaHealth & Convenience";
+    subtitleEl.style.display = showStoreTagline ? 'block' : 'none';
+
+    const addrEl = document.getElementById('preview-address');
+    addrEl.style.fontSize = size;
+    addrEl.textContent = address;
+    addrEl.style.display = showAddr ? 'block' : 'none';
+
+    const contactEl = document.getElementById('preview-contact');
+    contactEl.style.fontSize = size;
+    contactEl.textContent = contact;
+    contactEl.style.display = showContact ? 'block' : 'none';
+
+    const tinEl = document.getElementById('preview-tin');
+    tinEl.style.fontSize = size;
+    tinEl.textContent = 'TIN: ' + tin;
+    tinEl.style.display = showTin ? 'block' : 'none';
+
+    const vatStatusEl = document.getElementById('preview-vatstatus');
+    vatStatusEl.style.fontSize = size;
+    vatStatusEl.textContent = vatStatus;
+    vatStatusEl.style.display = showVatStatus ? 'block' : 'none';
+
+    const doctitleEl = document.getElementById('preview-doctitle');
+    doctitleEl.style.fontSize = size;
+    doctitleEl.style.fontWeight = isBold ? 'bold' : 'normal';
+    doctitleEl.textContent = docTitle || 'SALES INVOICE';
+    doctitleEl.style.display = docTitle ? 'block' : 'none';
+
+    const hasInvoiceMeta = invoicePrefix && nextInvoice;
+    const invEl = document.getElementById('preview-invoice');
+    invEl.style.fontSize = size;
+    invEl.textContent = 'Invoice No.: ' + invoicePrefix + nextInvoice;
+    invEl.style.display = (hasInvoiceMeta && (showDateTime === 'Both' || showDateTime === 'Date Only')) ? 'block' : 'none';
+
+    const today = new Date();
+    const formattedDate = formatDate(today, dateFormat);
+    const dateEl = document.getElementById('preview-date');
+    dateEl.style.fontSize = size;
+    dateEl.textContent = 'Date: ' + (formattedDate || 'Aug 13, 2026');
+    dateEl.style.display = (formattedDate && (showDateTime === 'Both' || showDateTime === 'Date Only')) ? 'block' : 'none';
+
+    const formattedTime = formatTime(today, timeFormat);
+    const timeEl = document.getElementById('preview-time');
+    timeEl.style.fontSize = size;
+    timeEl.textContent = 'Time: ' + (formattedTime || '02:35 PM');
+    timeEl.style.display = (formattedTime && (showDateTime === 'Both' || showDateTime === 'Time Only')) ? 'block' : 'none';
+
+    const cashierEl = document.getElementById('preview-cashier');
+    cashierEl.style.fontSize = size;
+    cashierEl.textContent = 'Cashier: Admin';
+    cashierEl.style.display = showCashier ? 'block' : 'none';
+
+    const itemsHeaderEl = document.getElementById('preview-items-header');
+    itemsHeaderEl.style.display = showItemHeader ? 'flex' : 'none';
+
+    const divider1 = document.getElementById('preview-divider1');
+    divider1.style.display = showSeparators ? 'block' : 'none';
+
+    const divider2 = document.getElementById('preview-divider2');
+    divider2.style.display = showSeparators ? 'block' : 'none';
+
+    const divider3 = document.getElementById('preview-divider3');
+    divider3.style.display = showSeparators ? 'block' : 'none';
+
+    const divider4 = document.getElementById('preview-divider4');
+    divider4.style.display = showSeparators ? 'block' : 'none';
+
+    const sampleTotal = 90.00;
+    const vatRate = 0.12;
+    const sampleVatTotal = (sampleTotal / (1 + vatRate)).toFixed(2);
+    const sampleVatAmount = (sampleTotal - parseFloat(sampleVatTotal)).toFixed(2);
+
+    const subtotalEl = document.getElementById('preview-subtotal');
+    subtotalEl.style.display = 'block';
+    const subSpan = subtotalEl.querySelector('span:last-child');
+    if (subSpan) subSpan.textContent = '₱' + sampleTotal.toFixed(2);
+
+    const taxBreakdownEl = document.getElementById('preview-taxbreakdown');
+    taxBreakdownEl.style.display = showTaxBreakdown ? 'block' : 'none';
+
+    const vatLineEl = document.getElementById('preview-vatline');
+    if (vatLineEl && showTaxBreakdown) {
+        vatLineEl.style.display = 'block';
+        const vatSpan = vatLineEl.querySelector('span:last-child');
+        if (vatSpan) vatSpan.textContent = '₱' + sampleVatAmount;
+    }
+    const vatBreakdownSpan = taxBreakdownEl.querySelector('span:last-child');
+    if (vatBreakdownSpan) vatBreakdownSpan.textContent = '₱' + sampleVatTotal;
+
+    const totalEl = document.getElementById('preview-total');
+    totalEl.style.display = 'block';
+    const totalSpan = totalEl.querySelector('span:last-child');
+    if (totalSpan) totalSpan.textContent = '₱' + sampleTotal.toFixed(2);
+
+    const paymentEl = document.getElementById('preview-payment');
+    paymentEl.style.display = showPayment ? 'block' : 'none';
+
+    const amountPaidEl = document.getElementById('preview-amountpaid');
+    amountPaidEl.style.display = showChange ? 'block' : 'none';
+
+    const changeEl = document.getElementById('preview-change');
+    changeEl.style.display = showChange ? 'block' : 'none';
+
+    const footerEl = document.getElementById('preview-footer');
+    footerEl.style.fontSize = size;
+    footerEl.style.fontWeight = footerStyle === 'Bold' ? 'bold' : 'normal';
+    footerEl.style.textAlign = footerAlign;
+    footerEl.innerHTML = footerMsg.replace(/\n/g, '<br>');
+    footerEl.style.display = footerMsg ? 'block' : 'none';
 }
-.alert-error {
-    background: #fee2e2;
-    color: #991b1b;
+
+function printTestReceipt() {
+    const preview = document.getElementById('receipt-preview');
+    const printWindow = window.open('', '_blank', 'width=400,height=600');
+    printWindow.document.write('<html><head><title>Test Receipt</title><style>body{font-family:"Courier New",monospace;width:58mm;margin:0;padding:8px;}</style></head><body>');
+    printWindow.document.write(preview.innerHTML);
+    printWindow.document.write('</body></html>');
+    printWindow.document.close();
+    printWindow.focus();
+    setTimeout(() => { printWindow.print(); printWindow.close(); }, 250);
 }
-</style>
+
+document.addEventListener('DOMContentLoaded', function() {
+    updatePreview();
+});
+</script>
 {% endblock %}

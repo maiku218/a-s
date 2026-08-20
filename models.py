@@ -288,6 +288,15 @@ class Admin(User):
                     "VALUES (%s, %s, %s)",
                     ('admin', hashed, 'System Administrator')
                 )
+                try:
+                    cur.execute(
+                        "ALTER TABLE admins ADD COLUMN force_password_change TINYINT(1) DEFAULT 0"
+                    )
+                except Exception:
+                    pass
+                cur.execute(
+                    "UPDATE admins SET force_password_change=1 WHERE username='admin'"
+                )
                 mysql.connection.commit()
                 return Admin(1, 'admin', 'System Administrator', hashed)
         finally:

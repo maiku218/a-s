@@ -12,25 +12,26 @@
     </div>
 
     <form method="POST">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="form-group" style="margin-bottom: 20px;">
             <label class="form-label">Full Name</label>
-            <input type="text" name="full_name" required placeholder="Enter full name">
+            <input type="text" name="full_name" required placeholder="Enter full name" class="form-input">
         </div>
         <div class="form-group" style="margin-bottom: 20px;">
             <label class="form-label">Username</label>
-            <input type="text" name="username" required placeholder="Enter username">
+            <input type="text" name="username" required placeholder="Enter username" class="form-input">
         </div>
         <div class="form-group" style="margin-bottom: 24px;">
             <label class="form-label">Password</label>
-            <input type="password" name="password" required placeholder="Enter password">
+            <input type="password" name="password" required placeholder="Enter password" class="form-input">
         </div>
         <div class="form-group" style="margin-bottom: 20px;">
             <label class="form-label">Security Question</label>
-            <input type="text" name="security_question" required placeholder="e.g. What is the name of the owner?" value="What is the name of the owner?" style="background: #f0fdf4; border-color: #bbf7d0; font-weight: 600;">
+            <input type="text" name="security_question" required placeholder="e.g. What is the name of the owner?" value="What is the name of the owner?" class="form-input" style="background: #f0fdf4; border-color: #bbf7d0; font-weight: 600;">
         </div>
         <div class="form-group" style="margin-bottom: 24px;">
             <label class="form-label">Security Answer</label>
-            <input type="text" name="security_answer" required placeholder="Your answer to the security question" autocomplete="off" style="font-weight: 600;">
+            <input type="text" name="security_answer" required placeholder="Your answer to the security question" autocomplete="off" class="form-input" style="font-weight: 600;">
         </div>
         <button type="submit" class="btn btn-primary">Register Cashier</button>
     </form>
@@ -39,8 +40,96 @@
 {% with messages = get_flashed_messages(with_categories=true) %}
   {% if messages %}
     {% for category, message in messages %}
-      <script>Swal.fire({ icon: '{{ "success" if category == "success" else "error" }}', title: '{{ message }}', showConfirmButton: false, timer: 2500 });</script>
+      <script>Swal.fire({ icon: '{{ "success" if category == "success" else "error" }}', title: {{ message | tojson }}, showConfirmButton: false, timer: 2500 });</script>
     {% endfor %}
   {% endif %}
 {% endwith %}
+{% endblock %}
+
+{% block help_tour %}
+<script>
+const HELP_TOUR_STEPS = [
+  {
+    selector: 'input[name="full_name"]',
+    title: "Full Name",
+    category: "advanced",
+    purpose: "Registering cashiers with their full legal names ensures accurate attendance tracking, accountability, and receipt attribution.",
+    how_to_use: [
+      "Enter the cashier's complete legal name for proper identification",
+      "Double-check spelling to avoid duplicate or mismatched records",
+      "Proceed to username only after confirming the name is correct"
+    ],
+    description: "Enter the cashier's full name.",
+    instruction: "Type the complete name for proper identification in the system."
+  },
+  {
+    selector: 'input[name="username"]',
+    title: "Username",
+    category: "advanced",
+    purpose: "A unique username gives each cashier a distinct login identity for POS access and activity tracking.",
+    how_to_use: [
+      "Choose a memorable yet unique username for the cashier",
+      "Avoid common names that may conflict with existing accounts",
+      "Inform the cashier of their assigned username for future logins"
+    ],
+    description: "Create a unique username for the cashier account.",
+    instruction: "Enter a unique username used for login. Must be unique."
+  },
+  {
+    selector: 'input[name="password"]',
+    title: "Password",
+    category: "advanced",
+    purpose: "A strong initial password protects the cashier account from unauthorized access and misuse of the POS.",
+    how_to_use: [
+      "Enter a secure password with a mix of letters, numbers, and symbols",
+      "Communicate the password to the cashier through a secure channel",
+      "Encourage the cashier to change it on first login if the system allows"
+    ],
+    description: "Set the initial password for the cashier account.",
+    instruction: "Enter a secure password with mixed characters."
+  },
+  {
+    selector: 'input[name="security_question"]',
+    title: "Security Question",
+    category: "advanced",
+    purpose: "A security question provides a fallback recovery path if the cashier forgets their password.",
+    how_to_use: [
+      "Review the default question or customize it for the specific cashier",
+      "Select a question only the cashier can answer confidently",
+      "Ensure the question is clear and easy to recall under pressure"
+    ],
+    description: "Set a security question for password recovery.",
+    instruction: "A default question is provided. The cashier needs this to recover their password."
+  },
+  {
+    selector: 'input[name="security_answer"]',
+    title: "Security Answer",
+    category: "advanced",
+    purpose: "The security answer locks the password recovery flow so only the legitimate cashier can regain access.",
+    how_to_use: [
+      "Enter a concise answer that the cashier will remember exactly",
+      "Confirm spelling and capitalization with the cashier",
+      "Do not share this answer with other staff members"
+    ],
+    description: "Set the answer to the security question.",
+    instruction: "Enter the answer. Make sure the cashier knows it."
+  },
+  {
+    selector: 'button[type="submit"]',
+    title: "Register Cashier",
+    category: "advanced",
+    purpose: "Submitting the form creates the cashier account and grants POS access immediately.",
+    how_to_use: [
+      "Verify all fields are filled accurately before submitting",
+      "Click Register Cashier to create the account",
+      "Confirm the new cashier can log in successfully with the provided credentials"
+    ],
+    description: "Create the new cashier account.",
+    instruction: "Click this button after filling all required fields."
+  }
+];
+window.HELP_TOUR_STEPS = HELP_TOUR_STEPS;
+window.HELP_TOUR_STORAGE_KEY = "helptour_register_cashier";
+</script>
+<script src="/static/js/help-tour.js"></script>
 {% endblock %}

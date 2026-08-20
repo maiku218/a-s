@@ -10,11 +10,20 @@
             <h1 class="page-title">All Products</h1>
             <p class="page-subtitle">View and manage all products in inventory</p>
         </div>
-        <a href="{{ url_for('add_product') }}" class="btn btn-primary">+ Add Product</a>
+        <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+            <form method="GET" action="{{ url_for('all_products') }}" style="display: flex; gap: 8px;">
+                <input type="text" name="search" placeholder="Search by name or barcode..." value="{{ search or '' }}" class="form-input" style="min-width: 220px;">
+                <button type="submit" class="btn btn-primary">Search</button>
+                {% if search %}
+                <a href="{{ url_for('all_products') }}" class="btn btn-secondary">Clear</a>
+                {% endif %}
+            </form>
+            <a href="{{ url_for('add_product') }}" class="btn btn-primary" id="tour-add-product-btn">+ Add Product</a>
+        </div>
     </div>
 
     {% if products %}
-    <div class="table-container" style="margin-top: 20px;">
+    <div class="table-container" id="tour-products-table" style="margin-top: 20px;">
         <table>
             <thead>
                 <tr>
@@ -47,12 +56,31 @@
                     <span class="badge badge-success">{{ p[6] }}</span>
                     {% endif %}
                 </td>
-                <td>{{ p[7] or '-' }}</td>
                 <td>
-                    <button onclick="openEditModal({{ p[0] }})" class="btn btn-primary btn-sm" style="margin-right: 6px;">Edit</button>
-                    <form method="POST" action="{{ url_for('delete_product', id=p[0]) }}" style="display: inline;">
-                        <button type="submit" class="btn btn-danger btn-sm">Delete</button>
-                    </form>
+                    {% set expiry_date = p[7] %}
+                    {% if expiry_date %}
+                        {% set days_left = (expiry_date - today).days %}
+                        {% if days_left < 0 %}
+                        <span class="badge badge-danger">EXPIRED</span>
+                        {% elif days_left <= 7 %}
+                        <span class="badge badge-danger">{{ days_left }}d left</span>
+                        {% elif days_left <= 30 %}
+                        <span class="badge badge-warning">{{ days_left }}d left</span>
+                        {% else %}
+                        <span class="badge badge-success">{{ expiry_date }}</span>
+                        {% endif %}
+                    {% else %}
+                        <span class="badge badge-secondary">-</span>
+                    {% endif %}
+                </td>
+                <td>
+                    <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                        <button onclick="openEditModal({{ p[0] }})" class="btn btn-primary btn-sm" id="tour-edit-btn-{{ p[0] }}">Edit</button>
+                        <form method="POST" action="{{ url_for('delete_product', id=p[0]) }}" style="display: inline;">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit" class="btn btn-danger btn-sm">Delete</button>
+                        </form>
+                    </div>
                 </td>
             </tr>
             {% endfor %}
@@ -73,6 +101,7 @@
         </div>
         <div class="modal-body">
             <form id="editForm">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="id" id="editId">
                 <div class="form-group" style="margin-bottom: 16px;">
                     <label class="form-label">Barcode</label>
@@ -145,8 +174,96 @@ function saveEdit() {
 {% with messages = get_flashed_messages(with_categories=true) %}
   {% if messages %}
     {% for category, message in messages %}
-      <script>Swal.fire({ icon: '{{ "success" if category == "success" else "error" }}', title: '{{ message }}', showConfirmButton: false, timer: 2500, toast: true, position: 'top-end' });</script>
+      <script>Swal.fire({ icon: '{{ "success" if category == "success" else "error" }}', title: {{ message | tojson }}, showConfirmButton: false, timer: 2500, toast: true, position: 'top-end' });</script>
     {% endfor %}
   {% endif %}
 {% endwith %}
+{% endblock %}
+
+{% block help_tour %}
+<script>
+const HELP_TOUR_STEPS = [
+  {
+    selector: "#tour-nav-all-products",
+    title: "All Products",
+    category: "core-features",
+    purpose: "The product catalog is the backbone of inventory control, giving you full visibility into every item in stock.",
+    how_to_use: [
+      "Browse the full product table sorted by ID, name, barcode, and category",
+      "Use the search bar to quickly locate products by name or barcode",
+      "Click Edit to update details or Delete to remove products permanently"
+    ],
+    description: "View and manage every product in your inventory from this page.",
+    instruction: "Browse products by ID, name, barcode, category, price, stock, and expiry date."
+  },
+  {
+    selector: 'form[method="GET"]',
+    title: "Search Bar",
+    category: "core-features",
+    purpose: "Fast search eliminates the need to scroll through long product lists when looking for specific items.",
+    how_to_use: [
+      "Type a product name or barcode into the search field",
+      "Press Enter or click the Search button to filter results",
+      "Click Clear to reset the table and show all products again"
+    ],
+    description: "Quickly find products by name or barcode.",
+    instruction: "Type a keyword and press Enter or click Search to filter the table."
+  },
+  {
+    selector: "#tour-add-product-btn",
+    title: "Add Product",
+    category: "core-features",
+    purpose: "Registering new stock keeps the inventory up to date so the POS and alert systems work correctly.",
+    how_to_use: [
+      "Click the + Add Product button to open the registration form",
+      "Fill in barcode, name, category, price, stock, and expiration date",
+      "Click Register Product to save the new item to inventory"
+    ],
+    description: "Register a new medicine or supply to your inventory.",
+    instruction: "Click this button to open the add product form."
+  },
+  {
+    selector: "#tour-products-table table",
+    title: "Products Table",
+    category: "core-features",
+    purpose: "The product table gives you a real-time snapshot of stock health across your entire catalog.",
+    how_to_use: [
+      "Review stock badges to identify items that are out of stock or running low",
+      "Check expiry badges to catch products approaching or past expiration",
+      "Use category and stock columns to plan reorders and removals"
+    ],
+    description: "Browse all products with current stock levels and expiry dates.",
+    instruction: "Low stock items are highlighted with color-coded badges."
+  },
+  {
+    selector: ".btn-primary.btn-sm",
+    title: "Edit Product",
+    category: "core-features",
+    purpose: "Quick edits let you correct pricing, stock counts, or product details without leaving the inventory page.",
+    how_to_use: [
+      "Click the Edit button on any product row to open the edit modal",
+      "Update fields such as price, stock, category, or expiration date",
+      "Click Save to apply changes and see them reflected immediately in the table"
+    ],
+    description: "Modify existing product details.",
+    instruction: "Click Edit to open the edit modal and update any field."
+  },
+  {
+    selector: ".btn-danger.btn-sm",
+    title: "Delete Product",
+    category: "core-features",
+    purpose: "Removing discontinued or invalid products keeps your catalog clean and prevents checkout errors.",
+    how_to_use: [
+      "Click the Delete button on the product row you want to remove",
+      "Confirm the deletion when prompted to prevent accidental removal",
+      "Verify the product disappears from the table and is no longer searchable"
+    ],
+    description: "Remove a product from inventory permanently.",
+    instruction: "Click Delete and confirm to remove the product and its history."
+  }
+];
+window.HELP_TOUR_STEPS = HELP_TOUR_STEPS;
+window.HELP_TOUR_STORAGE_KEY = "helptour_all_products";
+</script>
+<script src="/static/js/help-tour.js"></script>
 {% endblock %}

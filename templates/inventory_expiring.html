@@ -5,15 +5,36 @@
 <div class="card">
     <div class="page-header">
         <a href="{{ url_for('admin_dashboard') }}" class="back-link">← Back to Dashboard</a>
-        <h1 class="page-title">Expiring Products</h1>
-        <p class="page-subtitle">Products expiring within 30 days.</p>
+        <h1 class="page-title">Expiration Alerts</h1>
+        <p class="page-subtitle">
+            {% if level == 'expired' %}Products that have already expired.
+            {% elif level == 'critical' %}Products expiring within 7 days.
+            {% elif level == 'warning' %}Products expiring within 8-30 days.
+            {% else %}Products expiring within 30 days.
+            {% endif %}
+        </p>
+    </div>
+
+    <div style="margin-bottom: 20px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+        <label class="form-label" style="margin-right: 10px;">Filter by Status:</label>
+        <a href="{{ url_for('expiring_medical', category=category_filter or 'all', level=level or 'all') }}" class="btn btn-sm {% if tab == 'active' or not tab %}btn-primary{% else %}btn-secondary{% endif %}" style="margin-right: 6px;">Active</a>
+        <a href="{{ url_for('expiring_medical', category=category_filter or 'all', level=level or 'all', tab='acknowledged') }}" class="btn btn-sm {% if tab == 'acknowledged' %}btn-primary{% else %}btn-secondary{% endif %}" style="margin-right: 6px;">Acknowledged</a>
+        <a href="{{ url_for('expiring_medical', category=category_filter or 'all', level=level or 'all', tab='dismissed') }}" class="btn btn-sm {% if tab == 'dismissed' %}btn-primary{% else %}btn-secondary{% endif %}">Dismissed</a>
+    </div>
+
+    <div style="margin-bottom: 20px;">
+        <label class="form-label" style="margin-right: 10px;">Filter by Level:</label>
+        <a href="{{ url_for('expiring_medical', category=category_filter or 'all', level='all', tab=tab or 'active') }}" class="btn btn-sm {% if level == 'all' or not level %}btn-primary{% else %}btn-secondary{% endif %}" style="margin-right: 6px;">All</a>
+        <a href="{{ url_for('expiring_medical', category=category_filter or 'all', level='expired', tab=tab or 'active') }}" class="btn btn-sm {% if level == 'expired' %}btn-primary{% else %}btn-secondary{% endif %}" style="margin-right: 6px;">Expired</a>
+        <a href="{{ url_for('expiring_medical', category=category_filter or 'all', level='critical', tab=tab or 'active') }}" class="btn btn-sm {% if level == 'critical' %}btn-primary{% else %}btn-secondary{% endif %}" style="margin-right: 6px;">Critical (7 days)</a>
+        <a href="{{ url_for('expiring_medical', category=category_filter or 'all', level='warning', tab=tab or 'active') }}" class="btn btn-sm {% if level == 'warning' %}btn-primary{% else %}btn-secondary{% endif %}">Warning (30 days)</a>
     </div>
 
     <div style="margin-bottom: 20px;">
         <label class="form-label" style="margin-right: 10px;">Filter by Category:</label>
-        <a href="{{ url_for('expiring_medical', category='all') }}" class="btn btn-sm {% if category_filter == 'all' or not category_filter %}btn-primary{% else %}btn-secondary{% endif %}" style="margin-right: 6px;">All</a>
-        <a href="{{ url_for('expiring_medical', category='Medical') }}" class="btn btn-sm {% if category_filter == 'Medical' %}btn-primary{% else %}btn-secondary{% endif %}" style="margin-right: 6px;">Medical</a>
-        <a href="{{ url_for('expiring_medical', category='Non-Medical') }}" class="btn btn-sm {% if category_filter == 'Non-Medical' %}btn-primary{% else %}btn-secondary{% endif %}">Non-Medical</a>
+        <a href="{{ url_for('expiring_medical', category='all', level=level or 'all', tab=tab or 'active') }}" class="btn btn-sm {% if category_filter == 'all' or not category_filter %}btn-primary{% else %}btn-secondary{% endif %}" style="margin-right: 6px;">All</a>
+        <a href="{{ url_for('expiring_medical', category='Medical', level=level or 'all', tab=tab or 'active') }}" class="btn btn-sm {% if category_filter == 'Medical' %}btn-primary{% else %}btn-secondary{% endif %}" style="margin-right: 6px;">Medical</a>
+        <a href="{{ url_for('expiring_medical', category='Non-Medical', level=level or 'all', tab=tab or 'active') }}" class="btn btn-sm {% if category_filter == 'Non-Medical' %}btn-primary{% else %}btn-secondary{% endif %}">Non-Medical</a>
     </div>
 
     {% if products %}
@@ -26,7 +47,8 @@
                     <th>Barcode</th>
                     <th>Price</th>
                     <th>Expiration Date</th>
-                    <th>Status</th>
+                    <th>Alert Status</th>
+                    <th>Actions</th>
                 </tr>
             </thead>
             <tbody>
@@ -44,10 +66,22 @@
                 <td>₱{{ p[5] }}</td>
                 <td>{{ p[7] }}</td>
                 <td>
-                    {% if p[7] and p[7] <= now() %}
-                    <span class="badge badge-danger">EXPIRED</span>
+                    {% if tab == 'acknowledged' %}
+                    <span class="badge badge-success">Acknowledged</span>
+                    {% elif tab == 'dismissed' %}
+                    <span class="badge badge-secondary">Dismissed</span>
                     {% else %}
-                    <span class="badge badge-warning">Expiring Soon</span>
+                    <span class="badge badge-danger">Active</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if tab != 'acknowledged' and tab != 'dismissed' %}
+                    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                        <button class="btn btn-sm btn-primary" onclick="acknowledgeAlert('expiring_medical', {{ p[0] }})">Acknowledge</button>
+                        <button class="btn btn-sm btn-danger" onclick="dismissAlert('expiring_medical', {{ p[0] }})">Dismiss</button>
+                    </div>
+                    {% else %}
+                    <span style="color: var(--text-muted); font-size: 13px;">—</span>
                     {% endif %}
                 </td>
             </tr>
@@ -56,7 +90,84 @@
         </table>
     </div>
     {% else %}
-    <p style="color: var(--text-secondary); margin-top: 20px;">No expiring products found.</p>
+    <div class="empty-state">
+        <div class="empty-state-icon">📦</div>
+        <div class="empty-state-title">No expiring products found</div>
+        <div class="empty-state-text">All products are within date range or no alerts match the selected filter.</div>
+    </div>
     {% endif %}
 </div>
+
+<script>
+function acknowledgeAlert(type, productId) {
+    fetch('/api/alert/acknowledge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').getAttribute('content') },
+        body: JSON.stringify({ alert_type: type, product_id: productId })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            location.reload();
+        } else {
+            alert(data.message);
+        }
+    });
+}
+
+function dismissAlert(type, productId) {
+    const reason = prompt('Enter reason for dismissing this alert:');
+    if (reason === null) return;
+    if (!reason.trim()) { alert('Reason is required'); return; }
+    fetch('/api/alert/dismiss', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').getAttribute('content') },
+        body: JSON.stringify({ alert_type: type, product_id: productId, reason: reason.trim() })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            location.reload();
+        } else {
+            alert(data.message);
+        }
+    });
+}
+</script>
+{% endblock %}
+
+{% block help_tour %}
+<script>
+const HELP_TOUR_STEPS = [
+  {
+    selector: "label[style*='margin-right: 10px']",
+    title: "Level Filter",
+    category: "core-features",
+    purpose: "Filtering by severity level helps you triage alerts and focus on the most urgent expirations first.",
+    how_to_use: [
+      "Choose Expired to see products already past their expiration date",
+      "Choose Critical for items expiring within 7 days",
+      "Choose Warning for items expiring within 8 to 30 days"
+    ],
+    description: "Filter expiration alerts by severity level.",
+    instruction: "Choose All, Expired, Critical, or Warning to filter the list."
+  },
+  {
+    selector: ".table-container table",
+    title: "Expiration Alerts",
+    category: "core-features",
+    purpose: "This view lets you proactively manage products approaching expiration to avoid waste and compliance issues.",
+    how_to_use: [
+      "Review product names, categories, barcodes, prices, and days remaining",
+      "Use Acknowledge to flag items you are planning to discount or remove",
+      "Use Dismiss with a reason for alerts that do not require action"
+    ],
+    description: "View products organized by expiration severity.",
+    instruction: "Check product names, categories, barcodes, prices, expiration dates, and days remaining. Use Acknowledge or Dismiss buttons to manage alerts."
+  }
+];
+window.HELP_TOUR_STEPS = HELP_TOUR_STEPS;
+window.HELP_TOUR_STORAGE_KEY = "helptour_expiring";
+</script>
+<script src="/static/js/help-tour.js"></script>
 {% endblock %}
