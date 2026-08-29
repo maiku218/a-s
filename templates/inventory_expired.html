@@ -33,7 +33,7 @@
                     <th>Barcode</th>
                     <th>Price</th>
                     <th>Expiration Date</th>
-                    <th>Alert Status</th>
+<th>Alert Status</th>
                     <th>Actions</th>
                 </tr>
             </thead>
@@ -52,7 +52,7 @@
                 <td>₱{{ p[5] }}</td>
                 <td>{{ p[7] }}</td>
                 <td>
-                    {% if tab == 'acknowledged' %}
+{% if tab == 'acknowledged' %}
                     <span class="badge badge-success">Acknowledged</span>
                     {% elif tab == 'dismissed' %}
                     <span class="badge badge-secondary">Dismissed</span>
@@ -76,7 +76,7 @@
         </table>
     </div>
     {% else %}
-    <div class="empty-state">
+<div class="empty-state">
         <div class="empty-state-icon">📦</div>
         <div class="empty-state-title">No expired products found</div>
         <div class="empty-state-text">All products are within date range or no alerts match the selected filter.</div>

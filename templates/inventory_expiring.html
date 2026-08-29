@@ -47,7 +47,7 @@
                     <th>Barcode</th>
                     <th>Price</th>
                     <th>Expiration Date</th>
-                    <th>Alert Status</th>
+<th>Alert Status</th>
                     <th>Actions</th>
                 </tr>
             </thead>
@@ -66,7 +66,7 @@
                 <td>₱{{ p[5] }}</td>
                 <td>{{ p[7] }}</td>
                 <td>
-                    {% if tab == 'acknowledged' %}
+{% if tab == 'acknowledged' %}
                     <span class="badge badge-success">Acknowledged</span>
                     {% elif tab == 'dismissed' %}
                     <span class="badge badge-secondary">Dismissed</span>
@@ -76,7 +76,7 @@
                 </td>
                 <td>
                     {% if tab != 'acknowledged' and tab != 'dismissed' %}
-                    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+<div style="display: flex; gap: 8px; flex-wrap: wrap;">
                         <button class="btn btn-sm btn-primary" onclick="acknowledgeAlert('expiring_medical', {{ p[0] }})">Acknowledge</button>
                         <button class="btn btn-sm btn-danger" onclick="dismissAlert('expiring_medical', {{ p[0] }})">Dismiss</button>
                     </div>
@@ -90,7 +90,7 @@
         </table>
     </div>
     {% else %}
-    <div class="empty-state">
+<div class="empty-state">
         <div class="empty-state-icon">📦</div>
         <div class="empty-state-title">No expiring products found</div>
         <div class="empty-state-text">All products are within date range or no alerts match the selected filter.</div>

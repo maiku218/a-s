@@ -7,38 +7,37 @@
             Create a backup of your pharmacy database or restore from a previous backup file.
         </p>
 
-        <div class="backup-grid" style="display: grid; grid-template-columns: 1fr; gap: 20px;">
-            <!-- Backup Section -->
-            <div class="backup-card" style="background: white; border: 1px solid #e5e7eb; border-radius: 12px; padding: 24px;">
-                <h2 style="margin: 0 0 15px 0; font-size: 18px; color: var(--text);">Create Backup</h2>
-                <p style="color: var(--text-secondary); font-size: 13px; margin-bottom: 20px;">
-                    Download a complete SQL dump of the <strong>pharmacon</strong> database. This includes all tables, data, and settings.
-                </p>
-                <form method="POST" action="/backup_database">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <button type="submit" class="btn btn-primary" style="width: 100%; justify-content: center;">
-                        Download Backup (.sql)
-                    </button>
-                </form>
-            </div>
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 25px;">
+        <!-- Backup Section -->
+        <div style="padding: 25px; background: #f8fafc; border-radius: 12px; border: 1px solid #e2e8f0;">
+            <h2 style="margin: 0 0 15px 0; font-size: 18px; color: #1e1e2f;">Create Backup</h2>
+            <p style="color: #666; font-size: 13px; margin-bottom: 20px;">
+                Download a complete SQL dump of the <strong>pharmacon</strong> database. This includes all tables, data, and settings.
+            </p>
+            <form method="POST" action="/backup_database">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn btn-primary" style="width: 100%; justify-content: center;">
+                    Download Backup (.sql)
+                </button>
+            </form>
+        </div>
 
-            <!-- Restore Section -->
-            <div class="backup-card" style="background: white; border: 1px solid #e5e7eb; border-radius: 12px; padding: 24px;">
-                <h2 style="margin: 0 0 15px 0; font-size: 18px; color: var(--text);">Restore Database</h2>
-                <p style="color: var(--text-secondary); font-size: 13px; margin-bottom: 20px;">
-                    Upload a previously saved <strong>.sql</strong> backup file. <strong style="color: var(--danger);">Warning:</strong> This will replace all current data.
-                </p>
-                <form method="POST" action="/restore_database" enctype="multipart/form-data">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <div class="form-group" style="margin-bottom: 15px;">
-                        <input type="file" name="backup_file" accept=".sql" required 
-                               class="form-input" style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: var(--radius);">
-                    </div>
-                    <button type="submit" class="btn btn-danger" style="width: 100%; justify-content: center;" onclick="return confirm('Are you sure? This will overwrite all current data.')">
-                        Upload &amp; Restore
-                    </button>
-                </form>
-            </div>
+        <!-- Restore Section -->
+        <div style="padding: 25px; background: #f8fafc; border-radius: 12px; border: 1px solid #e2e8f0;">
+            <h2 style="margin: 0 0 15px 0; font-size: 18px; color: #1e1e2f;">Restore Database</h2>
+            <p style="color: #666; font-size: 13px; margin-bottom: 20px;">
+                Upload a previously saved <strong>.sql</strong> backup file. <strong style="color: #dc2626;">Warning:</strong> This will replace all current data.
+            </p>
+            <form method="POST" action="/restore_database" enctype="multipart/form-data">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="form-group" style="margin-bottom: 15px;">
+                    <input type="file" name="backup_file" accept=".sql" required 
+                           class="form-input" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px;">
+                </div>
+                <button type="submit" class="btn btn-danger" style="width: 100%; justify-content: center;" onclick="return confirm('Are you sure? This will overwrite all current data.')">
+                    Upload &amp; Restore
+                </button>
+            </form>
         </div>
 
     {% with messages = get_flashed_messages(with_categories=true) %}

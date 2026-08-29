@@ -257,8 +257,8 @@
             Dashboard
         </div>
         <div id="dash-menu" style="display: {% if active_main == 'dashboard' or not active_main or active_main == 'admin' %}block{% else %}none{% endif %}; padding-left: 36px;">
-            <div class="nav-item {% if active_sub == 'monitoring' or active_main == 'admin' %}active{% endif %} nav-sub-item" id="tour-nav-activity-monitor"><a href="{{ url_for('admin_dashboard') }}" style="color: inherit; text-decoration: none;">Activity Monitor</a></div>
-            <div class="nav-item {% if active_sub == 'cashier_logs' %}active{% endif %} nav-sub-item" id="tour-nav-cashier-logs"><a href="{{ url_for('cashier_logs') }}" style="color: inherit; text-decoration: none;">Cashier Logs</a></div>
+<div class="nav-item {% if active_sub == 'monitoring' or active_main == 'admin' %}active{% endif %} nav-sub-item" id="tour-nav-activity-monitor" style="padding: 8px 0;"><a href="{{ url_for('admin_dashboard') }}" style="color: inherit; text-decoration: none;">Activity Monitor</a></div>
+            <div class="nav-item {% if active_sub == 'cashier_logs' %}active{% endif %} nav-sub-item" id="tour-nav-cashier-logs" style="padding: 8px 0;"><a href="{{ url_for('cashier_logs') }}" style="color: inherit; text-decoration: none;">Cashier Logs</a></div>
         </div>
 
         <div class="nav-section">Inventory</div>
@@ -267,8 +267,8 @@
             Inventory
         </div>
         <div id="inventory-menu" style="display: {% if active_main == 'inventory' %}block{% else %}none{% endif %}; padding-left: 36px;">
-            <div class="nav-item {% if active_sub == 'all_products' %}active{% endif %} nav-sub-item" id="tour-nav-all-products"><a href="{{ url_for('all_products') }}" style="color: inherit; text-decoration: none;">All Products</a></div>
-            <div class="nav-item {% if active_sub == 'add_product' %}active{% endif %} nav-sub-item" id="tour-nav-add-product"><a href="{{ url_for('add_product') }}" style="color: inherit; text-decoration: none;">Add Product</a></div>
+<div class="nav-item {% if active_sub == 'all_products' %}active{% endif %} nav-sub-item" id="tour-nav-all-products" style="padding: 8px 0;"><a href="{{ url_for('all_products') }}" style="color: inherit; text-decoration: none;">All Products</a></div>
+            <div class="nav-item {% if active_sub == 'add_product' %}active{% endif %} nav-sub-item" id="tour-nav-add-product" style="padding: 8px 0;"><a href="{{ url_for('add_product') }}" style="color: inherit; text-decoration: none;">Add Product</a></div>
         </div>
 
         <div class="nav-section">Sales</div>
@@ -277,9 +277,9 @@
             Sales Reports
         </div>
         <div id="sales-menu" style="display: {% if active_main == 'sales' %}block{% else %}none{% endif %}; padding-left: 36px;">
-            <div class="nav-item {% if active_sub == 'sales_dashboard' %}active{% endif %} nav-sub-item" id="tour-nav-sales-dashboard"><a href="{{ url_for('sales_dashboard') }}" style="color: inherit; text-decoration: none;">Sales Dashboard</a></div>
-            <div class="nav-item {% if active_sub == 'medical_sales' %}active{% endif %} nav-sub-item" id="tour-nav-medical-sales"><a href="{{ url_for('medical_sales') }}" style="color: inherit; text-decoration: none;">Medical Sales</a></div>
-            <div class="nav-item {% if active_sub == 'non_medical_sales' %}active{% endif %} nav-sub-item" id="tour-nav-non-medical-sales"><a href="{{ url_for('non_medical_sales') }}" style="color: inherit; text-decoration: none;">Non-Medical Sales</a></div>
+<div class="nav-item {% if active_sub == 'sales_dashboard' %}active{% endif %} nav-sub-item" id="tour-nav-sales-dashboard" style="padding: 8px 0;"><a href="{{ url_for('sales_dashboard') }}" style="color: inherit; text-decoration: none;">Sales Dashboard</a></div>
+            <div class="nav-item {% if active_sub == 'medical_sales' %}active{% endif %} nav-sub-item" id="tour-nav-medical-sales" style="padding: 8px 0;"><a href="{{ url_for('medical_sales') }}" style="color: inherit; text-decoration: none;">Medical Sales</a></div>
+            <div class="nav-item {% if active_sub == 'non_medical_sales' %}active{% endif %} nav-sub-item" id="tour-nav-non-medical-sales" style="padding: 8px 0;"><a href="{{ url_for('non_medical_sales') }}" style="color: inherit; text-decoration: none;">Non-Medical Sales</a></div>
         </div>
 
         <div class="nav-section">Alerts</div>
@@ -288,11 +288,11 @@
             Alerts
         </div>
         <div id="alerts-menu" style="display: {% if active_main == 'alerts' %}block{% else %}none{% endif %}; padding-left: 36px;">
-            <div class="nav-item {% if active_sub == 'out_of_stock' %}active{% endif %} nav-sub-item" id="tour-nav-out-of-stock"><a href="{{ url_for('out_of_stock') }}" style="color: inherit; text-decoration: none;">Out of Stock</a></div>
-            <div class="nav-item {% if active_sub == 'low_stock' %}active{% endif %} nav-sub-item" id="tour-nav-low-stock"><a href="{{ url_for('low_stock') }}" style="color: inherit; text-decoration: none;">Low Stock</a></div>
-            <div class="nav-item {% if active_sub == 'expired_products' %}active{% endif %} nav-sub-item" id="tour-nav-expired"><a href="{{ url_for('expired_products') }}" style="color: inherit; text-decoration: none;">Expired Products</a></div>
-            <div class="nav-item {% if active_sub == 'expiring_medical' %}active{% endif %} nav-sub-item" id="tour-nav-expiring"><a href="{{ url_for('expiring_medical') }}" style="color: inherit; text-decoration: none;">Expiring Products</a></div>
-            <div class="nav-item {% if active_sub == 'alert_history' %}active{% endif %} nav-sub-item" id="tour-nav-alert-history"><a href="{{ url_for('alert_history') }}" style="color: inherit; text-decoration: none;">Alert History</a></div>
+<div class="nav-item {% if active_sub == 'out_of_stock' %}active{% endif %} nav-sub-item" id="tour-nav-out-of-stock" style="padding: 8px 0;"><a href="{{ url_for('out_of_stock') }}" style="color: inherit; text-decoration: none;">Out of Stock</a></div>
+            <div class="nav-item {% if active_sub == 'low_stock' %}active{% endif %} nav-sub-item" id="tour-nav-low-stock" style="padding: 8px 0;"><a href="{{ url_for('low_stock') }}" style="color: inherit; text-decoration: none;">Low Stock</a></div>
+            <div class="nav-item {% if active_sub == 'expired_products' %}active{% endif %} nav-sub-item" id="tour-nav-expired" style="padding: 8px 0;"><a href="{{ url_for('expired_products') }}" style="color: inherit; text-decoration: none;">Expired Products</a></div>
+            <div class="nav-item {% if active_sub == 'expiring_medical' %}active{% endif %} nav-sub-item" id="tour-nav-expiring" style="padding: 8px 0;"><a href="{{ url_for('expiring_medical') }}" style="color: inherit; text-decoration: none;">Expiring Products</a></div>
+            <div class="nav-item {% if active_sub == 'alert_history' %}active{% endif %} nav-sub-item" id="tour-nav-alert-history" style="padding: 8px 0;"><a href="{{ url_for('alert_history') }}" style="color: inherit; text-decoration: none;">Alert History</a></div>
         </div>
 
         <div class="nav-section">Management</div>
@@ -301,11 +301,11 @@
             Management
         </div>
         <div id="admin-menu" style="display: {% if active_main == 'management' %}block{% else %}none{% endif %}; padding-left: 36px;">
-            <div class="nav-item {% if active_sub == 'register_cashier' %}active{% endif %} nav-sub-item" id="tour-nav-register-cashier"><a href="{{ url_for('register_cashier') }}" style="color: inherit; text-decoration: none;">Register Cashier</a></div>
-            <div class="nav-item {% if active_sub == 'delete_cashier' %}active{% endif %} nav-sub-item" id="tour-nav-manage-staff"><a href="{{ url_for('delete_cashier') }}" style="color: inherit; text-decoration: none;">Manage Staff</a></div>
-            <div class="nav-item {% if active_sub == 'change_admin_password' %}active{% endif %} nav-sub-item" id="tour-nav-security"><a href="{{ url_for('admin_change_password') }}" style="color: inherit; text-decoration: none;">Security Settings</a></div>
-            <div class="nav-item {% if active_sub == 'receipt_customization' %}active{% endif %} nav-sub-item" id="tour-nav-receipt"><a href="/receipt_customization" style="color: inherit; text-decoration: none;">Receipt Customization</a></div>
-            <div class="nav-item {% if active_sub == 'backup_restore' %}active{% endif %} nav-sub-item" id="tour-nav-backup"><a href="/backup_restore" style="color: inherit; text-decoration: none;">Database Backup / Restore</a></div>
+<div class="nav-item {% if active_sub == 'register_cashier' %}active{% endif %} nav-sub-item" id="tour-nav-register-cashier" style="padding: 8px 0;"><a href="{{ url_for('register_cashier') }}" style="color: inherit; text-decoration: none;">Register Cashier</a></div>
+            <div class="nav-item {% if active_sub == 'delete_cashier' %}active{% endif %} nav-sub-item" id="tour-nav-manage-staff" style="padding: 8px 0;"><a href="{{ url_for('delete_cashier') }}" style="color: inherit; text-decoration: none;">Manage Staff</a></div>
+            <div class="nav-item {% if active_sub == 'change_admin_password' %}active{% endif %} nav-sub-item" id="tour-nav-security" style="padding: 8px 0;"><a href="{{ url_for('admin_change_password') }}" style="color: inherit; text-decoration: none;">Security Settings</a></div>
+            <div class="nav-item {% if active_sub == 'receipt_customization' %}active{% endif %} nav-sub-item" id="tour-nav-receipt" style="padding: 8px 0;"><a href="/receipt_customization" style="color: inherit; text-decoration: none;">Receipt Customization</a></div>
+            <div class="nav-item {% if active_sub == 'backup_restore' %}active{% endif %} nav-sub-item" id="tour-nav-backup" style="padding: 8px 0;"><a href="/backup_restore" style="color: inherit; text-decoration: none;">Database Backup / Restore</a></div>
         </div>
     </nav>
     <div class="sidebar-footer">
@@ -451,13 +451,13 @@
                     totalUnread += data.out_of_stock.length;
                     html += '<div class="notification-section"><div class="notification-section-title">Out of Stock (' + data.out_of_stock.length + ')</div>';
                     data.out_of_stock.forEach(item => {
-                        html += `<div class="notification-item low-stock" data-id="${item.id}" data-type="out_of_stock">
-                            <div onclick="window.location.href='/out_of_stock'" class="notification-info">
+`html += `<div class="notification-item low-stock" style="display:flex;justify-content:space-between;align-items:center;" data-id="${item.id}" data-type="out_of_stock">
+                            <div onclick="window.location.href='/out_of_stock'" class="notification-info" style="flex:1;">
                                 <div class="notification-item-title">${item.name}</div>
                                 <div class="notification-item-detail">Stock: ${item.stock} | Barcode: ${item.barcode}</div>
                             </div>
                             <span class="notification-status out-of-stock">OUT OF STOCK</span>
-                            <div class="notification-actions">
+                            <div style="display:flex;gap:4px;">`
                                 <button class="btn btn-sm btn-primary" onclick="acknowledgeNotification('out_of_stock', ${item.id})" title="Acknowledge">Ack</button>
                                 <button class="btn btn-sm btn-danger" onclick="dismissNotification('out_of_stock', ${item.id})" title="Dismiss">Dismiss</button>
                             </div>
@@ -470,13 +470,13 @@
                     totalUnread += data.low_stock.length;
                     html += '<div class="notification-section"><div class="notification-section-title">Low Stock (' + data.low_stock.length + ')</div>';
                     data.low_stock.forEach(item => {
-                        html += `<div class="notification-item low-stock" data-id="${item.id}" data-type="low_stock">
-                            <div onclick="window.location.href='/low_stock'" class="notification-info">
+`html += `<div class="notification-item low-stock" style="display:flex;justify-content:space-between;align-items:center;" data-id="${item.id}" data-type="low_stock">
+                            <div onclick="window.location.href='/low_stock'" class="notification-info" style="flex:1;">
                                 <div class="notification-item-title">${item.name}</div>
                                 <div class="notification-item-detail">Stock: ${item.stock} | Barcode: ${item.barcode}</div>
                             </div>
                             <span class="notification-status low">LOW</span>
-                            <div class="notification-actions">
+                            <div style="display:flex;gap:4px;">`
                                 <button class="btn btn-sm btn-primary" onclick="acknowledgeNotification('low_stock', ${item.id})" title="Acknowledge">Ack</button>
                                 <button class="btn btn-sm btn-danger" onclick="dismissNotification('low_stock', ${item.id})" title="Dismiss">Dismiss</button>
                             </div>
@@ -489,13 +489,13 @@
                     totalUnread += data.expired.length;
                     html += '<div class="notification-section"><div class="notification-section-title">Expired (' + data.expired.length + ')</div>';
                     data.expired.forEach(item => {
-                        html += `<div class="notification-item expiring" data-id="${item.id}" data-type="expired">
-                            <div onclick="window.location.href='/expired_products'" class="notification-info">
+`html += `<div class="notification-item expiring" style="display:flex;justify-content:space-between;align-items:center;" data-id="${item.id}" data-type="expired">
+                            <div onclick="window.location.href='/expired_products'" class="notification-info" style="flex:1;">
                                 <div class="notification-item-title">${item.name}</div>
                                 <div class="notification-item-detail">Expired: ${item.expiry} | Barcode: ${item.barcode}</div>
                             </div>
                             <span class="notification-status danger">EXPIRED</span>
-                            <div class="notification-actions">
+                            <div style="display:flex;gap:4px;">`
                                 <button class="btn btn-sm btn-primary" onclick="acknowledgeNotification('expired', ${item.id})" title="Acknowledge">Ack</button>
                                 <button class="btn btn-sm btn-danger" onclick="dismissNotification('expired', ${item.id})" title="Dismiss">Dismiss</button>
                             </div>
@@ -508,13 +508,13 @@
                     totalUnread += data.expiring_critical.length;
                     html += '<div class="notification-section"><div class="notification-section-title">Critical Expiring (' + data.expiring_critical.length + ')</div>';
                     data.expiring_critical.forEach(item => {
-                        html += `<div class="notification-item expiring" data-id="${item.id}" data-type="expiring_critical">
-                            <div onclick="window.location.href='/expiring_medical?level=critical'" class="notification-info">
+`html += `<div class="notification-item expiring" style="display:flex;justify-content:space-between;align-items:center;" data-id="${item.id}" data-type="expiring_critical">
+                            <div onclick="window.location.href='/expiring_medical?level=critical'" class="notification-info" style="flex:1;">
                                 <div class="notification-item-title">${item.name}</div>
                                 <div class="notification-item-detail">Expires: ${item.expiry} (${item.days_left} days) | Barcode: ${item.barcode}</div>
                             </div>
                             <span class="notification-status warning">CRITICAL</span>
-                            <div class="notification-actions">
+                            <div style="display:flex;gap:4px;">`
                                 <button class="btn btn-sm btn-primary" onclick="acknowledgeNotification('expiring_critical', ${item.id})" title="Acknowledge">Ack</button>
                                 <button class="btn btn-sm btn-danger" onclick="dismissNotification('expiring_critical', ${item.id})" title="Dismiss">Dismiss</button>
                             </div>
@@ -527,13 +527,13 @@
                     totalUnread += data.expiring_warning.length;
                     html += '<div class="notification-section"><div class="notification-section-title">Expiring Warning (' + data.expiring_warning.length + ')</div>';
                     data.expiring_warning.forEach(item => {
-                        html += `<div class="notification-item expiring" data-id="${item.id}" data-type="expiring_warning">
-                            <div onclick="window.location.href='/expiring_medical?level=warning'" class="notification-info">
+`html += `<div class="notification-item expiring" style="display:flex;justify-content:space-between;align-items:center;" data-id="${item.id}" data-type="expiring_warning">
+                            <div onclick="window.location.href='/expiring_medical?level=warning'" class="notification-info" style="flex:1;">
                                 <div class="notification-item-title">${item.name}</div>
                                 <div class="notification-item-detail">Expires: ${item.expiry} (${item.days_left} days) | Barcode: ${item.barcode}</div>
                             </div>
                             <span class="notification-status warning">WARNING</span>
-                            <div class="notification-actions">
+                            <div style="display:flex;gap:4px;">`
                                 <button class="btn btn-sm btn-primary" onclick="acknowledgeNotification('expiring_warning', ${item.id})" title="Acknowledge">Ack</button>
                                 <button class="btn btn-sm btn-danger" onclick="dismissNotification('expiring_warning', ${item.id})" title="Dismiss">Dismiss</button>
                             </div>
