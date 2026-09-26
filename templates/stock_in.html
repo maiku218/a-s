@@ -1,0 +1,133 @@
+{% extends 'admin_dashboard.html' %}
+{% block page_title %}Stock Management{% endblock %}
+
+{% block content %}
+<div class="card" style="max-width: 700px; margin: 0 auto;">
+    <div class="page-header">
+        <a href="{{ url_for('all_products') }}" class="back-link">← Back to Inventory</a>
+        <h1 class="page-title">Stock Management</h1>
+        <p class="page-subtitle">Add or remove stock from products</p>
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <script>
+            var flashIcon = '{{ "success" if category == "success" else "error" }}';
+            var flashTitle = {{ message | tojson }};
+            Swal.fire({ icon: flashIcon, title: flashTitle, showConfirmButton: false, timer: 2500, toast: true, position: 'top-end' });
+          </script>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <form action="{{ url_for('stock_in') }}" method="POST" id="stockInForm">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+        <div class="form-group">
+            <label class="form-label">Product</label>
+            <select name="product_id" id="productSelect" required class="form-input">
+                <option value="" disabled selected>Select a product</option>
+                {% for p in products %}
+                <option value="{{ p[0] }}">{{ p[1] }} ({{ p[2] }}) — Current Stock: {{ p[3] }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label class="form-label">Transaction Type</label>
+            <select name="transaction_type" id="transactionType" required class="form-input" onchange="updateType()">
+                <option value="IN">Stock In (Add)</option>
+                <option value="OUT">Stock Out (Remove)</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label class="form-label">Quantity</label>
+            <input type="number" name="quantity" id="quantityInput" required min="1" placeholder="Enter quantity" class="form-input" oninput="updatePreview()">
+        </div>
+
+        <div class="form-group">
+            <label class="form-label">Reason</label>
+            <select name="reason" id="reasonSelect" class="form-input">
+                <option value="Stock Addition" id="in-reasons">Stock Addition</option>
+                <option value="Restock">Restock</option>
+                <option value="Shipment Received">Shipment Received</option>
+                <option value="Return from Customer">Return from Customer</option>
+                <option value="Transfer In">Transfer In</option>
+                <option value="Inventory Adjustment">Inventory Adjustment</option>
+                <option value="Sold" id="out-reasons" style="display:none;">Sold</option>
+                <option value="Damaged" id="out-reasons" style="display:none;">Damaged</option>
+                <option value="Expired" id="out-reasons" style="display:none;">Expired</option>
+                <option value="Theft" id="out-reasons" style="display:none;">Theft</option>
+                <option value="Transfer Out" id="out-reasons" style="display:none;">Transfer Out</option>
+            </select>
+        </div>
+
+        <div id="previewBox" style="display:none; background: var(--bg-alt); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; margin-bottom: 20px;">
+            <div style="font-size:13px; color: var(--text-secondary); margin-bottom:8px;">PREVIEW</div>
+            <div style="font-size:16px; font-weight:600;" id="previewText">—</div>
+        </div>
+
+        <div style="display: flex; gap: 12px; justify-content: flex-end; padding-top: 16px; border-top: 1px solid var(--border);">
+            <a href="{{ url_for('all_products') }}" class="btn btn-secondary">Cancel</a>
+            <button type="submit" class="btn btn-primary" id="submitBtn">Add Stock</button>
+        </div>
+    </form>
+</div>
+
+<script>
+function updateType() {
+    var type = document.getElementById('transactionType').value;
+    var reasonSelect = document.getElementById('reasonSelect');
+    var previewBox = document.getElementById('previewBox');
+    var submitBtn = document.getElementById('submitBtn');
+
+    for (var i = 0; i < reasonSelect.options.length; i++) {
+        var opt = reasonSelect.options[i];
+        if (opt.id === 'in-reasons') {
+            opt.style.display = type === 'IN' ? '' : 'none';
+        } else if (opt.id === 'out-reasons') {
+            opt.style.display = type === 'OUT' ? '' : 'none';
+        }
+    }
+
+    if (type === 'IN') {
+        submitBtn.textContent = 'Add Stock';
+        submitBtn.className = 'btn btn-primary';
+    } else {
+        submitBtn.textContent = 'Remove Stock';
+        submitBtn.className = 'btn btn-danger';
+    }
+
+    updatePreview();
+}
+
+function updatePreview() {
+    var select = document.getElementById('productSelect');
+    var quantity = document.getElementById('quantityInput').value;
+    var type = document.getElementById('transactionType').value;
+    var previewBox = document.getElementById('previewBox');
+    var previewText = document.getElementById('previewText');
+
+    if (!select.value || !quantity || parseInt(quantity) <= 0) {
+        previewBox.style.display = 'none';
+        return;
+    }
+
+    var selectedOption = select.options[select.selectedIndex];
+    var productName = selectedOption.text.split(' (')[0];
+    var currentStock = parseInt(selectedOption.text.match(/Current Stock: (\d+)/)[1]);
+    var qty = parseInt(quantity);
+    var newStock = type === 'IN' ? currentStock + qty : currentStock - qty;
+    var action = type === 'IN' ? 'Added' : 'Removed';
+    var color = type === 'IN' ? 'var(--accent)' : 'var(--danger)';
+
+    previewText.innerHTML = action + ' <strong>' + qty + '</strong> units of <strong>' + productName + '</strong><br>' +
+        'Stock: ' + currentStock + ' → <strong style="color: ' + color + ';">' + newStock + '</strong>';
+    previewBox.style.display = 'block';
+}
+
+document.getElementById('productSelect').addEventListener('change', updatePreview);
+</script>
+{% endblock %}

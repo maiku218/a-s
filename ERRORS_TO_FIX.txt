@@ -1,0 +1,36 @@
+=============================================
+HISTORY NAVIGATION - ERRORS FOUND & FIXED
+=============================================
+
+STATUS: ALL ERRORS HAVE BEEN APPLIED AND FIXED
+
+BUG 1: FIXED - Badge and Filter Mismatch in /api/history
+File: app.py, line 669
+Original Problem: Admin activity entries had 'reason' set to lowercase underscore format
+                 (e.g., 'edit_product') but template checked for exact action names.
+Fix Applied: Changed 'reason': action.lower().replace(' ', '_') → 'reason': action
+Result: All admin badges now display correctly (ADD, EDIT, DELETE, LOGIN, LOGOUT, etc.)
+        Filter dropdown now matches all data entries.
+
+---------------------------------------------
+
+BUG 2: FIXED - Cashier History Shows Admin Data
+File: app.py, lines 546-559
+File: templates/cashier_transaction_history.html (NEW)
+Original Problem: /cashier/history rendered admin_history.html which fetched
+                 all data from /api/history (including admin-only activity).
+Fix Applied: Created cashier_transaction_history.html that calls /api/cashier/history.
+             Updated cashier_history_page route to render new template.
+Result: Cashiers now see only their own transactions (sales, voids, refunds).
+
+---------------------------------------------
+
+BUG 3: FIXED - Duplicate Cashier History Navigation
+File: templates/cashier_dashboard.html, line 217
+Original Problem: "History" label was confusing alongside "Sales History".
+Fix Applied: Changed title="History" → title="Transaction History"
+Result: Clear distinction between Sales History and Transaction History.
+
+=============================================
+FIXES APPLIED: 2026-09-19
+=============================================

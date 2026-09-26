@@ -1,0 +1,290 @@
+{% extends 'admin_dashboard.html' %}
+{% block page_title %}Transaction History{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="page-header">
+        <h1 class="page-title">Transaction History</h1>
+        <p class="page-subtitle">Detailed record of all sales transactions with itemized products</p>
+    </div>
+
+    <div class="stats-grid" style="margin-bottom:24px;">
+        <div class="stat-card">
+            <div class="stat-label">Total Transactions</div>
+            <div class="stat-value" id="stat-transactions" style="color:var(--accent);">0</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Total Sales</div>
+            <div class="stat-value" id="stat-sales" style="color:#166534;">₱0.00</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Total Items</div>
+            <div class="stat-value" id="stat-items" style="color:#1e40af;">0</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Voided/Refunded</div>
+            <div class="stat-value" id="stat-voided" style="color:#991b1b;">0</div>
+        </div>
+    </div>
+
+    <div class="filter-bar" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:16px;">
+        <div style="position:relative;flex:1;min-width:250px;">
+            <svg style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--text-muted);" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+            <input type="text" id="trans-search" placeholder="Search transaction #, product, cashier..." style="width:100%;padding:10px 10px 10px 38px;border-radius:var(--radius);border:1px solid var(--border);font-size:14px;background:var(--surface);outline:none;" autocomplete="off">
+        </div>
+        <select id="trans-filter-status" style="padding:10px 14px;border-radius:var(--radius);border:1px solid var(--border);font-size:14px;background:var(--surface);outline:none;cursor:pointer;min-width:160px;">
+            <option value="all">All Types</option>
+            <optgroup label="Status">
+                <option value="Completed">Completed</option>
+                <option value="Voided">Voided</option>
+                <option value="Refunded">Refunded</option>
+            </optgroup>
+            <optgroup label="Type">
+                <option value="Medical">Medical</option>
+                <option value="Non-Medical">Non-Medical</option>
+            </optgroup>
+        </select>
+        <button class="btn btn-primary" id="trans-refresh-btn" style="padding:10px 18px;">↻ Refresh</button>
+        <span style="font-size:13px;color:var(--text-muted);white-space:nowrap;" id="trans-result-count">0 results</span>
+        <span style="font-size:13px;color:var(--text-secondary);display:flex;align-items:center;gap:6px;">
+            <span class="live-dot" style="display:inline-block;width:8px;height:8px;background:var(--accent);border-radius:50%;animation:pulse 1.5s infinite;"></span>
+            Live
+        </span>
+    </div>
+
+    <div class="table-container" style="max-height:500px;overflow-y:auto;">
+        <table>
+            <thead>
+                <tr>
+                    <th style="width:180px;">Date/Time</th>
+                    <th style="width:120px;">Actor</th>
+                    <th>Description</th>
+                    <th style="width:100px;">Status</th>
+                </tr>
+            </thead>
+            <tbody id="trans-body">
+                <tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:40px;">Loading transactions...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<style>
+.live-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    background: var(--accent);
+    border-radius: 50%;
+    animation: pulse 1.5s infinite;
+}
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+.highlight-new { animation: highlightFade 3s ease-out; }
+@keyframes highlightFade { 0% { background-color: #fef9c3; } 100% { background-color: transparent; } }
+</style>
+
+<script>
+(function() {
+    var transactions = [];
+    var lastUpdateTime = new Date().toISOString();
+
+    var expandedRows = new Set();
+
+    function getBadge(status) {
+        if (status === 'Voided') return '<span class="badge badge-void">VOID</span>';
+        if (status === 'Refunded') return '<span class="badge badge-info">REFUND</span>';
+        if (status === 'Completed') return '<span class="badge badge-success">COMPLETED</span>';
+        return '<span class="badge badge-secondary">-</span>';
+    }
+
+    function formatCurrency(amount) {
+        return '₱' + parseFloat(amount).toFixed(2);
+    }
+
+    function renderTransactions(entries) {
+        var tbody = document.getElementById('trans-body');
+        if (!tbody) return;
+        tbody.innerHTML = '';
+
+        var total = 0, salesCount = 0, itemsCount = 0, voidedCount = 0;
+
+        entries.forEach(function(entry) {
+            total++;
+            if (entry.sale_status === 'Completed') { salesCount++; itemsCount += entry.items_count; }
+            if (entry.sale_status === 'Voided' || entry.sale_status === 'Refunded') { voidedCount++; }
+
+            var row = document.createElement('tr');
+            row.id = 'tx-' + entry.id;
+            row.className = 'trans-row';
+            row.style.cursor = 'pointer';
+
+            var desc = entry.receipt_number + ' | ' + entry.cashier_name + ' | ' + entry.items_count + ' items';
+            var badge = getBadge(entry.sale_status);
+            var isExpanded = expandedRows.has(entry.id);
+            var expandIcon = isExpanded ? '▾' : '▸';
+
+            row.innerHTML =
+                '<td style="white-space:nowrap;font-size:13px;">' + entry.sale_date + '</td>' +
+                '<td><strong>' + entry.cashier_name + '</strong></td>' +
+                '<td style="font-size:13px;"><span style="color:var(--text-muted);margin-right:4px;">' + expandIcon + '</span>' + entry.receipt_number + ' | ' + entry.items_count + ' items | ' + formatCurrency(entry.total_amount) + '</td>' +
+                '<td>' + badge + '</td>';
+
+            row.addEventListener('click', function(e) {
+                if (e.target.closest('button')) return;
+                toggleExpand(entry.id);
+            });
+
+            tbody.appendChild(row);
+
+            if (isExpanded) {
+                var detailRow = document.createElement('tr');
+                detailRow.id = 'tx-details-' + entry.id;
+                detailRow.className = 'trans-details-row';
+                detailRow.innerHTML = '<td colspan="4" style="padding:0;background:var(--bg-secondary);"><div style="padding:16px;margin-left:32px;" id="tx-detail-content-' + entry.id + '"><div style="font-weight:700;margin-bottom:8px;">Loading items...</div></div></td>';
+                tbody.appendChild(detailRow);
+                loadTransactionItems(entry.id);
+            }
+        });
+
+        var elTotal = document.getElementById('stat-transactions');
+        var elIn = document.getElementById('stat-sales');
+        var elOut = document.getElementById('stat-items');
+        var elAdmin = document.getElementById('stat-voided');
+        if (elTotal) elTotal.textContent = total;
+        if (elIn) elIn.textContent = '₱' + entries.filter(function(e) { return e.sale_status === 'Completed'; }).reduce(function(sum, e) { return sum + parseFloat(e.total_amount); }, 0).toFixed(2);
+        if (elOut) elOut.textContent = entries.filter(function(e) { return e.sale_status === 'Completed'; }).reduce(function(sum, e) { return sum + e.items_count; }, 0);
+        if (elAdmin) elAdmin.textContent = entries.filter(function(e) { return e.sale_status === 'Voided' || e.sale_status === 'Refunded'; }).length;
+    }
+
+    function loadTransactionItems(transactionId) {
+        fetch('/api/transaction_items/' + transactionId)
+            .then(function(res) { return res.json(); })
+            .then(function(data) {
+                var container = document.getElementById('tx-detail-content-' + transactionId);
+                if (!container) return;
+                var items = data.items || [];
+                var html = '<div style="border:1px solid var(--border);border-radius:var(--radius);padding:12px;background:var(--surface);">';
+                html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;"><strong>Items in Receipt</strong><span style="font-size:11px;color:var(--text-muted);background:var(--bg);padding:3px 8px;border-radius:4px;border:1px solid var(--border);">Click row to collapse</span></div>';
+                html += '<table style="font-size:13px;"><thead><tr><th style="padding:6px 10px;">Product</th><th style="padding:6px 10px;">Type</th><th style="padding:6px 10px;text-align:right;">Qty</th><th style="padding:6px 10px;text-align:right;">Price</th><th style="padding:6px 10px;text-align:right;">Subtotal</th></tr></thead><tbody>';
+                var subtotal = 0;
+                items.forEach(function(item) {
+                    var itemTotal = item.quantity * item.price;
+                    subtotal += itemTotal;
+                    html += '<tr><td style="padding:6px 10px;">' + item.product_name + '</td><td style="padding:6px 10px;">' + item.product_type + '</td><td style="padding:6px 10px;text-align:right;">' + item.quantity + '</td><td style="padding:6px 10px;text-align:right;">' + formatCurrency(item.price) + '</td><td style="padding:6px 10px;text-align:right;">' + formatCurrency(itemTotal) + '</td></tr>';
+                });
+                html += '<tr><td colspan="4" style="padding:8px 10px;text-align:right;font-weight:700;">Total</td><td style="padding:8px 10px;text-align:right;font-weight:700;">' + formatCurrency(subtotal) + '</td></tr>';
+                html += '</tbody></table></div>';
+                container.innerHTML = html;
+            })
+            .catch(function(err) {
+                console.error('Failed to load transaction items:', err);
+            });
+    }
+
+    function toggleExpand(transactionId) {
+        var detailRow = document.getElementById('tx-details-' + transactionId);
+        if (expandedRows.has(transactionId)) {
+            expandedRows.delete(transactionId);
+            if (detailRow) detailRow.remove();
+        } else {
+            expandedRows.add(transactionId);
+            if (!detailRow) {
+                var transRow = document.getElementById('tx-' + transactionId);
+                if (transRow) {
+                    detailRow = document.createElement('tr');
+                    detailRow.id = 'tx-details-' + transactionId;
+                    detailRow.className = 'trans-details-row';
+                    detailRow.innerHTML = '<td colspan="4" style="padding:0;background:var(--bg-secondary);"><div style="padding:16px;margin-left:32px;" id="tx-detail-content-' + transactionId + '"><div style="font-weight:700;margin-bottom:8px;">Loading items...</div></div></td>';
+                    transRow.parentNode.insertBefore(detailRow, transRow.nextSibling);
+                    loadTransactionItems(transactionId);
+                }
+            }
+        }
+    }
+
+    function loadHistory() {
+        fetch('/api/transactions?limit=200')
+            .then(function(res) { return res.json(); })
+            .then(function(data) {
+                transactions = data.transactions;
+                renderTransactions(data.transactions);
+                lastUpdateTime = new Date().toISOString();
+            })
+            .catch(function(err) {
+                console.error('Failed to load history:', err);
+                var tbody = document.getElementById('trans-body');
+                if (tbody) {
+                    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--danger);padding:40px;">Error loading history. <a href="#" id="retry-link">Click to retry</a></td></tr>';
+                    var link = document.getElementById('retry-link');
+                    if (link) {
+                        link.addEventListener('click', function(e) { e.preventDefault(); loadHistory(); });
+                    }
+                }
+            });
+    }
+
+    function loadNewEntries() {
+        fetch('/api/transactions?limit=200')
+            .then(function(res) { return res.json(); })
+            .then(function(data) {
+                var newEntries = data.transactions.filter(function(e) { return e.sale_date > lastUpdateTime; });
+                if (newEntries.length > 0) {
+                    transactions = data.transactions;
+                    renderTransactions(data.transactions);
+                    lastUpdateTime = new Date().toISOString();
+                    newEntries.forEach(function(entry, idx) {
+                        setTimeout(function() {
+                            var row = document.getElementById('tx-' + entry.id);
+                            if (row) row.classList.add('highlight-new');
+                        }, idx * 200);
+                    });
+                }
+            })
+            .catch(function(err) {
+                console.error('Failed to load new entries:', err);
+            });
+    }
+
+    function filterHistory() {
+        var searchEl = document.getElementById('trans-search');
+        var filterEl = document.getElementById('trans-filter-status');
+        if (!searchEl || !filterEl) return;
+
+        var search = searchEl.value.toLowerCase();
+        var filter = filterEl.value;
+
+        var filtered = transactions.filter(function(entry) {
+            var matchesSearch = !search ||
+                (entry.receipt_number && entry.receipt_number.toLowerCase().indexOf(search) !== -1) ||
+                (entry.cashier_name && entry.cashier_name.toLowerCase().indexOf(search) !== -1) ||
+                (entry.sale_status && entry.sale_status.toLowerCase().indexOf(search) !== -1);
+            var matchesFilter = filter === 'all' || (entry.sale_status && entry.sale_status === filter);
+            return matchesSearch && matchesFilter;
+        });
+
+        renderTransactions(filtered);
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+        loadHistory();
+        setInterval(loadNewEntries, 5000);
+
+        var searchEl = document.getElementById('trans-search');
+        var filterEl = document.getElementById('trans-filter-status');
+        var refreshBtn = document.getElementById('trans-refresh-btn');
+
+        if (searchEl) searchEl.addEventListener('input', filterHistory);
+        if (filterEl) filterEl.addEventListener('change', filterHistory);
+        if (refreshBtn) {
+            refreshBtn.addEventListener('click', function(e) {
+                e.preventDefault();
+                loadHistory();
+            });
+        }
+    });
+
+    window.toggleExpand = toggleExpand;
+    window.loadTransactionItems = loadTransactionItems;
+})();
+</script>
+{% endblock %}

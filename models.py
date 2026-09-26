@@ -251,33 +251,35 @@ class Admin(User):
     def __init__(self, user_id: int, username: str, full_name: str, password_hash: str):
         super().__init__(user_id, username, full_name, password_hash)
 
-    def authenticate(self, password: str, mysql, request) -> tuple:
+    def authenticate(self, password: str, request) -> tuple:
         """Polymorphism Example 1: Admin authentication includes activity logging."""
         if not self.verify_password(password):
             return False, None
-        self._log_login(mysql, request)
+        self._log_login(request)
         return True, self
 
-    def _log_login(self, mysql, request):
+    def _log_login(self, request):
         ip_address = request.remote_addr
         if request.headers.get('X-Forwarded-For'):
             ip_address = request.headers.get('X-Forwarded-For')
-        cur = mysql.connection.cursor()
+        conn = get_db()
+        cur = conn.cursor()
         try:
             cur.execute("""
                 INSERT INTO admin_activity (admin_id, action, ip_address, details)
-                VALUES (%s, %s, %s, %s)
+                VALUES (?, ?, ?, ?)
             """, (self._id, 'Admin Login', ip_address,
                   f"Admin {self._username} logged in"))
-            mysql.connection.commit()
+            conn.commit()
         except Exception:
-            mysql.connection.rollback()
+            conn.rollback()
         finally:
             cur.close()
 
-    def create_default_if_none(self, mysql):
+    def create_default_if_none(self):
         """Admin-specific method: creates the default admin account if no admins exist."""
-        cur = mysql.connection.cursor()
+        conn = get_db()
+        cur = conn.cursor()
         try:
             cur.execute("SELECT COUNT(*) FROM admins")
             count = cur.fetchone()[0]
@@ -285,10 +287,10 @@ class Admin(User):
                 hashed = generate_password_hash('admin123')
                 cur.execute(
                     "INSERT INTO admins (username, password, full_name) "
-                    "VALUES (%s, %s, %s)",
+                    "VALUES (?, ?, ?)",
                     ('admin', hashed, 'System Administrator')
                 )
-                mysql.connection.commit()
+                conn.commit()
                 return Admin(1, 'admin', 'System Administrator', hashed)
         finally:
             cur.close()
@@ -315,40 +317,42 @@ class Cashier(User):
             raise ValueError("Status must be Active or Inactive.")
         self._status = value
 
-    def authenticate(self, password: str, mysql, request) -> tuple:
+    def authenticate(self, password: str, request) -> tuple:
         """Polymorphism Example 2: Cashier authentication logs into cashier_activity table."""
         if not self.verify_password(password):
             return False, None
-        self._log_login(mysql, request)
+        self._log_login(request)
         return True, self
 
-    def _log_login(self, mysql, request):
+    def _log_login(self, request):
         ip_address = request.remote_addr
         if request.headers.get('X-Forwarded-For'):
             ip_address = request.headers.get('X-Forwarded-For')
-        cur = mysql.connection.cursor()
+        conn = get_db()
+        cur = conn.cursor()
         try:
             cur.execute("""
                 INSERT INTO cashier_activity (cashier_id, login_time, ip_address)
-                VALUES (%s, NOW(), %s)
+                VALUES (?, NOW(), ?)
             """, (self._id, ip_address))
-            mysql.connection.commit()
+            conn.commit()
         except Exception:
-            mysql.connection.rollback()
+            conn.rollback()
         finally:
             cur.close()
 
-    def log_logout(self, mysql):
+    def log_logout(self):
         """Cashier-specific method: records logout time."""
         ip_address = 'unknown'
-        cur = mysql.connection.cursor()
+        conn = get_db()
+        cur = conn.cursor()
         try:
             cur.execute("""
                 UPDATE cashier_activity
                 SET logout_time = NOW()
-                WHERE cashier_id = %s AND logout_time IS NULL
+                WHERE cashier_id = ? AND logout_time IS NULL
             """, (self._id,))
-            mysql.connection.commit()
+            conn.commit()
         finally:
             cur.close()
 
@@ -360,9 +364,9 @@ class Cashier(User):
 class StockMovementProcessor:
     """Example 1 of Polymorphism: different processors handle stock differently."""
 
-    def __init__(self, movement: StockMovement, mysql):
+    def __init__(self, movement: StockMovement):
         self.movement = movement
-        self.mysql = mysql
+        
 
     def process(self, product: Product):
         raise NotImplementedError  # subclasses must override
@@ -376,13 +380,13 @@ class StockInProcessor(StockMovementProcessor):
         self._record_movement(product)
 
     def _record_movement(self, product: Product):
-        cur = self.mysql.connection.cursor()
+        cur = self.get_db()
         try:
             cur.execute("""
                 INSERT INTO stock_movements (product_id, movement_type, quantity, reason)
-                VALUES (%s, 'IN', %s, %s)
+                VALUES (?, 'IN', ?, ?)
             """, (product.id, self.movement.quantity, self.movement.reason))
-            self.mysql.connection.commit()
+            conn.commit()
         finally:
             cur.close()
 
@@ -395,21 +399,21 @@ class StockOutProcessor(StockMovementProcessor):
         self._record_movement(product)
 
     def _record_movement(self, product: Product):
-        cur = self.mysql.connection.cursor()
+        cur = self.get_db()
         try:
             cur.execute("""
                 INSERT INTO stock_movements (product_id, movement_type, quantity, reason)
-                VALUES (%s, 'OUT', %s, %s)
+                VALUES (?, 'OUT', ?, ?)
             """, (product.id, self.movement.quantity, self.movement.reason))
-            self.mysql.connection.commit()
+            conn.commit()
         finally:
             cur.close()
 
 
-def get_movement_processor(movement: StockMovement, mysql) -> StockMovementProcessor:
+def get_movement_processor(movement: StockMovement) -> StockMovementProcessor:
     """Factory function that returns the correct polymorphic processor."""
     if movement.is_inbound():
-        return StockInProcessor(movement, mysql)
+        return StockInProcessor(movement)
     elif movement.is_outbound():
-        return StockOutProcessor(movement, mysql)
+        return StockOutProcessor(movement)
     raise ValueError(f"Unknown movement type: {movement.movement_type}")

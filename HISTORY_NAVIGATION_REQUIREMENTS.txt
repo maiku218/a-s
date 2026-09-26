@@ -1,0 +1,493 @@
+================================================================================
+  HISTORY NAVIGATION - REQUIREMENTS SPECIFICATION
+  PharmaCon POS System
+  Date: 2026-09-19
+================================================================================
+
+OVERVIEW
+--------
+Create a "History" navigation section that records ALL ADMIN ACTIVITIES.
+Every action performed by the admin is logged and displayed in the
+History page. Cashier transactions (sales, voids, refunds) are also
+reflected in the history as they affect stock levels.
+
+
+================================================================================
+1. HISTORY NAVIGATION ACCESS
+================================================================================
+
+1.1 Navigation Location
+- Add a "History" item in the ADMIN sidebar
+- This is primarily an ADMIN feature - all admin activities are recorded here
+- Cashier can also view History (their own transactions: sales, voids, refunds)
+
+1.2 Route
+- Admin: /admin/history
+- Cashier: /cashier/history (cashier's own transaction history)
+
+
+================================================================================
+2. ALL ADMIN ACTIVITIES RECORDED IN HISTORY
+================================================================================
+
+EVERYTHING the admin does gets logged in History. This includes but is NOT
+limited to:
+
+  - Login / Logout
+  - Add Product (e.g., adding 10 Chocomucho)
+  - Edit Product (name, price, stock, category changes)
+  - Delete Product
+  - Register Cashier
+  - Delete Cashier
+  - Edit Cashier (status, name, password changes)
+  - Change Admin Password
+  - Receipt Customization changes
+  - Database Backup / Restore
+  - Any other admin panel actions
+
+Each admin activity creates a history entry showing:
+  - What action was performed
+  - Who performed it (admin username)
+  - When it was performed (date/time)
+  - Details (e.g., "added 10 Chocomucho", "edited product: Chocomucho")
+
+
+================================================================================
+3. DATA SOURCE - stock_movements TABLE
+================================================================================
+
+The stock_movements table is the PRIMARY source for History entries.
+It captures all stock-level changes (IN and OUT movements).
+
+Table: stock_movements (EXISTING in database_sqlite.py lines 91-99)
+  - id              INTEGER PRIMARY KEY AUTOINCREMENT
+  - product_id      INTEGER NOT NULL (FK -> products.id)
+  - movement_type   VARCHAR(10) NOT NULL  -- 'IN' or 'OUT'
+  - quantity        INTEGER NOT NULL
+  - reason          VARCHAR(100)          -- e.g., 'Stock Addition', 'Sale', 'Void Sale'
+  - movement_date   TEXT DEFAULT (datetime('now', 'localtime'))
+
+Also uses admin_activity table for non-stock admin actions
+(e.g., login, logout, delete product, register cashier, etc.)
+
+Table: products (for product name lookup)
+  - id, product_name, barcode, price, stock, etc.
+
+
+================================================================================
+4. HISTORY ENTRY TYPES
+================================================================================
+
+Every history entry contains:
+  - Product Name (e.g., "Chocomucho")
+  - Action Type (Add, Edit, Delete, Stock Change, Sale, Void, Refund, etc.)
+  - Quantity (+ for IN, - for OUT)
+  - Date/Time (timestamp)
+  - Reason (e.g., "Stock Addition", "Sale", "void", "edit product")
+  - Actor (username)
+  - Role (admin or cashier)
+
+4.1 ADMIN ACTIVITIES (recorded in BOTH admin_activity AND stock_movements)
+
+  Type: LOGIN
+    Logged in admin_activity: action = 'Admin Login'
+    History shows: "Admin [username] logged in"
+    Date: login time
+    Reason: "admin login"
+
+  Type: LOGOUT
+    Logged in admin_activity: action = 'Admin Logout'
+    History shows: "Admin [username] logged out"
+    Date: logout time
+    Reason: "admin logout"
+
+  Type: ADD PRODUCT / STOCK ADDITION
+    Example: Admin adds 10 Chocomucho
+    History shows: "Admin [username] added 10 Chocomucho"
+    Stock Movement: movement_type = 'IN', quantity = 10, reason = 'Stock Addition'
+    Display: "+10 Chocomucho" (green, IN-bound)
+    Date: datetime of the action
+    Actor: Admin username
+    Reason: "Stock Addition"
+    Direction: IN (stock went in)
+
+  Type: EDIT PRODUCT - Change Quantity
+    Admin changes product quantity (e.g., from 510 to 10)
+    History shows: "-500 Chocomucho" | Reason: Change Quantity
+    Stock Movement: movement_type based on delta, quantity = |delta|
+
+  Type: DELETE PRODUCT
+    Logged in admin_activity: action = 'Delete Product'
+    Stock Movement: movement_type = 'OUT', quantity = remaining stock, reason = 'Product Deleted'
+    History shows: "Admin [username] deleted product: Chocomucho"
+    Date: datetime of deletion
+    Actor: Admin username
+    Reason: "delete product"
+    Direction: OUT (stock removed permanently)
+
+  Type: REGISTER CASHIER
+    Logged in admin_activity: action = 'Register Cashier'
+    History shows: "Admin [username] registered cashier: [cashier_username]"
+    Date: datetime of registration
+    Actor: Admin username
+    Reason: "register cashier"
+
+  Type: DELETE CASHIER
+    Logged in admin_activity: action = 'Delete Cashier'
+    History shows: "Admin [username] deleted cashier: [cashier_username]"
+    Date: datetime of deletion
+    Actor: Admin username
+    Reason: "delete cashier"
+
+  Type: EDIT CASHIER
+    Logged in admin_activity: action = 'Update Cashier'
+    History shows: "Admin [username] updated cashier: [cashier_username]"
+    Date: datetime of update
+    Actor: Admin username
+    Reason: "update cashier"
+
+  Type: CHANGE PASSWORD (ADMIN)
+    Logged in admin_activity: action = 'Change Password'
+    History shows: "Admin [username] changed password"
+    Date: datetime of password change
+    Actor: Admin username
+    Reason: "change password"
+
+4.2 CASHIER TRANSACTIONS (recorded in stock_movements)
+
+  Type: SUCCESSFUL SALE (STOCK OUT)
+    When: After successful checkout/payment
+    Stock Movement: movement_type = 'OUT', quantity = [items purchased], reason = 'Sale'
+    Example: Cashier sells 2 Chocomucho
+    History shows: "-2 Chocomucho" (red, OUT-bound)
+    Date: datetime of sale
+    Actor: Cashier username
+    Reason: "Sale"
+    Direction: OUT (stock went out)
+
+  Type: VOID TRANSACTION
+    When: Cashier voids a completed sale (via /api/void_sale)
+    What happens:
+      1. Sale status changed to 'Voided' in sales table
+      2. Stock reversed: products get stock BACK (e.g., +2 Chocomucho)
+      3. stock_movement entry: movement_type = 'IN', quantity = [reversed], reason = 'Void Sale'
+    History shows: "+2 Chocomucho" (green, IN-bound) with "VOID" badge
+    Full entry: "VOID - +2 Chocomucho | Reason: [cashier's reason]"
+    Date: datetime of void action
+    Actor: Cashier username
+    Reason: [the void reason entered by cashier]
+    Direction: IN (stock restored)
+    Special: Red/Orange "VOID" badge displayed prominently
+
+  Type: REFUND TRANSACTION
+    When: Cashier refunds a completed sale (via /api/refund_sale)
+    What happens:
+      1. Sale status changed to 'Refunded' in sales table
+      2. Stock reversed: products get stock BACK
+      3. stock_movement entry: movement_type = 'IN', quantity = [reversed], reason = 'Refund Sale'
+    History shows: "+2 Chocomucho" (green, IN-bound) with "REFUND" badge
+    Full entry: "REFUND - +2 Chocomucho | Reason: [cashier's reason]"
+    Date: datetime of refund action
+    Actor: Cashier username
+    Reason: [the refund reason entered by cashier]
+    Direction: IN (stock restored)
+
+
+================================================================================
+5. HISTORY PAGE LAYOUT & UI
+================================================================================
+
+5.1 Admin History View (/admin/history) - PRIMARY VIEW
+- Full-width page with a table/list view showing ALL admin activities
+- Columns:
+    [Date/Time] | [Actor] | [Action Type] | [Product] | [Qty +/-] | [Direction] | [Reason] | [Details]
+- Sort: Newest first (default descending by date)
+- Filter Options (dropdowns/buttons above table):
+    - All / Add / Edit / Delete / Login / Logout / Manage Staff / Settings
+    - Search by product name
+    - Search by admin username
+    - Filter by date range
+- Color Coding:
+    - IN / Stock Added: Green badge "+X"
+    - OUT / Stock Removed: Red badge "-X"
+    - Login: Blue badge "LOGIN"
+    - Logout: Gray badge "LOGOUT"
+    - Void: Orange/Red badge "VOID"
+    - Refund: Blue badge "REFUND"
+    - Edit: Purple badge "EDIT"
+    - Manage Staff: Teal badge "STAFF"
+    - Settings: Yellow badge "SETTINGS"
+- Pagination or scrollable list
+- Live auto-update (see Section 6)
+
+5.2 Cashier History View
+- Shows ONLY cashier's own transactions (sales, voids, refunds)
+- Columns: Same structure as admin view
+- Filter: Limited to Sales / Voids / Refunds
+- Show "VOID" badge prominently for voided transactions
+
+
+================================================================================
+6. LIVE UPDATE REQUIREMENT
+================================================================================
+
+6.1 Auto-Refresh
+- History page auto-refreshes every 5 seconds via JavaScript fetch API
+- Minimum implementation: setInterval(fetchHistoryData, 5000)
+
+6.2 Live Stock Indicator
+- Each entry shows the CURRENT stock of the product at that moment
+- Stock values update in real-time as new transactions occur
+
+6.3 New Entry Animation
+- When a new entry appears via live update, briefly highlight it
+  (e.g., flash yellow/blue background for 2 seconds)
+
+6.4 Real-time Void/Refund Reflection
+- When a cashier voids a sale, the admin History page updates within seconds
+- The "+2 Chocomucho" void entry appears immediately without manual refresh
+
+
+================================================================================
+7. VOID TRANSACTION SPECIFIC REQUIREMENTS
+================================================================================
+
+7.1 Void Flow in Cashier
+1. Cashier completes a sale
+2. Later, clicks "Void" button on the transaction in cashier_history.html
+3. Prompt appears: "Enter void reason:" (REQUIRED - cannot be empty)
+4. Cashier enters reason (e.g., "wrong item", "customer complaint")
+5. System processes:
+   a. Sale status -> 'Voided' in sales table
+   b. Stock reversed: +[quantity] back to each product
+   c. stock_movement: movement_type='IN', reason='Void Sale', quantity=[reversed]
+   d. History entry created with "VOID" badge
+
+7.2 Display in History (Void)
+"VOID - +2 Chocomucho | Date: 2026-09-19 14:05:00 | Reason: wrong item | Actor: cashier_mike"
+[VOID badge in red/orange, prominently displayed]
+
+7.3 Void Stock Reversal Details
+- When voiding sale of 2 Chocomucho, stock goes BACK by 2
+- Logged as IN movement in stock_movements
+- History shows: "+2 Chocomucho" (green, with VOID badge)
+- Reason field: "void" or the specific cashier reason
+- This is a reversal - it UNDOES the original sale's stock deduction
+
+7.4 Admin Views Void in History
+- Admin sees voided transactions in /admin/history
+- Can see: who voided, when, what was voided, the reason
+- Void entries clearly marked with VOID badge
+
+
+================================================================================
+8. DATABASE CHANGES NEEDED
+================================================================================
+
+8.1 stock_movements - ALREADY EXISTS (primary history data source)
+Confirmed in database_sqlite.py lines 91-99:
+  - id, product_id, movement_type, quantity, reason, movement_date
+No changes needed to this table.
+
+8.2 admin_activity - ALREADY EXISTS (for non-stock admin actions)
+Confirmed in database_sqlite.py lines 51-59:
+  - id, admin_id, action, ip_address, details, activity_time
+No changes needed.
+
+8.3 Ensure ALL admin activities create stock_movements where applicable:
+
+  ADMIN - ADD PRODUCT (already works at app.py:772-776):
+    INSERT INTO stock_movements (product_id, movement_type, quantity, reason)
+    VALUES (?, 'IN', ?, 'Stock Addition')
+
+  ADMIN - EDIT PRODUCT (NEEDS IMPLEMENTATION - see Section 9.3):
+    If stock changes during edit, create IN/OUT movement entry
+
+  ADMIN - DELETE PRODUCT (NEEDS MODIFICATION - see Section 9.4):
+    Currently deletes stock_movements. CHANGE to log final OUT movement first
+
+8.4 Ensure ALL cashier stock-affecting actions create entries (already work):
+  - Sale: app.py:2453, 2480 - movement_type='OUT', reason='Sale'  ✓
+  - Void: app.py:2931 - movement_type='IN', reason='Void Sale'  ✓
+  - Refund: app.py:2977 - movement_type='IN', reason='Refund Sale'  ✓
+
+
+================================================================================
+9. BACKEND IMPLEMENTATION DETAILS
+================================================================================
+
+9.1 New /api/history Endpoint
+GET /api/history
+  Params: page=1, limit=20, filter, search, actor, date_from, date_to
+  Auth: admin_required (admin view), cashier_required (cashier view)
+  Returns: Paginated history entries combining stock_movements + admin_activity
+
+9.2 New /admin/history Route
+  Renders admin_history.html template with all admin activities
+
+9.3 Edit Product - Add Stock Movement Logging
+In app.py edit_product route (~line 979), ADD after UPDATE:
+  BEFORE UPDATE:
+    cur.execute("SELECT stock FROM products WHERE id=?", (id,))
+    old_stock = cur.fetchone()[0]
+  AFTER UPDATE (new stock is already saved):
+    stock_delta = new_stock_value - old_stock
+    if stock_delta != 0:
+        movement_type = 'IN' if stock_delta > 0 else 'OUT'
+        cur.execute("""
+            INSERT INTO stock_movements (product_id, movement_type, quantity, reason)
+            VALUES (?, ?, ?, 'Change Quantity')
+        """, (id, movement_type, abs(stock_delta)))
+
+9.4 Delete Product - Log Stock OUT Before Deleting
+In app.py delete_product (~line 925), CHANGE from:
+  cur.execute("DELETE FROM stock_movements WHERE product_id=?")
+TO:
+  # First, log what was removed
+  cur.execute("SELECT stock FROM products WHERE id=?", (id,))
+  final_stock = cur.fetchone()[0]
+  if final_stock > 0:
+      cur.execute("""
+          INSERT INTO stock_movements (product_id, movement_type, quantity, reason)
+          VALUES (?, 'OUT', ?, 'Product Deleted')
+      """, (id, final_stock))
+  # Then proceed with existing deletion logic
+  cur.execute("DELETE FROM stock_movements WHERE product_id=?", (id,))
+  cur.execute("DELETE FROM sale_items WHERE product_id=?", (id,))
+  cur.execute("DELETE FROM products WHERE id=?", (id,))
+
+
+================================================================================
+10. FRONTEND IMPLEMENTATION
+================================================================================
+
+10.1 Admin Sidebar - Add History Navigation (admin_dashboard.html)
+Add new section in sidebar nav:
+  <div class="nav-section">History</div>
+  <div class="nav-item {% if active_main == 'history' %}active{% endif %}">
+    <svg>clock/history icon</svg>
+    <a href="/admin/history">History</a>
+  </div>
+
+10.2 Cashier Left Nav - Add History Icon
+In cashier_dashboard.html / cashier_history.html left-nav:
+  <a href="/cashier/history" class="nav-icon" title="History">
+    <svg>clock icon</svg>
+  </a>
+
+10.3 New Template
+  /templates/admin_history.html - Full admin history page
+
+10.4 Live Update JavaScript
+  let lastCheck = new Date().toISOString();
+  function loadHistory() { fetch('/api/history?limit=50')... }
+  function loadNewEntries() { fetch('/api/history/live?last_check=...')... }
+  setInterval(loadNewEntries, 5000);
+
+
+================================================================================
+11. SPECIFIC EXAMPLE WALKTHROUGH
+================================================================================
+
+11.1 Admin adds 10 Chocomucho
+  1. Admin goes to Add Product, enters "Chocomucho", stock=10
+  2. stock_movements: (product_id, 'IN', 10, 'Stock Addition', datetime_now)
+  3. admin_activity: (admin_id, 'Add New Product', ip, 'Chocomucho - 10 units added')
+  4. History displays: "+10 Chocomucho | Date: 2026-09-19 10:00:00 | Reason: Stock Addition | Actor: admin"
+  5. Live update: If cashier is viewing history, this entry appears within 5 seconds
+
+11.2 Admin edits Chocomucho (changes quantity from 510 to 10)
+  1. Admin edits product, changes stock from 510 to 10
+  2. Stock delta: 10 - 510 = -500
+  3. stock_movements: (product_id, 'OUT', 500, 'Change Quantity', datetime_now)
+  4. History shows: "-500 Chocomucho | Date: 2026-09-19 11:00:00 | Reason: Change Quantity | Actor: admin"
+
+11.3 Cashier buys 2 Chocomucho (successful sale)
+  1. Cashier scans Chocomucho, qty=2, completes payment
+  2. stock_movements: (product_id, 'OUT', 2, 'Sale', datetime_now)
+  3. Product stock: 15 -> 13
+  4. History displays: "-2 Chocomucho | Date: 2026-09-19 14:00:00 | Reason: Sale | Actor: cashier_mike"
+
+11.4 Cashier voids the sale of 2 Chocomucho
+  1. Cashier clicks "Void" on the transaction, enters reason: "wrong item"
+  2. Sale status -> 'Voided' in sales table
+  3. Stock reversed: 13 -> 15 (+2 Chocomucho restored)
+  4. stock_movements: (product_id, 'IN', 2, 'Void Sale', datetime_now)
+  5. History displays: "VOID - +2 Chocomucho | Date: 2026-09-19 14:05:00 | Reason: wrong item | Actor: cashier_mike"
+  6. VOID badge shown in red/orange
+  7. Admin sees this in /admin/history too (live update if page is open)
+
+
+================================================================================
+12. DETAILED HISTORY FORMAT (Professional Audit Trail)
+================================================================================
+
+Each history entry now includes a detailed human-readable DESCRIPTION:
+
+Stock Movement Descriptions:
+  "Added 10 units of Chocomucho to stock"         (Stock Addition, +10)
+  "Changed Chocomucho stock by +5 units"           (Change Quantity, +5)
+  "Changed Chocomucho stock by -500 units"         (Change Quantity, -500)
+  "Sold 2 units of Chocomucho"                     (Sale, -2)
+  "VOIDED - Restored 2 units of Chocomucho"       (Void Sale, +2, VOID badge)
+  "REFUNDED - Restored 2 units of Chocomucho"     (Refund Sale, +2, REFUND badge)
+  "Deleted Chocomucho (500 units removed)"         (Product Deleted, -500)
+
+Admin Activity Descriptions:
+  "Added new product: Chocomucho | Price: ₱50.00 | Stock: 10 | Category: Medical"
+  "Edited product: Chocomucho | Stock: 510 → 10 | Price: ₱50.00"
+  "Deleted product: Chocomucho"
+  "Admin admin logged in"
+  "Registered cashier: cashier_mike"
+
+Admin History Page Columns:
+  Date/Time | Actor | Description | Status Badge
+
+Status Badges: ADD | EDIT | DELETE | LOGIN | LOGOUT | VOID | REFUND | +IN | -OUT | STAFF | SECURITY
+
+================================================================================
+12b. SUMMARY TABLE - ALL ACTIONS THAT APPEAR IN HISTORY
+================================================================================
+
+Action              | Recorded In        | Description Example
+---------------------|--------------------|----------------------
+Admin Login          | admin_activity     | "Admin admin logged in"
+Admin Logout         | admin_activity     | "Admin admin logged out"
+Add Product          | stock_movements    | "Added 10 units of Chocomucho to stock"
+Edit Product         | stock_movements    | "Changed Chocomucho stock by -500 units"
+                     | admin_activity     | "Edited product: Chocomucho | Stock: 510 → 10"
+Delete Product       | stock_movements    | "Deleted Chocomucho (500 units removed)"
+Sale (Cashier)       | stock_movements    | "Sold 2 units of Chocomucho"
+Void (Cashier)       | stock_movements    | "VOIDED - Restored 2 units"
+Refund (Cashier)     | stock_movements    | "REFUNDED - Restored 2 units"
+
+
+================================================================================
+13. EXISTING CODE REFERENCES
+================================================================================
+
+Key files to modify for implementation:
+
+  app.py:
+    Line 772-776: add_product stock movement (already works - no change)
+    Line 950-1021: edit_product - ADD stock movement logging for stock changes
+    Line 890-948: delete_product - MODIFY to log OUT movement before delete
+    Line 2897-2941: api_void_sale (already works)
+    Line 2943-2987: api_refund_sale (already works)
+    NEW: /admin/history route + /api/history endpoint
+
+  database_sqlite.py:
+    No changes - stock_movements (line 91) and admin_activity (line 51) already exist
+
+  models.py:
+    StockMovement class (line 42-94) - reusable for history data
+
+  templates/:
+    NEW: admin_history.html
+    MODIFY: admin_dashboard.html - Add History nav item
+    MODIFY: cashier_dashboard.html - Add History nav icon
+
+
+================================================================================
+END OF SPECIFICATION
+================================================================================

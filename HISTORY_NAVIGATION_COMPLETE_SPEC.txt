@@ -1,0 +1,472 @@
+================================================================================
+  HISTORY NAVIGATION - COMPLETE SPECIFICATION & SUGGESTIONS
+  PharmaCon POS System
+  Date: 2026-09-19
+================================================================================
+
+================================================================================
+PART 1: OVERVIEW & UNDERSTANDING
+================================================================================
+
+The History Navigation is a feature that records ALL activities in the system
+and displays them in a professional, detailed timeline view. There are TWO
+separate history views:
+
+  1. ADMIN HISTORY (/admin/history) - Shows ALL system activities
+     - Admin activities (add/edit/delete products, manage staff, etc.)
+     - All cashier transactions (sales, voids, refunds)
+     - Stock movements (additions, removals, changes)
+     
+  2. CASHIER HISTORY (/cashier/history) - Shows ONLY cashier's own activities
+     - Cashier's own sales
+     - Cashier's own voids
+     - Cashier's own refunds
+     - Stock changes made by the cashier
+
+These are SEPARATE views. The admin sees everything; the cashier sees only
+their own transactions.
+
+================================================================================
+PART 2: WHAT GETS RECORDED IN ADMIN HISTORY
+================================================================================
+
+ALL of the following activities appear in /admin/history:
+
+2.1 ADMIN PRODUCT ACTIVITIES
+
+  A. ADDING A PRODUCT
+    When: Admin adds a new product (e.g., Chocomucho, qty=10)
+    Recorded As:
+      - admin_activity: action='Add New Product'
+        details='Added product: Chocomucho | Price: ₱50.00 | Stock: 10 | Category: Medical'
+      - stock_movements: movement_type='IN', quantity=10, reason='Stock Addition'
+    History Shows: "Added 10 units of Chocomucho to stock"
+    Badge: ADD (green)
+    Direction: +IN
+    Date: datetime of the action
+    
+    WHAT IS RECORDED:
+      - Product name
+      - Price
+      - Stock quantity
+      - Category
+      - Date/time
+      - Admin username
+
+  B. EDITING A PRODUCT (WHAT CHANGED)
+    When: Admin edits a product (changes price, stock, name, etc.)
+    
+    IMPORTANT: The admin_activity details show EXACTLY what changed:
+      details='Edited product: Chocomucho | Stock: 510 → 10 | Price: ₱50.00'
+    
+    WHAT IS RECORDED:
+      - Product name
+      - OLD stock value → NEW stock value (e.g., "Stock: 510 → 10")
+      - OLD price → NEW price (e.g., "Price: ₱50.00")
+      - If name changed: shows old name → new name
+      - If category changed: shows old category → new category
+      - Date/time
+      - Admin username
+    
+    EXAMPLES:
+      Edit: Changed price from ₱50 to ₱60
+        admin_activity details: "Edited product: Chocomucho | Stock: 510 → 510 | Price: ₱50.00 → ₱60.00"
+      
+      Edit: Changed stock from 510 to 10 (reduced by 500)
+        admin_activity details: "Edited product: Chocomucho | Stock: 510 → 10 | Price: ₱50.00"
+        stock_movements: movement_type='OUT', quantity=500, reason='Change Quantity'
+        History shows: "Changed Chocomucho stock by -500 units"
+        Badge: EDIT (yellow)
+      
+      Edit: Changed product name from "Chocomucho" to "Chococream"
+        admin_activity details: "Edited product: Chocomucho | Stock: 510 → 510 | Price: ₱50.00 → Price: ₱60.00 | Name: Chocomucho → Chococream"
+    
+    HOW IT WORKS IN CODE:
+      Before updating the product, the system captures:
+        - old_stock (current stock from database)
+        - old_price (current price from database)
+        - old_name (current name from database)
+      After updating, it compares old vs new values and logs what changed.
+      
+      The admin_activity `details` field stores a human-readable summary:
+        "Edited product: {name} | Stock: {old} → {new} | Price: {old} → {new}"
+
+  C. DELETING A PRODUCT
+    When: Admin deletes a product
+    Recorded As:
+      - stock_movements: movement_type='OUT', quantity=remaining_stock, reason='Product Deleted'
+      - admin_activity: action='Delete Product', details='Deleted product: Chocomucho'
+    History Shows: "Deleted Chocomucho (500 units removed)"
+    Badge: DELETE (red)
+    Date/time, admin username recorded
+
+2.2 ADMIN STAFF MANAGEMENT ACTIVITIES
+
+  A. REGISTER CASHIER
+    Recorded As: "Registered cashier: [cashier_username]"
+    admin_activity details: "Registered cashier: cashier_juan | Status: Active"
+
+  B. DELETE CASHIER
+    Recorded As: "Deleted cashier: [cashier_username]"
+
+  C. EDIT CASHIER (status, name, password)
+    Recorded As: "Updated cashier: [cashier_username] | Status: Active → Inactive"
+
+  D. CHANGE PASSWORD
+    Recorded As: "Admin [username] changed password"
+
+2.3 ADMIN SYSTEM ACTIVITIES
+
+  A. ADMIN LOGIN
+    Recorded As: "Admin admin logged in"
+    admin_activity: action='Admin Login'
+
+  B. ADMIN LOGOUT
+    Recorded As: "Admin admin logged out"
+    admin_activity: action='Admin Logout'
+
+  C. RECEIPT CUSTOMIZATION CHANGES
+    Recorded As: "Updated receipt settings"
+    admin_activity: action='Edit Receipt Settings', details='Changed receipt header'
+
+  D. DATABASE BACKUP/RESTORE
+    Recorded As: "Database backup exported" or "Database restored from file"
+
+2.4 CASHIER TRANSACTIONS (visible in admin history too)
+
+  A. CASHIER SALE (successful purchase)
+    When: Cashier completes a sale
+    Recorded As:
+      - stock_movements: movement_type='OUT', quantity=items_sold, reason='Sale'
+    History Shows: "Sold 2 units of Chocomucho"
+    Badge: -OUT (red)
+    Date/time, cashier username recorded
+    
+    WHAT IS RECORDED:
+      - Product name
+      - Quantity sold
+      - Stock change (negative)
+      - Sale date/time
+      - Cashier username
+
+  B. CASHIER VOID TRANSACTION
+    When: Cashier voids a completed sale
+    Recorded As:
+      - stock_movements: movement_type='IN', quantity=restored, reason='Void Sale'
+      - sales table: sale_status='Voided', voided_by=cashier_id, void_reason=[reason]
+    History Shows: "VOIDED - Restored 2 units of Chocomucho"
+    Badge: VOID (orange)
+    Date/time, cashier username, void reason recorded
+    
+    WHAT IS RECORDED:
+      - Product name
+      - Quantity restored (stock goes back)
+      - Void reason (cashier's explanation)
+      - Original sale receipt number
+      - Date/time of void
+      - Cashier username
+    
+    EXAMPLE:
+      Cashier sold 2 Chocomucho, later voids with reason "wrong item"
+      History shows: "VOIDED - Restored 2 units of Chocomucho | Reason: wrong item"
+
+  C. CASHIER REFUND TRANSACTION
+    When: Cashier refunds a completed sale
+    Recorded As:
+      - stock_movements: movement_type='IN', quantity=restored, reason='Refund Sale'
+      - sales table: sale_status='Refunded', refunded_by=cashier_id, refund_reason=[reason]
+    History Shows: "REFUNDED - Restored 2 units of Chocomucho"
+    Badge: REFUND (blue)
+    Date/time, cashier username, refund reason recorded
+
+================================================================================
+PART 3: CASHIER HISTORY (SEPARATE VIEW)
+================================================================================
+
+The cashier has their OWN history at /cashier/history which is DIFFERENT from
+the admin history. It shows ONLY the cashier's own activities.
+
+3.1 WHAT APPEARS IN CASHIER HISTORY
+
+  - Cashier's own sales (sold items, quantities, totals)
+  - Cashier's own voids (voided transactions, restored stock, reasons)
+  - Cashier's own refunds (refunded transactions, restored stock, reasons)
+  
+  The cashier does NOT see:
+  - Admin activities (adding/editing products, managing staff)
+  - Other cashiers' transactions
+  - Admin login/logout
+
+3.2 CASHIER HISTORY DISPLAY
+
+  Similar to admin history but simpler:
+  - Date/Time | Product | Action | Description | Status
+  
+  Examples:
+    "Sold 2 units of Chocomucho" (badge: -OUT)
+    "VOIDED - Restored 2 units of Chocomucho" (badge: VOID)
+    "REFUNDED - Restored 2 units of Chocomucho" (badge: REFUND)
+
+================================================================================
+PART 4: EDIT PRODUCT - WHAT GETS LOGGED (DETAILED)
+================================================================================
+
+When an admin edits a product, the system records EXACTLY what fields changed.
+
+4.1 FIELDS THAT CAN BE EDITED
+
+  - Product Name
+  - Barcode
+  - Category
+  - Price
+  - Stock Quantity
+  - Expiration Date
+
+4.2 LOGGING FORMAT
+
+  For EACH field that changed, the system records:
+    "{field_name}: {old_value} → {new_value}"
+
+  Examples:
+    Only price changed:
+      "Edited product: Chocomucho | Price: ₱50.00 → ₱60.00"
+    
+    Only stock changed:
+      "Edited product: Chocomucho | Stock: 510 → 10"
+    
+    Multiple fields changed:
+      "Edited product: Chocomucho | Stock: 510 → 10 | Price: ₱50.00 → ₱60.00 | Name: Chocomucho → Chococream"
+    
+    Nothing changed (just opened and saved):
+      "Edited product: Chocomucho | Stock: 510 → 510 | Price: ₱50.00 → ₱50.00"
+
+4.3 STOCK MOVEMENT ON EDIT
+
+  If stock changed during edit, a SEPARATE stock_movement entry is ALSO created:
+    - Stock increased by 5: stock_movement IN, qty=5, reason='Change Quantity'
+      History: "Changed Chocomucho stock by +5 units"
+    
+    - Stock decreased by 500: stock_movement OUT, qty=500, reason='Change Quantity'
+      History: "Changed Chocomucho stock by -500 units"
+
+4.4 IF NO STOCK CHANGE BUT OTHER FIELDS CHANGED
+
+  No stock_movement is created (since stock didn't change).
+  Only admin_activity is updated with the details.
+
+================================================================================
+PART 5: SUGGESTIONS FOR ADDITIONAL FEATURES
+================================================================================
+
+5.1 SEARCH & FILTER (Already implemented)
+  - Search by product name, actor, description
+  - Filter by action type (Add, Edit, Sale, Void, Refund, etc.)
+  - Filter by date range
+
+5.2 LIVE UPDATE (Already implemented)
+  - Auto-refresh every 5 seconds
+  - New entries highlighted with animation
+  - Real-time stock updates
+
+5.3 SUGGESTED ADDITIONS
+
+  A. EXPORT TO CSV/PDF
+    - Export history to CSV for auditing
+    - Print history report
+    - Implementation: Add "Export" button to admin_history.html
+    
+  B. BULK ACTIONS LOGGING
+    - When admin updates multiple products at once, log each change
+    - Implementation: Modify bulk update routes to log individual changes
+    
+  C. BEFORE/AFTER COMPARISON VIEW
+    - Show a modal with side-by-side comparison of old vs new values
+    - Implementation: Add modal to admin_history.html that shows full details
+    
+  D. SORT BY COLUMN
+    - Click column headers to sort (date, actor, product, etc.)
+    - Implementation: Add sortable table headers with JavaScript
+    
+  E. DATE RANGE FILTER
+    - Calendar picker for date range filtering
+    - Implementation: Add date inputs and modify /api/history endpoint
+    
+  F. USER ACTIVITY SUMMARY
+    - Show per-user statistics (how many sales, edits, etc.)
+    - Implementation: Add summary cards or separate statistics endpoint
+    
+  G. LOW STOCK ALERTS IN HISTORY
+    - When stock drops below threshold, auto-log an alert in history
+    - Implementation: Add check in /api/products or complete_sale to log low stock events
+    
+  H. LOGIN/LOGOUT ACTIVITY
+    - Track when cashiers login/logout in history
+    - Already implemented via admin_activity (Admin Login/Logout)
+    
+  I. void REASON REQUIRED
+    - Cashier MUST enter reason when voiding (already implemented)
+    - Reason is displayed in history entry
+    
+  J. PAGINATION
+    - For large histories, show page numbers
+    - Implementation: Add pagination controls to admin_history.html
+
+================================================================================
+PART 6: DATABASE TABLES USED
+================================================================================
+
+  stock_movements (Primary source for stock changes)
+    - id, product_id, movement_type ('IN'/'OUT'), quantity, reason, movement_date
+    - Reasons used: 'Stock Addition', 'Change Quantity', 'Sale', 'Void Sale', 
+      'Refund Sale', 'Product Deleted'
+    
+  admin_activity (Primary source for admin actions)
+    - id, admin_id, action, ip_address, details, activity_time
+    - Actions used: 'Admin Login', 'Admin Logout', 'Add New Product', 
+      'Edit Product', 'Delete Product', 'Register Cashier', 'Delete Cashier',
+      'Change Password'
+    
+  products (For product names)
+    - id, product_name, barcode, price, stock, etc.
+    
+  admins (For admin usernames)
+    - id, username, full_name, etc.
+    
+  cashiers (For cashier usernames)
+    - id, full_name, username, etc.
+    
+  sales (For sale metadata, void/refund status)
+    - id, receipt_number, cashier_id, total_amount, sale_status, 
+      voided_at, voided_by, void_reason, refunded_at, refunded_by, refund_reason
+
+================================================================================
+PART 7: CURRENT IMPLEMENTATION STATUS
+================================================================================
+
+FEATURE                     | STATUS | NOTES
+----------------------------|--------|----------------------------------
+Admin History page          | DONE   | /admin/history
+Cashier History page        | DONE   | /cashier/history
+API for admin history       | DONE   | /api/history
+API for cashier history     | DONE   | /api/cashier/history
+Add product logging         | DONE   | Detailed with price, stock, category
+Edit product logging        | DONE   | Before/after values in details
+Delete product logging      | DONE   | Logs remaining stock removed
+Sale logging                | DONE   | Existing stock_movements
+Void logging                | DONE   | Existing + detailed description
+Refund logging              | DONE   | Existing + detailed description
+Stock change on edit        | DONE   | Logs delta with "Change Quantity"
+Live update (5 sec)         | DONE   | Auto-refresh with highlight
+Search & filter             | DONE   | Search box + dropdown filter
+Status badges               | DONE   | ADD, EDIT, DELETE, LOGIN, LOGOUT, VOID, REFUND
+Professional display        | DONE   | Description column + badges
+Export to CSV               | SUGGESTED | Feature request (not yet implemented)
+Date range filter           | SUGGESTED | Feature request (not yet implemented)
+Pagination                  | SUGGESTED | Feature request (not yet implemented)
+
+================================================================================
+PART 8: EXAMPLE WALKTHROUGH
+================================================================================
+
+Scenario: Admin named "admin" manages products. Cashier named "cashier_mike" makes sales.
+
+1. Admin adds Chocomucho (qty=10, price=₱50, category=Medical)
+   ADMIN HISTORY: "Added new product: Chocomucho | Price: ₱50.00 | Stock: 10 | Category: Medical"
+   STOCK: +10 Chocomucho | Badge: ADD | Direction: +IN
+
+2. Admin changes Chocomucho stock from 10 to 510 (adds 500 more)
+   ADMIN HISTORY: "Edited product: Chocomucho | Stock: 10 → 510 | Price: ₱50.00"
+   STOCK: +500 Chocomucho | Badge: EDIT | Direction: +IN | Reason: Change Quantity
+
+3. Admin changes Chocomucho price from ₱50 to ₱60 (no stock change)
+   ADMIN HISTORY: "Edited product: Chocomucho | Stock: 510 → 510 | Price: ₱50.00 → ₱60.00"
+   STOCK: No movement (price only) | Badge: EDIT
+
+4. Cashier Mike sells 2 Chocomucho
+   ADMIN HISTORY: "Sold 2 units of Chocomucho"
+   CASHIER HISTORY: "Sold 2 units of Chocomucho"
+   STOCK: -2 Chocomucho | Badge: -OUT | Direction: OUT | Reason: Sale
+
+5. Cashier Mike sells 5 more Chocomucho
+   ADMIN HISTORY: "Sold 5 units of Chocomucho"
+   CASHIER HISTORY: "Sold 5 units of Chocomucho"
+   STOCK: -5 Chocomucho | Badge: -OUT | Direction: OUT | Reason: Sale
+
+6. Cashier Mike voids the first sale (2 units, reason: "wrong item")
+   ADMIN HISTORY: "VOIDED - Restored 2 units of Chocomucho | Reason: wrong item"
+   CASHIER HISTORY: "VOIDED - Restored 2 units of Chocomucho"
+   STOCK: +2 Chocomucho | Badge: VOID | Direction: IN | Reason: Void Sale
+
+7. Cashier Mike refunds the second sale (5 units, reason: "customer request")
+   ADMIN HISTORY: "REFUNDED - Restored 5 units of Chocomucho | Reason: customer request"
+   CASHIER HISTORY: "REFUNDED - Restored 5 units of Chocomucho"
+   STOCK: +5 Chocomucho | Badge: REFUND | Direction: IN | Reason: Refund Sale
+
+8. Admin deletes Chocomucho (remaining stock: 513)
+   ADMIN HISTORY: "Deleted product: Chocomucho"
+   STOCK: -513 Chocomucho | Badge: DELETE | Direction: OUT | Reason: Product Deleted
+
+9. Admin logs out
+   ADMIN HISTORY: "Admin admin logged out"
+   Badge: LOGOUT
+
+10. Cashier Mike logs out
+    ADMIN HISTORY: "Cashier cashier_mike logged out" (if cashier logout is logged)
+    Badge: LOGOUT
+
+FINAL STOCK: Chocomucho = 0 (all stock removed/deleted)
+
+================================================================================
+PART 9: KEY DIFFERENCES - ADMIN vs CASHIER HISTORY
+================================================================================
+
+FEATURE              | ADMIN HISTORY              | CASHIER HISTORY
+---------------------|----------------------------|----------------------------
+URL                  | /admin/history             | /cashier/history
+Scope                | ALL system activities      | ONLY this cashier's activities
+Shows admin actions  | YES                        | NO
+Shows all sales      | YES (all cashiers)         | YES (only own sales)
+Shows voids/refunds  | YES (all)                  | YES (only own)
+Shows stock changes  | YES (all)                  | YES (only own)
+User filter          | N/A (shows all users)      | Filter by self
+
+================================================================================
+PART 10: EDIT PRODUCT - WHAT CHANGES EXPLAINED
+================================================================================
+
+Q: What happens when admin edits a product?
+A: The system captures the OLD values before updating, then compares with NEW values.
+
+Q: What if admin changes ONLY the name?
+A: admin_activity details: "Edited product: Chococream | Stock: 510 → 510 | Price: ₱60.00 → ₱60.00"
+   (Stock and price stay same, only name changed)
+   No stock_movement created (stock didn't change).
+
+Q: What if admin changes ONLY the price?
+A: admin_activity details: "Edited product: Chocomucho | Stock: 510 → 510 | Price: ₱50.00 → ₱60.00"
+   No stock_movement created (stock didn't change).
+
+Q: What if admin changes ONLY the quantity?
+A: admin_activity details: "Edited product: Chocomucho | Stock: 10 → 510 | Price: ₱50.00 → ₱50.00"
+   stock_movements: movement_type='IN', quantity=500, reason='Change Quantity'
+   History: "Changed Chocomucho stock by +500 units"
+
+Q: What if admin changes everything (name, price, stock)?
+A: admin_activity details: "Edited product: Chococream | Stock: 10 → 510 | Price: ₱50.00 → ₱60.00"
+   stock_movements: movement_type='IN', quantity=500, reason='Change Quantity'
+   History: "Changed Chocomucho stock by +500 units"
+
+Q: What if admin accidentally reduces stock too much?
+A: The system does NOT prevent this. If admin sets stock to a lower value, it logs it as OUT.
+   Example: Stock was 510, admin changes to 10.
+   History: "Changed Chocomucho stock by -500 units" (Badge: EDIT, Direction: OUT)
+   No error is shown - admin is responsible for accurate edits.
+
+Q: What if nothing changed?
+A: admin_activity details: "Edited product: Chocomucho | Stock: 510 → 510 | Price: ₱60.00 → ₱60.00"
+   No stock_movement created.
+   Still logged as 'Edit Product' action in admin_activity.
+
+================================================================================
+END OF SPECIFICATION
+================================================================================

@@ -1,26 +1,26 @@
 {% extends 'admin_dashboard.html' %}
-{% block page_title %}Inventory - Out of Stock{% endblock %}
+{% block page_title %}Inventory - Expired Products{% endblock %}
 
 {% block content %}
 <div class="card">
     <div class="page-header">
         <a href="{{ url_for('admin_dashboard') }}" class="back-link">← Back to Dashboard</a>
-        <h1 class="page-title">Out of Stock Alerts</h1>
-        <p class="page-subtitle">Products with zero stock remaining.</p>
+        <h1 class="page-title">Expired Products</h1>
+        <p class="page-subtitle">Products that have passed their expiration date.</p>
     </div>
 
     <div style="margin-bottom: 20px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
         <label class="form-label" style="margin-right: 10px;">Filter by Status:</label>
-        <a href="{{ url_for('out_of_stock', category=category_filter or 'all') }}" class="btn btn-sm {% if tab == 'active' or not tab %}btn-primary{% else %}btn-secondary{% endif %}" style="margin-right: 6px;">Active</a>
-        <a href="{{ url_for('out_of_stock', category=category_filter or 'all', tab='acknowledged') }}" class="btn btn-sm {% if tab == 'acknowledged' %}btn-primary{% else %}btn-secondary{% endif %}" style="margin-right: 6px;">Acknowledged</a>
-        <a href="{{ url_for('out_of_stock', category=category_filter or 'all', tab='dismissed') }}" class="btn btn-sm {% if tab == 'dismissed' %}btn-primary{% else %}btn-secondary{% endif %}">Dismissed</a>
+        <a href="{{ url_for('expired_products', category=category_filter or 'all') }}" class="btn btn-sm {% if tab == 'active' or not tab %}btn-primary{% else %}btn-secondary{% endif %}" style="margin-right: 6px;">Active</a>
+        <a href="{{ url_for('expired_products', category=category_filter or 'all', tab='acknowledged') }}" class="btn btn-sm {% if tab == 'acknowledged' %}btn-primary{% else %}btn-secondary{% endif %}" style="margin-right: 6px;">Acknowledged</a>
+        <a href="{{ url_for('expired_products', category=category_filter or 'all', tab='dismissed') }}" class="btn btn-sm {% if tab == 'dismissed' %}btn-primary{% else %}btn-secondary{% endif %}">Dismissed</a>
     </div>
 
     <div style="margin-bottom: 20px;">
         <label class="form-label" style="margin-right: 10px;">Filter by Category:</label>
-        <a href="{{ url_for('out_of_stock', category='all', tab=tab or 'active') }}" class="btn btn-sm {% if category_filter == 'all' or not category_filter %}btn-primary{% else %}btn-secondary{% endif %}" style="margin-right: 6px;">All</a>
-        <a href="{{ url_for('out_of_stock', category='Medical', tab=tab or 'active') }}" class="btn btn-sm {% if category_filter == 'Medical' %}btn-primary{% else %}btn-secondary{% endif %}" style="margin-right: 6px;">Medical</a>
-        <a href="{{ url_for('out_of_stock', category='Non-Medical', tab=tab or 'active') }}" class="btn btn-sm {% if category_filter == 'Non-Medical' %}btn-primary{% else %}btn-secondary{% endif %}">Non-Medical</a>
+        <a href="{{ url_for('expired_products', category='all', tab=tab or 'active') }}" class="btn btn-sm {% if category_filter == 'all' or not category_filter %}btn-primary{% else %}btn-secondary{% endif %}" style="margin-right: 6px;">All</a>
+        <a href="{{ url_for('expired_products', category='Medical', tab=tab or 'active') }}" class="btn btn-sm {% if category_filter == 'Medical' %}btn-primary{% else %}btn-secondary{% endif %}" style="margin-right: 6px;">Medical</a>
+        <a href="{{ url_for('expired_products', category='Non-Medical', tab=tab or 'active') }}" class="btn btn-sm {% if category_filter == 'Non-Medical' %}btn-primary{% else %}btn-secondary{% endif %}">Non-Medical</a>
     </div>
 
     {% if products %}
@@ -32,7 +32,7 @@
                     <th>Category</th>
                     <th>Barcode</th>
                     <th>Price</th>
-                    <th>Stock</th>
+                    <th>Expiration Date</th>
                     <th>Alert Status</th>
                     <th>Actions</th>
                 </tr>
@@ -50,9 +50,7 @@
                 </td>
                 <td>{{ p[2] }}</td>
                 <td>₱{{ p[5] }}</td>
-                <td>
-                    <span class="badge badge-danger">OUT OF STOCK</span>
-                </td>
+                <td>{{ p[7] }}</td>
                 <td>
                     {% if tab == 'acknowledged' %}
                     <span class="badge badge-success">Acknowledged</span>
@@ -65,8 +63,8 @@
                 <td>
                     {% if tab != 'acknowledged' and tab != 'dismissed' %}
                     <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-                        <button class="btn btn-sm btn-primary" onclick="acknowledgeAlert('out_of_stock', {{ p[0] }})">Acknowledge</button>
-                        <button class="btn btn-sm btn-danger" onclick="dismissAlert('out_of_stock', {{ p[0] }})">Dismiss</button>
+                        <button class="btn btn-sm btn-primary" onclick="acknowledgeAlert('expired', {{ p[0] }})">Acknowledge</button>
+                        <button class="btn btn-sm btn-danger" onclick="dismissAlert('expired', {{ p[0] }})">Dismiss</button>
                     </div>
                     {% else %}
                     <span style="color: var(--text-muted); font-size: 13px;">—</span>
@@ -80,8 +78,8 @@
     {% else %}
     <div class="empty-state">
         <div class="empty-state-icon">📦</div>
-        <div class="empty-state-title">No out-of-stock products found</div>
-        <div class="empty-state-text">All products are in stock or no alerts match the selected filter.</div>
+        <div class="empty-state-title">No expired products found</div>
+        <div class="empty-state-text">All products are within date range or no alerts match the selected filter.</div>
     </div>
     {% endif %}
 </div>
@@ -131,31 +129,31 @@ const HELP_TOUR_STEPS = [
     selector: "label[style*='margin-right: 10px']",
     title: "Status Filter",
     category: "core-features",
-    purpose: "Filtering by status helps you focus on active alerts versus those already handled by your team.",
+    purpose: "Filtering expired alerts by status helps you separate new issues from those already addressed by the team.",
     how_to_use: [
-      "Click Active to view only unresolved out-of-stock alerts",
-      "Click Acknowledged to review alerts that staff have seen",
-      "Click Dismissed to audit alerts that were closed with a reason"
+      "Click Active to view unresolved expired-product alerts",
+      "Click Acknowledged to see items staff have already reviewed",
+      "Click Dismissed to audit alerts closed with a documented reason"
     ],
     description: "Filter alerts by acknowledgment status.",
     instruction: "Choose Active, Acknowledged, or Dismissed to filter the list."
   },
   {
     selector: ".table-container table",
-    title: "Out of Stock Products",
+    title: "Expired Products",
     category: "core-features",
-    purpose: "This table highlights products with zero stock so you can reorder or remove them before they cause checkout failures.",
+    purpose: "This table lists products past their expiration date so they can be removed from sale and from inventory records.",
     how_to_use: [
-      "Review product names, categories, barcodes, and prices",
-      "Use the Acknowledge button to mark alerts as seen by the team",
-      "Use the Dismiss button with a reason to close alerts that do not require action"
+      "Check product names, categories, barcodes, prices, and expiration dates",
+      "Click Acknowledge to confirm you have seen the expired item",
+      "Click Dismiss and provide a reason if the alert is a false positive"
     ],
-    description: "View all products with zero stock remaining.",
-    instruction: "Check product names, categories, barcodes, prices, and stock levels. Use Acknowledge or Dismiss buttons to manage alerts."
+    description: "View products that have passed their expiration date.",
+    instruction: "Check product names, categories, barcodes, prices, and expiration dates. Use Acknowledge or Dismiss buttons to manage alerts."
   }
 ];
 window.HELP_TOUR_STEPS = HELP_TOUR_STEPS;
-window.HELP_TOUR_STORAGE_KEY = "helptour_out_of_stock";
+window.HELP_TOUR_STORAGE_KEY = "helptour_expired";
 </script>
 <script src="/static/js/help-tour.js"></script>
 {% endblock %}

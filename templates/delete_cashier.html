@@ -33,6 +33,7 @@
                 <td>
                     <button onclick="openEditModal('{{ c[0] }}', '{{ c[1] }}', '{{ c[2] }}', '{% if c[4] %}{{ c[4] }}{% else %}active{% endif %}')" class="btn btn-primary btn-sm" style="margin-right: 6px;">Edit</button>
                     <form method="POST" action="{{ url_for('delete_cashier') }}" style="display: inline;" onsubmit="return confirm('Delete this cashier?');">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <input type="hidden" name="id" value="{{ c[0] }}">
                         <button type="submit" class="btn btn-danger btn-sm">Delete</button>
                     </form>
@@ -56,6 +57,7 @@
         </div>
         <div class="modal-body">
             <form method="POST" action="{{ url_for('edit_cashier') }}" id="editCashierForm">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="id" id="editId">
                 <div class="form-group" style="margin-bottom: 16px;">
                     <label class="form-label">Full Name</label>
@@ -112,6 +114,55 @@ function openEditModal(id, fullname, username, status) {
     document.getElementById('editConfirmPassword').value = '';
     document.getElementById('editModal').classList.add('show');
 }
-function closeEditModal() { document.getElementById('editModal').classList.remove('show'); }
+    function closeEditModal() { document.getElementById('editModal').classList.remove('show'); }
 </script>
+{% endblock %}
+
+{% block help_tour %}
+<script>
+const HELP_TOUR_STEPS = [
+  {
+    selector: ".table-container table",
+    title: "Cashiers Table",
+    category: "advanced",
+    purpose: "The cashiers table provides a complete roster of staff accounts, their statuses, and quick management actions.",
+    how_to_use: [
+      "Scan the table to review ID, full name, username, and current status",
+      "Verify active cashiers are legitimate and current employees",
+      "Use the table to identify accounts that need updating or removal"
+    ],
+    description: "View all registered cashiers with their details.",
+    instruction: "Check ID, full name, username, and status. Active cashiers can log in."
+  },
+  {
+    selector: '.btn-primary.btn-sm[onclick*="openEditModal"]',
+    title: "Edit Cashier",
+    category: "advanced",
+    purpose: "Editing lets you update cashier details and reset passwords without creating a new account.",
+    how_to_use: [
+      "Click Edit on the cashier row you want to update",
+      "Change name, username, or status in the modal form",
+      "Use the Change Password section if the cashier forgot their password"
+    ],
+    description: "Modify cashier information and status.",
+    instruction: "Click Edit to open the modal. You can change name, username, status, and password."
+  },
+  {
+    selector: 'form[onsubmit*="Delete this cashier"] .btn-danger',
+    title: "Delete Cashier",
+    category: "advanced",
+    purpose: "Removing inactive or departed staff accounts prevents unauthorized POS access and keeps the roster clean.",
+    how_to_use: [
+      "Click Delete on the cashier account you want to remove",
+      "Confirm the deletion in the browser prompt",
+      "Verify the row disappears from the table and the account can no longer log in"
+    ],
+    description: "Remove a cashier account permanently.",
+    instruction: "Click Delete and confirm to remove the cashier."
+  }
+];
+window.HELP_TOUR_STEPS = HELP_TOUR_STEPS;
+window.HELP_TOUR_STORAGE_KEY = "helptour_manage_staff";
+</script>
+<script src="/static/js/help-tour.js"></script>
 {% endblock %}
