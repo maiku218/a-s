@@ -26,16 +26,19 @@
             {% for log in activity_logs %}
             <tr>
                 <td><strong>{{ log[0] }}</strong> ({{ log[1] }})</td>
-                <td>{{ log[2].strftime('%Y-%m-%d %H:%M') if log[2] else '-' }}</td>
-                <td>{{ log[3].strftime('%Y-%m-%d %H:%M') if log[3] else 'Still Online' }}</td>
+                <td>{{log[2] | format_date('%Y-%m-%d %H:%M') if log[2] else '-' }}</td>
+                <td>{{log[3] | format_date('%Y-%m-%d %H:%M') if log[3] else 'Still Online' }}</td>
                 <td>{{ log[4] if log[4] else 'N/A' }}</td>
                 <td>
                     {% if log[2] and log[3] %}
-                        {% set duration = log[3] - log[2] %}
+                        {% set logout_time = datetime.strptime(log[3][:19], '%Y-%m-%d %H:%M:%S') %}
+                        {% set login_time = datetime.strptime(log[2][:19], '%Y-%m-%d %H:%M:%S') %}
+                        {% set duration = logout_time - login_time %}
                         {% if duration.days > 0 %}{{ duration.days }}d {{ duration.seconds // 3600 }}h{% elif duration.seconds // 3600 > 0 %}{{ duration.seconds // 3600 }}h {{ (duration.seconds % 3600) // 60 }}m{% else %}{{ duration.seconds // 60 }}m{% endif %}
                     {% elif log[2] %}
                         {% set now = datetime.now() %}
-                        {% set duration = now - log[2] %}
+                        {% set login_time = datetime.strptime(log[2][:19], '%Y-%m-%d %H:%M:%S') %}
+                        {% set duration = now - login_time %}
                         {% if duration.days > 0 %}{{ duration.days }}d {{ duration.seconds // 3600 }}h{% elif duration.seconds // 3600 > 0 %}{{ duration.seconds // 3600 }}h {{ (duration.seconds % 3600) // 60 }}m{% else %}{{ duration.seconds // 60 }}m{% endif %}
                     {% else %}-
                     {% endif %}
@@ -56,4 +59,27 @@
     <p style="color: var(--text-secondary); margin-top: 20px;">No activity logs found.</p>
     {% endif %}
 </div>
+{% endblock %}
+
+{% block help_tour %}
+<script>
+const HELP_TOUR_STEPS = [
+  {
+    selector: ".table-container table",
+    title: "Cashier Activity Log",
+    category: "advanced",
+    purpose: "Cashier activity logs provide an auditable record of login and logout times, IP addresses, and session durations.",
+    how_to_use: [
+      "Review cashier names, login times, and logout times in the table",
+      "Check IP addresses to verify sessions originated from expected locations",
+      "Use the duration and status columns to investigate unusual session lengths"
+    ],
+    description: "Complete history of cashier login and logout times with IP tracking.",
+    instruction: "The table shows cashier names, login times, logout times, IP addresses, duration, and status."
+  }
+];
+window.HELP_TOUR_STEPS = HELP_TOUR_STEPS;
+window.HELP_TOUR_STORAGE_KEY = "helptour_cashier_logs";
+</script>
+<script src="/static/js/help-tour.js"></script>
 {% endblock %}

@@ -4,52 +4,59 @@
 {% block content %}
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
-<div class="card" style="max-width: 900px; margin: 0 auto;">
-    <div class="page-header" style="border-bottom: 1px solid var(--border); padding-bottom: 16px; margin-bottom: 24px;">
+<div class="card" style="max-width: 700px; margin: 0 auto;">
+    <div class="page-header">
         <a href="{{ url_for('all_products') }}" class="back-link">← Back to Inventory</a>
         <h1 class="page-title">Edit Product</h1>
-        <p class="page-subtitle">Update product details.</p>
+        <p class="page-subtitle">Update product details</p>
     </div>
 
     {% if product %}
     <form action="{{ url_for('edit_product', id=product[0]) }}" method="POST">
-        <div style="background: #fff7ed; border: 2px dashed var(--accent); border-radius: var(--radius-lg); padding: 24px; margin-bottom: 24px; text-align: center;">
-            <label style="font-weight: 700; color: var(--text); margin-bottom: 12px; display: block; font-size: 16px;">
-                <span style="background: var(--accent); color: white; padding: 2px 10px; border-radius: 4px; margin-right: 8px; font-size: 14px;">1</span>
-                BARCODE
-            </label>
-            <input type="text" name="barcode" id="barcodeInput" value="{{ product[2] }}" required autofocus placeholder="Scan or enter barcode..."
-                style="width: 80%; padding: 14px; border-radius: var(--radius); border: 2px solid var(--accent); font-family: 'Courier New', monospace; font-size: 20px; text-align: center; outline: none; background: var(--surface);">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="id" value="{{ product[0] }}">
+
+        <div class="form-group">
+            <label class="form-label">Barcode</label>
+            <input type="text" name="barcode" value="{{ product[2] }}" required autofocus class="form-input">
+        </div>
+
+        <div class="form-group">
+            <label class="form-label">Product Name</label>
+            <input type="text" name="product_name" value="{{ product[1] }}" required autocomplete="off" class="form-input">
+        </div>
+
+        <div class="form-group">
+            <label class="form-label">Category</label>
+            <select name="category" required class="form-input">
+                <option value="" disabled>Select Type</option>
+                <option value="Medical" {% if product[6] == 'Medical' %}selected{% endif %}>Medical (Branded/Generic)</option>
+                <option value="Non-Medical" {% if product[6] == 'Non-Medical' %}selected{% endif %}>Non-Medical (Supplies/Hygiene)</option>
+            </select>
         </div>
 
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
             <div class="form-group">
-                <label class="form-label">Product Name</label>
-                <input type="text" name="product_name" id="productName" value="{{ product[1] }}" required autocomplete="off">
-            </div>
-            <div class="form-group">
-                <label class="form-label">Category</label>
-                <select name="category" id="categorySelect" required>
-                    <option value="" disabled>Select Type</option>
-                    <option value="Medical" {% if product[6] == 'Medical' %}selected{% endif %}>Medical (Branded/Generic)</option>
-                    <option value="Non-Medical" {% if product[6] == 'Non-Medical' %}selected{% endif %}>Non-Medical (Supplies/Hygiene)</option>
-                </select>
-            </div>
-        </div>
-
-        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; margin-bottom: 30px;">
-            <div class="form-group">
                 <label class="form-label">Price (₱)</label>
-                <input type="number" step="0.01" name="price" value="{{ product[4] }}" required>
+                <input type="number" step="0.01" name="price" value="{{ product[4] }}" required class="form-input">
             </div>
             <div class="form-group">
                 <label class="form-label">Stock</label>
-                <input type="number" name="stock" id="stockInput" value="{{ product[5] }}" required>
+                <div style="display:flex;gap:8px;align-items:stretch;">
+                    <input type="text" value="{{ product[5] }} units" readonly disabled class="form-input" style="flex:1;background: var(--bg-alt); color: var(--text-secondary);">
+                    <a href="{{ url_for('stock_in') }}" class="btn btn-primary">Stock In</a>
+                </div>
             </div>
-            <div class="form-group">
-                <label class="form-label">Expiration Date</label>
-                <input type="date" name="expiration_date" value="{{ product[7] }}">
-            </div>
+        </div>
+
+        <div class="form-group" id="expiryGroup">
+            <label class="form-label">Expiration Date</label>
+            <input type="date" name="expiration_date" value="{{ product[7] or '' }}" class="form-input"
+                   style="{% if not product[7] %}display:none;{% endif %}">
+            <label style="display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 13px; color: var(--text-secondary); cursor: pointer;">
+                <input type="checkbox" id="noExpirationCheckbox" {% if not product[7] %}checked{% endif %}>
+                No expiration date
+            </label>
         </div>
 
         <div style="display: flex; gap: 12px; justify-content: flex-end; padding-top: 16px; border-top: 1px solid var(--border);">
@@ -65,11 +72,24 @@
     {% endif %}
 </div>
 
-{% with messages = get_flashed_messages(with_categories=true) %}
-  {% if messages %}
-    {% for category, message in messages %}
-      <script>Swal.fire({ icon: '{{ "success" if category == "success" else "error" }}', title: '{{ message }}', showConfirmButton: false, timer: 2500, toast: true, position: 'top-end' });</script>
-    {% endfor %}
-  {% endif %}
-{% endwith %}
+<script>
+function toggleExpiration(checkbox) {
+    const dateInput = document.querySelector('input[name="expiration_date"]');
+    if (checkbox.checked) {
+        dateInput.value = '';
+        dateInput.style.display = 'none';
+    } else {
+        dateInput.style.display = 'block';
+        dateInput.focus();
+    }
+}
+document.addEventListener('DOMContentLoaded', function() {
+    const checkbox = document.getElementById('noExpirationCheckbox');
+    const dateInput = document.querySelector('input[name="expiration_date"]');
+    if (checkbox && dateInput) {
+        checkbox.addEventListener('change', function() { toggleExpiration(this); });
+        if (checkbox.checked) { dateInput.style.display = 'none'; }
+    }
+});
+</script>
 {% endblock %}

@@ -1,0 +1,165 @@
+{% extends 'admin_dashboard.html' %}
+{% block page_title %}Inventory - Low Stock{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="page-header">
+        <a href="{{ url_for('admin_dashboard') }}" class="back-link">← Back to Dashboard</a>
+        <h1 class="page-title">Low Stock Alerts</h1>
+        <p class="page-subtitle">Products with stock between 1 and {{ low_stock_count > 0 and '10' or '10' }} units.</p>
+    </div>
+
+    <div style="margin-bottom: 20px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+        <label class="form-label" style="margin-right: 10px;">Filter by Status:</label>
+        <a href="{{ url_for('low_stock', category=category_filter or 'all') }}" class="btn btn-sm {% if tab == 'active' or not tab %}btn-primary{% else %}btn-secondary{% endif %}" style="margin-right: 6px;">Active</a>
+        <a href="{{ url_for('low_stock', category=category_filter or 'all', tab='acknowledged') }}" class="btn btn-sm {% if tab == 'acknowledged' %}btn-primary{% else %}btn-secondary{% endif %}" style="margin-right: 6px;">Acknowledged</a>
+        <a href="{{ url_for('low_stock', category=category_filter or 'all', tab='dismissed') }}" class="btn btn-sm {% if tab == 'dismissed' %}btn-primary{% else %}btn-secondary{% endif %}">Dismissed</a>
+    </div>
+
+    <div style="margin-bottom: 20px;">
+        <label class="form-label" style="margin-right: 10px;">Filter by Category:</label>
+        <a href="{{ url_for('low_stock', category='all', tab=tab or 'active') }}" class="btn btn-sm {% if category_filter == 'all' or not category_filter %}btn-primary{% else %}btn-secondary{% endif %}" style="margin-right: 6px;">All</a>
+        <a href="{{ url_for('low_stock', category='Medical', tab=tab or 'active') }}" class="btn btn-sm {% if category_filter == 'Medical' %}btn-primary{% else %}btn-secondary{% endif %}" style="margin-right: 6px;">Medical</a>
+        <a href="{{ url_for('low_stock', category='Non-Medical', tab=tab or 'active') }}" class="btn btn-sm {% if category_filter == 'Non-Medical' %}btn-primary{% else %}btn-secondary{% endif %}">Non-Medical</a>
+    </div>
+
+    {% if products %}
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>Product Name</th>
+                    <th>Category</th>
+                    <th>Barcode</th>
+                    <th>Price</th>
+                    <th>Stock</th>
+                    <th>Alert Status</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for p in products %}
+            <tr>
+                <td><strong>{{ p[1] }}</strong></td>
+                <td>
+                    {% if p[4] == 'Medical' %}
+                    <span class="badge badge-info">Medical</span>
+                    {% else %}
+                    <span class="badge badge-success">Non-Medical</span>
+                    {% endif %}
+                </td>
+                <td>{{ p[2] }}</td>
+                <td>₱{{ p[5] }}</td>
+                <td>
+                    {% if p[6] <= 5 %}
+                    <span class="badge badge-danger">{{ p[6] }} (Critical)</span>
+                    {% else %}
+                    <span class="badge badge-warning">{{ p[6] }} (Low)</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if tab == 'acknowledged' %}
+                    <span class="badge badge-success">Acknowledged</span>
+                    {% elif tab == 'dismissed' %}
+                    <span class="badge badge-secondary">Dismissed</span>
+                    {% else %}
+                    <span class="badge badge-danger">Active</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if tab != 'acknowledged' and tab != 'dismissed' %}
+                    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                        <button class="btn btn-sm btn-primary" onclick="acknowledgeAlert('low_stock', {{ p[0] }})">Acknowledge</button>
+                        <button class="btn btn-sm btn-danger" onclick="dismissAlert('low_stock', {{ p[0] }})">Dismiss</button>
+                    </div>
+                    {% else %}
+                    <span style="color: var(--text-muted); font-size: 13px;">—</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <div class="empty-state-icon">📦</div>
+        <div class="empty-state-title">No low stock products found</div>
+        <div class="empty-state-text">All products are well-stocked or no alerts match the selected filter.</div>
+    </div>
+    {% endif %}
+</div>
+
+<script>
+function acknowledgeAlert(type, productId) {
+    fetch('/api/alert/acknowledge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').getAttribute('content') },
+        body: JSON.stringify({ alert_type: type, product_id: productId })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            location.reload();
+        } else {
+            alert(data.message);
+        }
+    });
+}
+
+function dismissAlert(type, productId) {
+    const reason = prompt('Enter reason for dismissing this alert:');
+    if (reason === null) return;
+    if (!reason.trim()) { alert('Reason is required'); return; }
+    fetch('/api/alert/dismiss', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').getAttribute('content') },
+        body: JSON.stringify({ alert_type: type, product_id: productId, reason: reason.trim() })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            location.reload();
+        } else {
+            alert(data.message);
+        }
+    });
+}
+</script>
+{% endblock %}
+
+{% block help_tour %}
+<script>
+const HELP_TOUR_STEPS = [
+  {
+    selector: "label[style*='margin-right: 10px']",
+    title: "Status Filter",
+    category: "core-features",
+    purpose: "Status filtering lets you prioritize active low-stock alerts over those already reviewed by staff.",
+    how_to_use: [
+      "Select Active to see only unresolved low-stock items",
+      "Select Acknowledged to see items staff have already noted",
+      "Select Dismissed to review closed alerts and their reasons"
+    ],
+    description: "Filter alerts by acknowledgment status.",
+    instruction: "Choose Active, Acknowledged, or Dismissed to filter the list."
+  },
+  {
+    selector: ".table-container table",
+    title: "Low Stock Products",
+    category: "core-features",
+    purpose: "This view helps you catch items running low before they hit zero, preventing lost sales and customer complaints.",
+    how_to_use: [
+      "Check product names, categories, barcodes, prices, and current stock levels",
+      "Use Acknowledge to flag items you are already reordering",
+      "Use Dismiss with a reason for items that do not need immediate action"
+    ],
+    description: "View products with low stock levels.",
+    instruction: "Check product names, categories, barcodes, prices, and stock levels. Use Acknowledge or Dismiss buttons to manage alerts."
+  }
+];
+window.HELP_TOUR_STEPS = HELP_TOUR_STEPS;
+window.HELP_TOUR_STORAGE_KEY = "helptour_low_stock";
+</script>
+<script src="/static/js/help-tour.js"></script>
+{% endblock %}
