@@ -4302,6 +4302,23 @@ def restore_database():
         except Exception as e:
             flash(f"Restore failed: {str(e)}", "error")
 
+        # Reset admin and cashier credentials to defaults after restore
+        from werkzeug.security import generate_password_hash
+        default_pw = generate_password_hash('admin123')
+        
+        # Reset admin
+        cur.execute("""
+            UPDATE admins SET password=?, force_password_change=0 WHERE username='admin'
+        """, (default_pw,))
+        
+        # Reset cashier
+        cur.execute("""
+            UPDATE cashiers SET password=?, force_password_change=0 WHERE username='cashier'
+        """, (default_pw,))
+        
+        conn.commit()
+        flash("Admin and cashier credentials reset to defaults (admin123)", "info")
+
     except Exception as e:
         flash(f"Restore error: {str(e)}", "error")
 
