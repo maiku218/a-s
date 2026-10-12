@@ -4304,7 +4304,7 @@ def restore_database():
 
         # Reset admin and cashier credentials to defaults after restore
         from werkzeug.security import generate_password_hash
-        default_pw = generate_password_hash('admin123')
+        default_pw = generate_password_hash('admin')
         
         # Reset admin
         cur.execute("""

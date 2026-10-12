@@ -356,12 +356,12 @@ def init_db():
 
     cursor.execute("SELECT COUNT(*) FROM admins")
     if cursor.fetchone()[0] == 0:
-        admin_hash = generate_password_hash('admin123')
+        admin_hash = generate_password_hash('admin')
         answer_hash = generate_password_hash('generoso')
         cursor.execute(
             "INSERT INTO admins (username, password, full_name, security_question, security_answer, force_password_change) "
             "VALUES (?, ?, ?, ?, ?, ?)",
-            ('admin', admin_hash, 'System Administrator', 'What is the name of the owner?', answer_hash, 1)
+            ('admin', admin_hash, 'System Administrator', 'What is the name of the owner?', answer_hash, 0)
         )
 
     cursor.execute("SELECT COUNT(*) FROM categories")

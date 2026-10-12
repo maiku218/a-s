@@ -27,13 +27,13 @@ def init_database():
             VALUES (?, ?, ?, ?, ?, ?)
         """, (
             'admin',
-            generate_password_hash('admin123'),
+            generate_password_hash('admin'),
             'System Administrator',
             'What is the name of the pharmacy?',
             generate_password_hash('pharmacon'),
             0  # No forced password change
         ))
-        print("Created default admin: admin / admin123")
+        print("Created default admin: admin / admin")
     else:
         # Ensure existing admin doesn't have force_password_change
         cur.execute("UPDATE admins SET force_password_change=0 WHERE username=?", ('admin',))
@@ -47,13 +47,13 @@ def init_database():
         """, (
             'Default Cashier',
             'cashier',
-            generate_password_hash('admin123'),
+            generate_password_hash('admin'),
             'What is the name of the owner?',
             generate_password_hash('generoso'),
             'active',
             0
         ))
-        print("Created default cashier: cashier / admin123")
+        print("Created default cashier: cashier / admin")
     
     # Seed alert settings if empty
     cur.execute("SELECT COUNT(*) FROM alert_settings")

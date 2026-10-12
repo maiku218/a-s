@@ -65,8 +65,8 @@ Generated: 2026-10-12
 ## Credential Management (Post-Restore)
 
 **Always reset to:**
-- **Admin**: `admin` / `admin123` (force_password_change=0)
-- **Cashier**: `cashier` / `admin123` (force_password_change=0)
+- **Admin**: `admin` / `admin` (force_password_change=0)
+- **Cashier**: `cashier` / `admin` (force_password_change=0)
 
 **Implementation:**
 - `.gitignore` excludes `pharmacon.db` - not in repo
