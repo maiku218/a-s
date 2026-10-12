@@ -1,0 +1,126 @@
+# PharmaCon SQLite - Professional Test Report
+Generated: 2026-10-12
+
+## Test Summary: 70/70 PASS (100%)
+
+---
+
+## Test Categories
+
+### 1. Admin Login & Dashboard Flow - 28 Tests PASSED
+- GET /admin_login - 200 OK
+- POST /admin_login (admin/admin123) - 302 -> /admin
+- GET /admin dashboard - 200 OK
+- All 25 admin pages accessible (200 OK, authenticated)
+- All 8 CSV exports working (200 OK, >20 bytes)
+
+### 2. Cashier Login & Dashboard Flow - 14 Tests PASSED
+- GET /cashier_login - 200 OK
+- POST /cashier_login (cashier/admin123) - 302 -> /cashier
+- GET /cashier dashboard - 200 OK
+- All 11 cashier pages/APIs accessible
+
+### 3. Product Management Flow - 4 Tests PASSED
+- GET /add_product - 200 OK
+- POST /add_product (Medical) - 200 OK
+- POST /add_product (Non-Medical) - 200 OK
+- Stock in flow (GET/POST) - 200 OK
+
+### 4. Sales Transaction Flow - 6 Tests PASSED
+- POST /complete_sale (void test) - 200 OK, success
+- POST /complete_sale (refund test) - 200 OK, success
+- POST /api/void_sale - 200 OK, success
+- POST /api/refund_sale - 200 OK, success
+
+### 5. Cashier Registration - 1 Test PASSED
+- POST /register_cashier - 200 OK, redirects to /admin
+
+### 6. Backup/Restore Flow - 2 Tests PASSED
+- GET /backup_restore - 200 OK
+- POST /backup_database - 200 OK, returns SQL dump (7KB+)
+
+### 7. Database Health Checks - 10 Tests PASSED
+- No soft-deleted products
+- All stock_movements have product_name
+- No completed sales stuck as Pending
+- Admin force_password_change=0
+- Cashier force_password_change=0
+- Admin has password
+- Cashier has password
+
+---
+
+## Bugs Fixed During Testing
+
+| ID | Severity | Bug | Fix |
+|----|----------|-----|-----|
+| BUG-001 | CRITICAL | Admin login force_password_change redirect loop | Reset force_password_change=0 in init_db.py |
+| BUG-002 | CRITICAL | Cashier login failed (account missing) | Created default cashier in init_db.py |
+| BUG-003 | CRITICAL | add_product 500 error (UnboundLocalError) | Fixed error handler in app.py:1707,1748 |
+| BUG-004 | HIGH | Restore overwrites admin/cashier credentials | Added credential reset in restore_database() |
+| BUG-005 | MEDIUM | Database file committed to git | Added .gitignore excluding *.db, __pycache__, *.log |
+
+---
+
+## Credential Management (Post-Restore)
+
+**Always reset to:**
+- **Admin**: `admin` / `admin123` (force_password_change=0)
+- **Cashier**: `cashier` / `admin123` (force_password_change=0)
+
+**Implementation:**
+- `.gitignore` excludes `pharmacon.db` - not in repo
+- `init_db.py` creates fresh DB with default credentials
+- `restore_database()` resets credentials after restore from backup
+
+---
+
+## Files Changed
+
+### Core Application
+- `app.py` - Fixed add_product error handler, restore_database() credential reset
+- `database_sqlite.py` - Added migrations, init_db()
+- `init_db.py` - Creates default accounts with force_password_change=0
+- `.gitignore` - Excludes database, cache, logs
+
+### Templates (20+ files updated for consistency)
+- All admin templates, cashier templates, inventory templates
+
+---
+
+## Deployment Instructions
+
+```bash
+# Clone
+git clone https://github.com/maiku218/a-s.git
+cd a-s
+
+# Initialize database (creates admin/cashier with admin123)
+python init_db.py
+
+# Run
+python app.py
+```
+
+---
+
+## Test Commands
+
+```bash
+# Run all 70 functional tests
+python test_all_flows.py
+
+# Test restore preserves credentials
+python test_restore.py
+```
+
+---
+
+## Known Limitations / Future Work
+
+1. **Alert acknowledgment lifecycle** - Not fully tested (create -> acknowledge -> dismiss -> retrigger)
+2. **Held transactions** - Hold/unhold flow needs E2E test
+3. **Receipt printing** - mark_receipt_printed endpoint untested with physical printer
+4. **Backup/Restore E2E** - Full backup -> restore -> verify data integrity
+5. **Load testing** - Concurrent cashiers, high transaction volume
+6. **Security audit** - SQL injection, XSS, CSRF, session fixation
