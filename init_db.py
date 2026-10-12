@@ -38,7 +38,7 @@ def init_database():
         # Ensure existing admin doesn't have force_password_change
         cur.execute("UPDATE admins SET force_password_change=0 WHERE username=?", ('admin',))
     
-    # Create default cashier if not exists
+    # Create default cashier if not exists (same password as admin)
     cur.execute("SELECT COUNT(*) FROM cashiers WHERE username=?", ('cashier',))
     if cur.fetchone()[0] == 0:
         cur.execute("""
@@ -47,13 +47,13 @@ def init_database():
         """, (
             'Default Cashier',
             'cashier',
-            generate_password_hash('cashier123'),
+            generate_password_hash('admin123'),
             'What is the name of the owner?',
             generate_password_hash('generoso'),
             'active',
             0
         ))
-        print("Created default cashier: cashier / cashier123")
+        print("Created default cashier: cashier / admin123")
     
     # Seed alert settings if empty
     cur.execute("SELECT COUNT(*) FROM alert_settings")
