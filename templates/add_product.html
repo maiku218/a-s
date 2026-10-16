@@ -23,8 +23,7 @@
                 SCAN BARCODE
             </label>
                 <input type="text" name="barcode" id="barcodeInput" required autofocus placeholder="Place cursor here and scan..." class="form-input"
-                style="width: 80%; padding: 14px; border-radius: var(--radius); border: 2px solid var(--accent); font-family: 'Courier New', monospace; font-size: 20px; text-align: center; outline: none; background: var(--surface);"
-                inputmode="numeric" pattern="[0-9]*" autocomplete="off">
+                style="width: 80%; padding: 14px; border-radius: var(--radius); border: 2px solid var(--accent); font-family: 'Courier New', monospace; font-size: 20px; text-align: center; outline: none; background: var(--surface);">
         </div>
 
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
@@ -39,7 +38,7 @@
                 <select name="category" id="categorySelect" required class="form-input">
                     <option value="" disabled selected>Select Type</option>
                     <option value="Medical">Medical (Branded/Generic)</option>
-                    <option value="Non-Medical">Non-Medical (General Merchandise)</option>
+                    <option value="Non-Medical">Non-Medical (Supplies/Hygiene)</option>
                 </select>
             </div>
         </div>
@@ -73,9 +72,7 @@
 {% with messages = get_flashed_messages(with_categories=true) %}
   {% if messages %}
     {% for category, message in messages %}
-      <script>
-        Swal.fire({ icon: '{{ "success" if category == "success" else "error" }}', title: {{ message | tojson }}, showConfirmButton: false, timer: 2500, toast: true, position: 'top-end' });
-      </script>
+      <script>var flashIcon = '{{ "success" if category == "success" else "error" }}'; var flashTitle = {{ message | tojson }}; Swal.fire({ icon: flashIcon, title: flashTitle, showConfirmButton: false, timer: 2500, toast: true, position: 'top-end' });</script>
     {% endfor %}
   {% endif %}
 {% endwith %}
@@ -89,13 +86,6 @@
     const suggestionsDiv = document.getElementById('nameSuggestions');
     const barcodeInput = document.getElementById('barcodeInput');
     const categorySelect = document.getElementById('categorySelect');
-
-    barcodeInput.addEventListener('input', function() {
-        this.value = this.value.trim();
-    });
-    barcodeInput.addEventListener('blur', function() {
-        this.value = this.value.trim();
-    });
 
     nameInput.addEventListener('input', function() {
         const query = this.value;

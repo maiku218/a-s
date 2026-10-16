@@ -98,7 +98,6 @@
         .badge-warning { background: #fef3c7; color: #92400e; }
         .badge-info { background: #dbeafe; color: #1e40af; }
         .badge-secondary { background: #f3f4f6; color: #475569; }
-        .badge-void { background: #ffedd5; color: #9a3412; }
 
         /* Forms */
         .form-group { display: flex; flex-direction: column; gap: 6px; }
@@ -306,7 +305,6 @@
             <div class="nav-item {% if active_sub == 'activity_history' %}active{% endif %} nav-sub-item" id="tour-nav-activity-history-main"><a href="{{ url_for('admin_history') }}" style="color: inherit; text-decoration: none;">Activity History</a></div>
             <div class="nav-item {% if active_sub == 'transaction_history' %}active{% endif %} nav-sub-item" id="tour-nav-transaction-history"><a href="{{ url_for('transaction_history') }}" style="color: inherit; text-decoration: none;">Transaction History</a></div>
         </div>
-
         <div class="nav-section">Management</div>
         <div class="nav-item {% if active_main == 'management' %}active{% endif %}" onclick="toggleMenu('admin-menu')" id="tour-nav-management">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>

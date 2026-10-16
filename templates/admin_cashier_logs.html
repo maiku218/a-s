@@ -31,11 +31,14 @@
                 <td>{{ log[4] if log[4] else 'N/A' }}</td>
                 <td>
                     {% if log[2] and log[3] %}
-                        {% set duration = log[3] - log[2] %}
+                        {% set logout_time = datetime.strptime(log[3][:19], '%Y-%m-%d %H:%M:%S') %}
+                        {% set login_time = datetime.strptime(log[2][:19], '%Y-%m-%d %H:%M:%S') %}
+                        {% set duration = logout_time - login_time %}
                         {% if duration.days > 0 %}{{ duration.days }}d {{ duration.seconds // 3600 }}h{% elif duration.seconds // 3600 > 0 %}{{ duration.seconds // 3600 }}h {{ (duration.seconds % 3600) // 60 }}m{% else %}{{ duration.seconds // 60 }}m{% endif %}
                     {% elif log[2] %}
                         {% set now = datetime.now() %}
-                        {% set duration = now - log[2] %}
+                        {% set login_time = datetime.strptime(log[2][:19], '%Y-%m-%d %H:%M:%S') %}
+                        {% set duration = now - login_time %}
                         {% if duration.days > 0 %}{{ duration.days }}d {{ duration.seconds // 3600 }}h{% elif duration.seconds // 3600 > 0 %}{{ duration.seconds // 3600 }}h {{ (duration.seconds % 3600) // 60 }}m{% else %}{{ duration.seconds // 60 }}m{% endif %}
                     {% else %}-
                     {% endif %}

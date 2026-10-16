@@ -21,14 +21,10 @@
     <div class="divider"></div>
     <div class="flex-between" style="font-weight:bold;"><span>Item</span><span>Qty</span><span>Price</span><span>Amount</span></div>
     {% for item in items %}
-    <div class="flex-between"><span>{{ item[0][:20] }}</span><span>{{ item[1] }}</span><span>₱{{ "%.2f"|format(item[2]) }}</span><span>₱{{ "%.2f"|format(item[1] * item[2]) }}</span></div>
+    <div class="flex-between"><span>{{ item[0][:20] }}</span><span>{{ item[1] }}</span><span>{{ "%.2f"|format(item[2]) }}</span><span>{{ "%.2f"|format(item[1] * item[2]) }}</span></div>
     {% endfor %}
     <div class="divider"></div>
-    <div class="flex-between bold" style="font-size:12px;"><span>TOTAL:</span><span>₱{{ "%.2f"|format(sale[1]) }}</span></div>
-    {% if sale[5] > 0 %}
-    <div class="flex-between"><span>Tendered:</span><span>₱{{ "%.2f"|format(sale[4]) }}</span></div>
-    <div class="flex-between bold"><span>CHANGE:</span><span>₱{{ "%.2f"|format(sale[5]) }}</span></div>
-    {% endif %}
+    <div class="flex-between bold" style="font-size:12px;"><span>TOTAL:</span><span>{{ "%.2f"|format(sale[1]) }}</span></div>
     <div class="divider"></div>
     <div class="center" style="font-size:10px;">Thank you for your purchase!</div>
     <div class="center" style="font-size:9px;margin-top:5px;">--- END OF RECEIPT ---</div>

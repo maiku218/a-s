@@ -3,35 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>A_S POS - Cashier Metrics</title>
     <link rel="stylesheet" href="/static/css/help-tour.css">
     <style>
-
-        /* Notifications (from cashier_dashboard.html) */
-        .notification-btn { position: relative; }
-        .notification-badge { position: absolute; top: -2px; right: -2px; min-width: 18px; height: 18px; background: var(--danger); color: white; font-size: 10px; font-weight: 700; border-radius: 50%; display: flex; align-items: center; justify-content: center; padding: 0 4px; }
-        .notification-dropdown { display: none; position: absolute; top: calc(100% + 8px); right: 0; width: 320px; max-height: 400px; overflow-y: auto; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); z-index: 2000; }
-        .notification-dropdown.show { display: block; }
-        .notification-header { padding: 12px 16px; border-bottom: 1px solid var(--border); font-weight: 700; font-size: 14px; }
-        .notification-section { padding: 10px 16px; border-bottom: 1px solid var(--border); }
-        .notification-section-title { font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--text-muted); margin-bottom: 6px; letter-spacing: 0.5px; }
-        .notification-item { padding: 12px 14px; border-radius: var(--radius); cursor: pointer; transition: background 0.15s; border-left: 3px solid transparent; display: flex; align-items: center; justify-content: space-between; gap: 14px; }
-        .notification-item:hover { background: var(--bg); }
-        .notification-item.low-stock { border-left-color: var(--danger); }
-        .notification-item.expiring { border-left-color: var(--warning); }
-        .notification-item.expired { border-left-color: #ef4444; }
-        .notification-item-title { font-weight: 600; font-size: 13px; }
-        .notification-item-detail { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
-        .notification-actions { display: flex; gap: 8px; flex-shrink: 0; }
-        .notification-status { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; border-radius: 9999px; font-size: 11px; font-weight: 700; letter-spacing: 0.3px; text-transform: uppercase; flex-shrink: 0; }
-        .notification-status.low { background: var(--danger-soft); color: var(--danger); }
-        .notification-status.warning { background: var(--warning-soft); color: #92400e; }
-        .notification-status.danger { background: var(--danger-soft); color: var(--danger); }
-        .notification-status.out-of-stock { background: #fee2e2; color: #991b1b; }
-        .notification-actions { display: flex; gap: 8px; flex-shrink: 0; align-items: center; }
-        .notification-info { flex: 1; min-width: 0; }
-        .notification-info .notification-item-detail { font-size: 12px; color: var(--text-secondary); margin-top: 3px; }
         :root {
             --accent: #10b981;
             --accent-dark: #059669;
@@ -60,21 +34,17 @@
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
         .header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 12px 24px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 50; box-shadow: var(--shadow); }
-        .brand { font-weight: 800; font-size: 20px; letter-spacing: -0.5px; }
+        .brand { font-weight: 800; font-size: 20px; }
         .brand span { color: var(--accent); }
-        .header-actions { display: flex; align-items: center; gap: 16px; }
-        .status-pill { display: flex; align-items: center; gap: 8px; padding: 6px 14px; background: var(--accent-light); border: 1px solid var(--accent); border-radius: 9999px; }
-        .status-dot { width: 8px; height: 8px; background: var(--success); border-radius: 50%; }
-        .status-text { font-size: 11px; font-weight: 700; color: var(--accent-dark); text-transform: uppercase; letter-spacing: 0.5px; }
-        .layout { display: grid; grid-template-columns: 64px 1fr; gap: 16px; padding: 16px 24px; }
-        .left-nav { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 16px 0; display: flex; flex-direction: column; align-items: center; gap: 8px; box-shadow: var(--shadow); position: sticky; top: 64px; height: calc(100vh - 80px); }
+        .layout { display: grid; grid-template-columns: 64px 1fr; gap: 16px; padding: 16px 24px; height: calc(100vh - 60px); }
+        .left-nav { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 16px 0; display: flex; flex-direction: column; align-items: center; gap: 8px; box-shadow: var(--shadow); }
         .nav-icon { width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; border-radius: var(--radius); cursor: pointer; transition: all 0.15s; color: var(--text-secondary); background: none; border: none; }
         .nav-icon:hover { background: var(--bg); color: var(--text); }
         .nav-icon.active { background: var(--accent); color: white; }
         .nav-icon.logout { margin-top: auto; color: var(--danger); }
         .nav-icon.logout:hover { background: #fee2e2; }
         .nav-icon svg { width: 22px; height: 22px; }
-        .panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 24px; box-shadow: var(--shadow); }
+        .panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 24px; box-shadow: var(--shadow); overflow-y: auto; }
         .panel-title { font-size: 18px; font-weight: 800; margin-bottom: 20px; }
         .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 24px; }
         .stat-card { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 20px; text-align: center; }
@@ -89,29 +59,8 @@
 </head>
 <body>
     <header class="header">
-        <div class="brand">A_S</div>
-        <div class="header-actions">
-            <div style="position: relative;">
-                <button class="notification-btn" onclick="toggleCashierNotifications()" title="Notifications" style="background: none; border: none; cursor: pointer; padding: 8px; border-radius: var(--radius); color: var(--text-secondary);">
-                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
-                    <span id="cashier-notif-badge" class="notification-badge" style="display: none; position: absolute; top: 0; right: 0;"></span>
-                </button>
-                <div class="notification-dropdown" id="cashierNotificationDropdown" style="position: absolute; top: calc(100% + 8px); right: 0; width: 320px;">
-                    <div class="notification-header">
-                        <span>Notifications (<span id="cashierUnreadCount">0</span> unread)</span>
-                        <button onclick="markAllCashierAsRead()" style="font-size: 11px; padding: 2px 8px; background: var(--accent); color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 600;">Mark all read</button>
-                    </div>
-                    <div id="cashierNotificationList">
-                        <div class="no-notifications">Loading...</div>
-                    </div>
-                </div>
-            </div>
-            <div class="status-pill">
-                <div class="status-dot"></div>
-                <span class="status-text">System Ready</span>
-            </div>
-            <span style="font-size: 14px; color: var(--text-secondary);">Cashier: <b style="color: var(--text);">{{ session['cashier_user'] }}</b></span>
-        </div>
+        <div class="brand">PHARMA<span>CON</span></div>
+        <div class="header-actions">Cashier: <b>{{ session['cashier_user'] }}</b></div>
     </header>
     <div class="layout">
         <nav class="left-nav">
@@ -127,7 +76,7 @@
             <button class="nav-icon" onclick="openResumeModal()" title="Resume Held">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
             </button>
-            <div class="nav-icon logout" onclick="handleLogout()" title="Logout">
+            <div class="nav-icon logout" onclick="window.location.href='/cashier_logout'" title="Logout">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
             </div>
         </nav>
@@ -236,11 +185,6 @@
     {% endblock %}
 
 <script>
-function handleLogout() {
-    if (confirm("Logout from system?")) {
-        window.location.href = "/cashier_logout";
-    }
-}
 function openResumeModal() {
     fetch('/api/held_transactions')
         .then(res => res.json())
@@ -297,168 +241,5 @@ function resumeTransaction(index) {
     </div>
 </div> -->
 
-
-<script>
-        function toggleCashierNotifications() {
-            const dropdown = document.getElementById('cashierNotificationDropdown');
-            dropdown.classList.toggle('show');
-            if (dropdown.classList.contains('show')) {
-                loadCashierNotifications();
-            }
-        }
-
-        function loadCashierNotifications() {
-            fetch('/api/cashier/notifications')
-                .then(res => res.json())
-                .then(data => {
-                    const list = document.getElementById('cashierNotificationList');
-                    const badge = document.getElementById('cashier-notif-badge');
-                    const unreadCount = document.getElementById('cashierUnreadCount');
-                    let html = '';
-                    let count = 0;
-
-                    if (data.low_stock.length > 0) {
-                        count += data.low_stock.length;
-                        html += '<div class="notification-section"><div class="notification-section-title">Low Stock (' + data.low_stock.length + ')</div>';
-                        data.low_stock.forEach(item => {
-                            html += `<div class="notification-item low-stock" data-id="${item.id}" data-type="low_stock">
-                                <div onclick="window.location.href='/low_stock'" class="notification-info">
-                                    <div class="notification-item-title">${item.name}</div>
-                                    <div class="notification-item-detail">Stock: ${item.stock} | Barcode: ${item.barcode}</div>
-                                </div>
-                                <span class="notification-status low">LOW</span>
-                                <div class="notification-actions">
-                                        <button class="btn btn-sm btn-primary" onclick="event.stopPropagation(); acknowledgeCashierNotification('low_stock', ${item.id})" title="Acknowledge">Ack</button>
-                                        <button class="btn btn-sm btn-danger" onclick="event.stopPropagation(); dismissCashierNotification('low_stock', ${item.id})" title="Dismiss">Dismiss</button>
-                                    </div>
-                                </div>
-                            </div>`;
-                        });
-                        html += '</div>';
-                    }
-
-                    if (data.expiring.length > 0) {
-                        count += data.expiring.length;
-                        html += '<div class="notification-section"><div class="notification-section-title">Expiring Soon (' + data.expiring.length + ')</div>';
-                        data.expiring.forEach(item => {
-                            html += `<div class="notification-item expiring" data-id="${item.id}" data-type="expiring_medical">
-                                <div onclick="window.location.href='/expiring_medical'" class="notification-info">
-                                    <div class="notification-item-title">${item.name}</div>
-                                    <div class="notification-item-detail">Expires: ${item.expiry} | Barcode: ${item.barcode}</div>
-                                </div>
-                                <span class="notification-status warning">WARNING</span>
-                                <div class="notification-actions">
-                                    <button class="btn btn-sm btn-primary" onclick="event.stopPropagation(); acknowledgeCashierNotification('expiring_medical', ${item.id})" title="Acknowledge">Ack</button>
-                                    <button class="btn btn-sm btn-danger" onclick="event.stopPropagation(); dismissCashierNotification('expiring_medical', ${item.id})" title="Dismiss">Dismiss</button>
-                                </div>
-                            </div>`;
-                        });
-                        html += '</div>';
-                    }
-
-                    if (data.expired.length > 0) {
-                        count += data.expired.length;
-                        html += '<div class="notification-section"><div class="notification-section-title">Expired (' + data.expired.length + ')</div>';
-                        data.expired.forEach(item => {
-                            html += `<div class="notification-item expired" data-id="${item.id}" data-type="expired">
-                                <div onclick="window.location.href='/expired_products'" class="notification-info">
-                                    <div class="notification-item-title">${item.name}</div>
-                                    <div class="notification-item-detail">Expired: ${item.expiry} | Barcode: ${item.barcode}</div>
-                                </div>
-                                <span class="notification-status danger">EXPIRED</span>
-                                <div class="notification-actions">
-                                    <button class="btn btn-sm btn-primary" onclick="event.stopPropagation(); acknowledgeCashierNotification('expired', ${item.id})" title="Acknowledge">Ack</button>
-                                    <button class="btn btn-sm btn-danger" onclick="event.stopPropagation(); dismissCashierNotification('expired', ${item.id})" title="Dismiss">Dismiss</button>
-                                </div>
-                            </div>`;
-                        });
-                        html += '</div>';
-                    }
-
-                    if (!html) {
-                        html = '<div class="no-notifications">All caught up! No unread alerts.</div>';
-                    }
-
-                    list.innerHTML = html;
-                    if (count > 0) {
-                        badge.style.display = 'flex';
-                        badge.innerText = count;
-                        if (unreadCount) unreadCount.innerText = count;
-                    } else {
-                        badge.style.display = 'none';
-                        if (unreadCount) unreadCount.innerText = '0';
-                    }
-                });
-        }
-
-        function acknowledgeCashierNotification(type, productId) {
-            fetch('/api/alert/acknowledge', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').getAttribute('content') },
-                body: JSON.stringify({ alert_type: type, product_id: productId })
-            })
-            .then(res => res.json())
-            .then(data => {
-                if (data.success) {
-                    location.reload();
-                } else {
-                    alert(data.message);
-                }
-            });
-        }
-
-        function dismissCashierNotification(type, productId) {
-            const reason = prompt('Enter reason for dismissing this alert:');
-            if (reason === null) return;
-            if (!reason.trim()) { alert('Reason is required'); return; }
-            fetch('/api/alert/dismiss', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').getAttribute('content') },
-                body: JSON.stringify({ alert_type: type, product_id: productId, reason: reason.trim() })
-            })
-            .then(res => res.json())
-            .then(data => {
-                if (data.success) {
-                    location.reload();
-                } else {
-                    alert(data.message);
-                }
-            });
-        }
-
-        function markAllCashierAsRead() {
-            const items = document.querySelectorAll('#cashierNotificationList .notification-item');
-            const promises = [];
-            items.forEach(item => {
-                const type = item.getAttribute('data-type');
-                const id = item.getAttribute('data-id');
-                if (type && id) {
-                    promises.push(
-                        fetch('/api/alert/acknowledge', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').getAttribute('content') },
-                            body: JSON.stringify({ alert_type: type, product_id: parseInt(id) })
-                        }).then(res => res.json())
-                    );
-                }
-            });
-            Promise.all(promises).then(() => {
-                location.reload();
-            });
-        }
-
-        document.addEventListener('click', function(e) {
-            const container = document.querySelector('.header-actions');
-            if (container && !container.contains(e.target)) {
-                const dropdown = document.getElementById('cashierNotificationDropdown');
-                if (dropdown) dropdown.classList.remove('show');
-            }
-        });
-    </script>
-<script>
-    document.addEventListener('DOMContentLoaded', function() {
-        loadCashierNotifications();
-    });
-</script>
 </body>
 </html>

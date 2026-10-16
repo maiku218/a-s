@@ -8,31 +8,6 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link rel="stylesheet" href="/static/css/help-tour.css">
     <style>
-
-        /* Notifications (from cashier_dashboard.html) */
-        .notification-btn { position: relative; }
-        .notification-badge { position: absolute; top: -2px; right: -2px; min-width: 18px; height: 18px; background: var(--danger); color: white; font-size: 10px; font-weight: 700; border-radius: 50%; display: flex; align-items: center; justify-content: center; padding: 0 4px; }
-        .notification-dropdown { display: none; position: absolute; top: calc(100% + 8px); right: 0; width: 320px; max-height: 400px; overflow-y: auto; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); z-index: 2000; }
-        .notification-dropdown.show { display: block; }
-        .notification-header { padding: 12px 16px; border-bottom: 1px solid var(--border); font-weight: 700; font-size: 14px; }
-        .notification-section { padding: 10px 16px; border-bottom: 1px solid var(--border); }
-        .notification-section-title { font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--text-muted); margin-bottom: 6px; letter-spacing: 0.5px; }
-        .notification-item { padding: 12px 14px; border-radius: var(--radius); cursor: pointer; transition: background 0.15s; border-left: 3px solid transparent; display: flex; align-items: center; justify-content: space-between; gap: 14px; }
-        .notification-item:hover { background: var(--bg); }
-        .notification-item.low-stock { border-left-color: var(--danger); }
-        .notification-item.expiring { border-left-color: var(--warning); }
-        .notification-item.expired { border-left-color: #ef4444; }
-        .notification-item-title { font-weight: 600; font-size: 13px; }
-        .notification-item-detail { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
-        .notification-actions { display: flex; gap: 8px; flex-shrink: 0; }
-        .notification-status { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; border-radius: 9999px; font-size: 11px; font-weight: 700; letter-spacing: 0.3px; text-transform: uppercase; flex-shrink: 0; }
-        .notification-status.low { background: var(--danger-soft); color: var(--danger); }
-        .notification-status.warning { background: var(--warning-soft); color: #92400e; }
-        .notification-status.danger { background: var(--danger-soft); color: var(--danger); }
-        .notification-status.out-of-stock { background: #fee2e2; color: #991b1b; }
-        .notification-actions { display: flex; gap: 8px; flex-shrink: 0; align-items: center; }
-        .notification-info { flex: 1; min-width: 0; }
-        .notification-info .notification-item-detail { font-size: 12px; color: var(--text-secondary); margin-top: 3px; }
         :root {
             --accent: #10b981;
             --accent-dark: #059669;
@@ -40,12 +15,10 @@
             --success: #10b981;
             --success-dark: #059669;
             --danger: #ef4444;
-            --danger-dark: #dc2626;
             --danger-soft: #fef2f2;
             --warning: #f59e0b;
             --warning-soft: #fffbeb;
             --bg: #ffffff;
-            --bg-alt: #f9fafb;
             --bg-secondary: #f9fafb;
             --bg-tinted: #f0fdf4;
             --surface: #ffffff;
@@ -62,26 +35,16 @@
         }
 
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        *:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
         body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
-        a { text-decoration: none; color: inherit; }
 
-        /* Header */
         .header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 12px 24px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 50; box-shadow: var(--shadow); }
-        .brand { font-weight: 800; font-size: 20px; letter-spacing: -0.5px; }
+        .brand { font-weight: 800; font-size: 20px; }
         .brand span { color: var(--accent); }
-        .header-actions { display: flex; align-items: center; gap: 16px; }
-        .status-pill { display: flex; align-items: center; gap: 8px; padding: 6px 14px; background: var(--accent-light); border: 1px solid var(--accent); border-radius: 9999px; }
-        .status-dot { width: 8px; height: 8px; background: var(--success); border-radius: 50%; }
-        .status-text { font-size: 11px; font-weight: 700; color: var(--accent-dark); text-transform: uppercase; letter-spacing: 0.5px; }
-        .cashier-badge { font-size: 14px; color: var(--text-secondary); }
-        .cashier-badge b { color: var(--text); }
+        .header-actions { font-size: 14px; color: var(--text-secondary); }
 
-        /* Layout */
-        .layout { display: grid; grid-template-columns: 64px 1fr; gap: 16px; padding: 16px 24px; }
+        .layout { display: grid; grid-template-columns: 64px 1fr 1fr; gap: 16px; padding: 16px 24px; height: calc(100vh - 60px); }
 
-        /* Left Nav */
-        .left-nav { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 16px 0; display: flex; flex-direction: column; align-items: center; gap: 8px; box-shadow: var(--shadow); position: sticky; top: 64px; height: calc(100vh - 80px); }
+        .left-nav { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 16px 0; display: flex; flex-direction: column; align-items: center; gap: 8px; box-shadow: var(--shadow); }
         .nav-icon { width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; border-radius: var(--radius); cursor: pointer; transition: all 0.15s; color: var(--text-secondary); background: none; border: none; }
         .nav-icon:hover { background: var(--bg); color: var(--text); }
         .nav-icon.active { background: var(--accent); color: white; }
@@ -89,131 +52,25 @@
         .nav-icon.logout:hover { background: #fee2e2; }
         .nav-icon svg { width: 22px; height: 22px; }
 
-        /* Content */
-        .content { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+        .panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 24px; box-shadow: var(--shadow); overflow-y: auto; }
+        .panel-title { font-size: 18px; font-weight: 800; margin-bottom: 20px; }
 
-        .page-title { font-size: 22px; font-weight: 800; letter-spacing: -0.3px; }
-        .page-subtitle { font-size: 13px; color: var(--text-secondary); margin-top: 2px; }
+        .chart-container { position: relative; height: 300px; }
 
-        /* Stat Bar */
-        .stat-bar { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 16px; }
-        .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 16px 20px; display: flex; align-items: center; gap: 14px; box-shadow: var(--shadow); }
-        .stat-icon { width: 44px; height: 44px; border-radius: var(--radius); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-        .stat-icon svg { width: 22px; height: 22px; }
-        .stat-icon.green { background: var(--accent-light); color: var(--accent-dark); }
-        .stat-icon.blue { background: #dbeafe; color: #1e40af; }
-        .stat-icon.amber { background: var(--warning-soft); color: #92400e; }
-        .stat-body { display: flex; flex-direction: column; }
-        .stat-label { font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--text-secondary); letter-spacing: 0.5px; }
-        .stat-value { font-size: 22px; font-weight: 800; margin-top: 2px; }
-
-        /* Panels */
-        .panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow); overflow: hidden; }
-        .panel-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
-        .panel-title { font-size: 15px; font-weight: 800; display: flex; align-items: center; gap: 10px; }
-        .panel-title svg { width: 18px; height: 18px; color: var(--accent); }
-        .panel-subtitle { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
-        .panel-body { padding: 20px; }
-
-        .chart-panel .panel-body { padding: 8px 16px 16px; }
-        .chart-container { position: relative; height: 280px; }
-
-        /* Search / Filter */
-        .filter-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-        .filter-input { padding: 9px 12px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 13px; color: var(--text); background: var(--surface); transition: border-color 0.15s, box-shadow 0.15s; width: 180px; }
-        .filter-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(16,185,129,0.1); }
-        .filter-input::placeholder { color: var(--text-muted); }
-
-        .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 9px 16px; border-radius: var(--radius); font-size: 13px; font-weight: 600; cursor: pointer; border: 1px solid transparent; transition: all 0.15s; }
-        .btn svg { width: 15px; height: 15px; }
-        .btn-primary { background: var(--accent); color: white; border-color: var(--accent); }
-        .btn-primary:hover { background: var(--accent-dark); }
-        .btn-secondary { background: white; color: var(--text-secondary); border: 1px solid var(--border); }
-        .btn-secondary:hover { background: var(--bg-alt); border-color: var(--text-muted); }
-        .btn-danger { background: var(--danger-soft); color: var(--danger); border: 1px solid #fecaca; }
-        .btn-danger:hover { background: var(--danger); color: white; border-color: var(--danger); }
-        .btn-ghost { background: transparent; color: var(--text-secondary); border: 1px solid var(--border); }
-        .btn-ghost:hover { background: var(--bg-alt); }
-        .btn-sm { padding: 6px 12px; font-size: 12px; }
-        .btn-sm svg { width: 13px; height: 13px; }
-
-        /* Table */
-        .table-wrap { overflow-x: auto; }
         table { width: 100%; border-collapse: collapse; font-size: 14px; }
-        thead { background: var(--bg-alt); }
-        th { padding: 11px 16px; text-align: left; font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--text-secondary); letter-spacing: 0.5px; border-bottom: 1px solid var(--border); white-space: nowrap; }
-        td { padding: 14px 16px; border-top: 1px solid var(--border); vertical-align: top; }
-        tbody tr:hover { background: rgba(16,185,129,0.03); }
-
-        .receipt-id { font-weight: 700; color: var(--text); font-size: 13px; }
-        .amount { font-weight: 700; color: var(--accent-dark); white-space: nowrap; }
-        .date-cell { color: var(--text-secondary); font-size: 12px; white-space: nowrap; }
-        .actions-cell { white-space: nowrap; }
-        .actions-cell .btn { margin-right: 4px; }
-        .actions-cell .btn:last-child { margin-right: 0; }
-
-        .items-box { background: var(--bg-alt); border: 1px solid var(--border-light); padding: 10px 12px; border-radius: var(--radius); margin-top: 6px; font-size: 12px; color: var(--text-secondary); line-height: 1.7; }
-        .items-box-title { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); margin-bottom: 4px; }
-        .item-line { display: flex; justify-content: space-between; gap: 12px; }
-        .item-name { font-weight: 600; color: var(--text); }
-        .item-meta { color: var(--text-secondary); white-space: nowrap; }
-
-        .empty-state { padding: 48px 24px; text-align: center; }
-        .empty-state svg { width: 48px; height: 48px; color: var(--border); margin: 0 auto 12px; }
-        .empty-title { font-size: 15px; font-weight: 700; color: var(--text); }
-        .empty-sub { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
-
-        .count-badge { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 9999px; font-size: 11px; font-weight: 700; background: var(--accent-light); color: var(--accent-dark); }
-
-        /* Modals */
-        .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center; padding: 20px; overflow-y: auto; }
-        .modal-overlay.show { display: flex; }
-        .modal { background: var(--surface); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); max-width: 460px; width: 100%; max-height: 100%; display: flex; flex-direction: column; }
-        .modal-header { padding: 20px 24px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
-        .modal-title { font-size: 18px; font-weight: 800; }
-        .modal-subtitle { font-size: 13px; color: var(--text-secondary); margin-top: 4px; }
-        .modal-body { padding: 24px; overflow-y: auto; flex: 1; }
-        .modal-footer { padding: 16px 24px; border-top: 1px solid var(--border); display: flex; gap: 10px; justify-content: flex-end; flex-shrink: 0; flex-wrap: wrap; }
-        .modal-footer .btn { flex: 1 1 auto; min-width: 80px; }
-
-        /* Hold list */
-        .hold-row { display: flex; justify-content: space-between; align-items: center; padding: 12px; border-bottom: 1px solid var(--border); }
-        .hold-row:last-child { border-bottom: none; }
-        .hold-name { font-weight: 700; font-size: 14px; }
-        .hold-meta { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
-
-        /* Scrollbar */
-        ::-webkit-scrollbar { width: 6px; height: 6px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+        thead { background: var(--bg); }
+        th { padding: 12px 16px; text-align: left; font-size: 12px; font-weight: 600; text-transform: uppercase; color: var(--text-secondary); letter-spacing: 0.3px; }
+        td { padding: 14px 16px; border-top: 1px solid var(--border); }
+        tbody tr:hover { background: rgba(0,0,0,0.01); }
+        .items-box { background: var(--bg); padding: 8px; border-radius: var(--radius); margin-top: 6px; font-size: 12px; color: var(--text-secondary); line-height: 1.6; }
+        .btn-sm { padding: 6px 12px; font-size: 12px; }
     </style>
 </head>
 <body>
 
     <header class="header">
-        <div class="brand">A_S</div>
-        <div class="header-actions">
-            <div style="position: relative;">
-                <button class="notification-btn" onclick="toggleCashierNotifications()" title="Notifications" style="background: none; border: none; cursor: pointer; padding: 8px; border-radius: var(--radius); color: var(--text-secondary);">
-                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
-                    <span id="cashier-notif-badge" class="notification-badge" style="display: none; position: absolute; top: 0; right: 0;"></span>
-                </button>
-                <div class="notification-dropdown" id="cashierNotificationDropdown" style="position: absolute; top: calc(100% + 8px); right: 0; width: 320px;">
-                    <div class="notification-header">
-                        <span>Notifications (<span id="cashierUnreadCount">0</span> unread)</span>
-                        <button onclick="markAllCashierAsRead()" style="font-size: 11px; padding: 2px 8px; background: var(--accent); color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 600;">Mark all read</button>
-                    </div>
-                    <div id="cashierNotificationList">
-                        <div class="no-notifications">Loading...</div>
-                    </div>
-                </div>
-            </div>
-            <div class="status-pill">
-                <div class="status-dot"></div>
-                <span class="status-text">System Ready</span>
-            </div>
-            <span style="font-size: 14px; color: var(--text-secondary);">Cashier: <b style="color: var(--text);">{{ session['cashier_user'] }}</b></span>
-        </div>
+        <div class="brand">PHARMA<span>CON</span></div>
+        <div class="header-actions">Cashier: <b>{{ session['cashier_user'] }}</b></div>
     </header>
 
     <div class="layout">
@@ -230,142 +87,60 @@
             <button class="nav-icon" onclick="openResumeModal()" title="Resume Held">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
             </button>
-            <div class="nav-icon logout" onclick="handleLogout()" title="Logout">
+            <div class="nav-icon logout" onclick="window.location.href='/cashier_logout'" title="Logout">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
             </div>
         </nav>
 
-        <main class="content">
-            <div>
-                <h1 class="page-title">Sales History</h1>
-                <p class="page-subtitle">Review your transactions, reprint receipts, and manage voids or refunds.</p>
+        <main class="panel">
+            <h2 class="panel-title">Today's Sales</h2>
+            <div class="chart-container">
+                <canvas id="salesChart"></canvas>
             </div>
-
-            <div class="stat-bar">
-                <div class="stat-card">
-                    <div class="stat-icon green">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4v16"/><path d="M8 4h5a3.5 3.5 0 0 1 0 7H8"/><path d="M5 8h14"/><path d="M5 20h14"/></svg>
-                    </div> 
-                    <div class="stat-body">
-                        <span class="stat-label">Total Sales</span>
-                        <span class="stat-value" style="color: var(--accent-dark);">₱{{ "{:,.2f}".format(filtered_total or 0) }}</span>
-                    </div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-icon blue">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
-                    </div>
-                    <div class="stat-body">
-                        <span class="stat-label">Transactions</span>
-                        <span class="stat-value">{{ filtered_count or 0 }}</span>
-                    </div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-icon amber">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                    </div>
-                    <div class="stat-body">
-                        <span class="stat-label">Today</span>
-                        <span class="stat-value">{{ (chart_labels | length) if chart_labels else 0 }}</span>
-                    </div>
-                </div>
-            </div>
-
-            <section class="panel chart-panel">
-                <div class="panel-header">
-                    <div>
-                        <div class="panel-title">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-                            Today's Performance
-                        </div>
-                        <div class="panel-subtitle">Sales revenue and transaction volume for today</div>
-                    </div>
-                </div>
-                <div class="panel-body">
-                    <div class="chart-container">
-                        <canvas id="salesChart"></canvas>
-                    </div>
-                </div>
-            </section>
-
-            <section class="panel">
-                <div class="panel-header">
-                    <div>
-                        <div class="panel-title">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
-                            Transaction History
-                        </div>
-                        <div class="panel-subtitle">Search by receipt number or date range</div>
-                    </div>
-                    <span class="count-badge">{{ sales | length }} record(s)</span>
-                </div>
-
-                <div class="panel-body" style="border-bottom: 1px solid var(--border); padding: 14px 20px;">
-                    <form method="GET" action="{{ url_for('cashier_history') }}" class="filter-bar">
-                        <input type="text" name="receipt_number" class="filter-input" placeholder="Receipt number..." value="{{ receipt_search or '' }}">
-                        <input type="date" name="date_from" class="filter-input" style="width: 150px;" value="{{ date_from or '' }}">
-                        <input type="date" name="date_to" class="filter-input" style="width: 150px;" value="{{ date_to or '' }}">
-                        <button type="submit" class="btn btn-primary">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                            Search
-                        </button>
-                        <a href="{{ url_for('cashier_history') }}" class="btn btn-ghost">Clear</a>
-                    </form>
-                </div>
-
-                <div class="table-wrap">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Receipt #</th>
-                                <th>Total</th>
-                                <th>Date</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for sale in sales %}
-                            <tr>
-                                <td>
-                                    <span class="receipt-id">{{ sale.receipt_number }}</span>
-                                </td>
-                                <td><span class="amount">₱{{ "%.2f"|format(sale.total_amount) }}</span></td>
-                                <td><span class="date-cell">{{ sale.sale_date }}</span></td>
-                                <td class="actions-cell" style="min-width:190px;">
-                                    <button class="btn btn-primary btn-sm" onclick="reprintReceipt({{ sale.id }})">Reprint</button>
-                                    <button class="btn btn-danger btn-sm" onclick="voidSale({{ sale.id }})">Void</button>
-                                    <button class="btn btn-secondary btn-sm" onclick="refundSale({{ sale.id }})">Refund</button>
-                                </td>
-                            </tr>
-                            <tr>
-                                <td colspan="4" style="padding-top: 0;">
-                                    <div class="items-box">
-                                        <div class="items-box-title">Items</div>
-                                        {% for item in sale['items'] %}
-                                            <div class="item-line">
-                                                <span class="item-name">{{ item[2] }} <span class="item-meta">× {{ item[0] }}</span></span>
-                                                <span class="item-meta">₱{{ "%.2f"|format(item[1]) }}</span>
-                                            </div>
-                                        {% endfor %}
-                                    </div>
-                                </td>
-                            </tr>
-                            {% else %}
-                            <tr>
-                                <td colspan="4">
-                                    <div class="empty-state">
-                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                                        <div class="empty-title">No transactions found</div>
-                                        <div class="empty-sub">Try adjusting your filters or search criteria.</div>
-                                    </div>
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-            </section>
         </main>
+
+        <aside class="panel">
+            <h2 class="panel-title">Transaction History</h2>
+            <form method="GET" action="{{ url_for('cashier_history') }}" style="display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap;">
+                <input type="text" name="receipt_number" placeholder="Search receipt #" value="{{ receipt_search or '' }}" style="padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 13px; flex: 1; min-width: 140px;">
+                <input type="date" name="date_from" value="{{ date_from or '' }}" style="padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 13px;">
+                <input type="date" name="date_to" value="{{ date_to or '' }}" style="padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 13px;">
+                <button type="submit" class="btn btn-primary" style="padding: 8px 16px; font-size: 13px;">Search</button>
+                <a href="{{ url_for('cashier_history') }}" class="btn btn-secondary" style="padding: 8px 16px; font-size: 13px; text-decoration: none;">Clear</a>
+            </form>
+            <div style="overflow-y: auto; max-height: calc(100vh - 240px);">
+                <table>
+                    <thead>
+                        <tr><th>Receipt #</th><th>Total</th><th>Date</th><th>Actions</th></tr>
+                    </thead>
+                    <tbody>
+                        {% for sale in sales %}
+                        <tr>
+                            <td style="font-weight: 600;">{{ sale.receipt_number }}</td>
+                            <td>₱{{ "%.2f"|format(sale.total_amount) }}</td>
+                            <td>{{ sale.sale_date }}</td>
+                            <td>
+                                <button class="btn btn-primary btn-sm" onclick="reprintReceipt({{ sale.id }})" style="margin-right: 4px;">Reprint</button>
+                                <button class="btn btn-danger btn-sm" onclick="voidSale({{ sale.id }})" style="margin-right: 4px;">Void</button>
+                                <button class="btn btn-secondary btn-sm" onclick="refundSale({{ sale.id }})">Refund</button>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td colspan="4">
+                                <div class="items-box">
+                                    {% for item in sale['items'] %}
+                                        {{ item[2] }} (x{{ item[0] }}) ₱{{ "%.2f"|format(item[1]) }}<br>
+                                    {% endfor %}
+                                </div>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="4" style="text-align: center; color: var(--text-muted);">No transactions found.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </aside>
     </div>
 
     <script>
@@ -375,33 +150,17 @@
         data: {
             labels: {{ chart_labels | tojson }},
             datasets: [
-                { label: 'Sales (₱)', data: {{ chart_sales | tojson }}, borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,0.08)', tension: 0.4, fill: true, pointBackgroundColor: '#10b981', pointBorderColor: '#fff', pointBorderWidth: 2, pointRadius: 4 },
-                { label: 'Transactions', data: {{ chart_transactions | tojson }}, borderColor: '#22c55e', backgroundColor: 'rgba(34,197,94,0.06)', tension: 0.4, fill: true, pointBackgroundColor: '#22c55e', pointBorderColor: '#fff', pointBorderWidth: 2, pointRadius: 4 }
+                { label: 'Daily Sales (₱)', data: {{ chart_sales | tojson }}, borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,0.08)', tension: 0.4, fill: true },
+                { label: 'Transactions', data: {{ chart_transactions | tojson }}, borderColor: '#22c55e', backgroundColor: 'rgba(34,197,94,0.08)', tension: 0.4, fill: true }
             ]
         },
         options: {
             responsive: true,
             maintainAspectRatio: false,
-            interaction: { mode: 'index', intersect: false },
-            plugins: {
-                legend: { labels: { color: '#4b5563', usePointStyle: true, padding: 20, font: { size: 12, weight: '600' } } },
-                tooltip: {
-                    backgroundColor: '#111827',
-                    padding: 12,
-                    cornerRadius: 8,
-                    titleFont: { weight: '700' },
-                    callbacks: {
-                        label: function(context) {
-                            const label = context.dataset.label || '';
-                            const value = context.parsed.y;
-                            return ' ' + label + ': ₱' + Number(value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-                        }
-                    }
-                }
-            },
+            plugins: { legend: { labels: { color: '#64748b', usePointStyle: true, padding: 20 } } },
             scales: {
-                x: { ticks: { color: '#9ca3af' }, grid: { display: false } },
-                y: { beginAtZero: true, ticks: { color: '#9ca3af', callback: v => '₱' + v }, grid: { color: '#f3f4f6' } }
+                x: { ticks: { color: '#94a3b8' }, grid: { color: '#f1f5f9' } },
+                y: { ticks: { color: '#94a3b8' }, grid: { color: '#f1f5f9' } }
             }
         }
     });
@@ -469,7 +228,7 @@ const HELP_TOUR_STEPS = [
     instruction: "The chart shows daily sales totals and transaction counts."
   },
   {
-    selector: ".table-wrap table",
+    selector: ".panel:last-child table",
     title: "Transaction History",
     category: "core-features",
     purpose: "Transaction history lets you review, reprint, void, or refund past sales for customer service and auditing.",
@@ -478,7 +237,7 @@ const HELP_TOUR_STEPS = [
       "Click Reprint to generate a duplicate receipt for the customer",
       "Use Void or Refund when a sale needs to be reversed with a documented reason"
     ],
-    description: "View all completed transactions.",
+    description: "View all completed transactions for today.",
     instruction: "Each transaction shows receipt number, total, date, and item details."
   }
 ];
@@ -487,11 +246,6 @@ window.HELP_TOUR_STORAGE_KEY = "helptour_cashier_history";
 </script>
 
 <script>
-function handleLogout() {
-    if (confirm("Logout from system?")) {
-        window.location.href = "/cashier_logout";
-    }
-}
 function openResumeModal() {
     fetch('/api/held_transactions')
         .then(res => res.json())
@@ -502,12 +256,12 @@ function openResumeModal() {
             if (window.allHolds.length > 0) {
                 window.allHolds.forEach((hold, idx) => {
                     const div = document.createElement('div');
-                    div.className = 'hold-row';
-                    div.innerHTML = `<div><div class="hold-name">${hold.name}</div><div class="hold-meta">${hold.timestamp} - ${hold.cart.length} item(s)</div></div><button class="btn btn-primary btn-sm" onclick="resumeTransaction(${idx})">Resume</button>`;
+                    div.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:12px;border-bottom:1px solid var(--border);';
+                    div.innerHTML = `<div><div style="font-weight:700;">${hold.name}</div><div style="font-size:12px;color:var(--text-secondary);">${hold.timestamp} - ${hold.cart.length} items</div></div><button class="btn btn-primary btn-sm" onclick="resumeTransaction(${idx})">Resume</button>`;
                     list.appendChild(div);
                 });
             } else {
-                list.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:24px 0;">No held transactions</div>';
+                list.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:20px;">No held transactions</div>';
             }
             document.getElementById('resume-modal').classList.add('show');
         });
@@ -536,7 +290,7 @@ function resumeTransaction(index) {
 
 <!-- Resume Transaction Modal -->
 <div id="resume-modal" class="modal-overlay">
-    <div class="modal">
+    <div class="modal" style="max-width: 480px;">
         <div class="modal-header">
             <div class="modal-title">Resume Transaction</div>
             <div class="modal-subtitle">Select a held transaction to continue.</div>
@@ -550,168 +304,5 @@ function resumeTransaction(index) {
 
 <script src="/static/js/help-tour.js"></script>
 
-
-<script>
-        function toggleCashierNotifications() {
-            const dropdown = document.getElementById('cashierNotificationDropdown');
-            dropdown.classList.toggle('show');
-            if (dropdown.classList.contains('show')) {
-                loadCashierNotifications();
-            }
-        }
-
-        function loadCashierNotifications() {
-            fetch('/api/cashier/notifications')
-                .then(res => res.json())
-                .then(data => {
-                    const list = document.getElementById('cashierNotificationList');
-                    const badge = document.getElementById('cashier-notif-badge');
-                    const unreadCount = document.getElementById('cashierUnreadCount');
-                    let html = '';
-                    let count = 0;
-
-                    if (data.low_stock.length > 0) {
-                        count += data.low_stock.length;
-                        html += '<div class="notification-section"><div class="notification-section-title">Low Stock (' + data.low_stock.length + ')</div>';
-                        data.low_stock.forEach(item => {
-                            html += `<div class="notification-item low-stock" data-id="${item.id}" data-type="low_stock">
-                                <div onclick="window.location.href='/low_stock'" class="notification-info">
-                                    <div class="notification-item-title">${item.name}</div>
-                                    <div class="notification-item-detail">Stock: ${item.stock} | Barcode: ${item.barcode}</div>
-                                </div>
-                                <span class="notification-status low">LOW</span>
-                                <div class="notification-actions">
-                                        <button class="btn btn-sm btn-primary" onclick="event.stopPropagation(); acknowledgeCashierNotification('low_stock', ${item.id})" title="Acknowledge">Ack</button>
-                                        <button class="btn btn-sm btn-danger" onclick="event.stopPropagation(); dismissCashierNotification('low_stock', ${item.id})" title="Dismiss">Dismiss</button>
-                                    </div>
-                                </div>
-                            </div>`;
-                        });
-                        html += '</div>';
-                    }
-
-                    if (data.expiring.length > 0) {
-                        count += data.expiring.length;
-                        html += '<div class="notification-section"><div class="notification-section-title">Expiring Soon (' + data.expiring.length + ')</div>';
-                        data.expiring.forEach(item => {
-                            html += `<div class="notification-item expiring" data-id="${item.id}" data-type="expiring_medical">
-                                <div onclick="window.location.href='/expiring_medical'" class="notification-info">
-                                    <div class="notification-item-title">${item.name}</div>
-                                    <div class="notification-item-detail">Expires: ${item.expiry} | Barcode: ${item.barcode}</div>
-                                </div>
-                                <span class="notification-status warning">WARNING</span>
-                                <div class="notification-actions">
-                                    <button class="btn btn-sm btn-primary" onclick="event.stopPropagation(); acknowledgeCashierNotification('expiring_medical', ${item.id})" title="Acknowledge">Ack</button>
-                                    <button class="btn btn-sm btn-danger" onclick="event.stopPropagation(); dismissCashierNotification('expiring_medical', ${item.id})" title="Dismiss">Dismiss</button>
-                                </div>
-                            </div>`;
-                        });
-                        html += '</div>';
-                    }
-
-                    if (data.expired.length > 0) {
-                        count += data.expired.length;
-                        html += '<div class="notification-section"><div class="notification-section-title">Expired (' + data.expired.length + ')</div>';
-                        data.expired.forEach(item => {
-                            html += `<div class="notification-item expired" data-id="${item.id}" data-type="expired">
-                                <div onclick="window.location.href='/expired_products'" class="notification-info">
-                                    <div class="notification-item-title">${item.name}</div>
-                                    <div class="notification-item-detail">Expired: ${item.expiry} | Barcode: ${item.barcode}</div>
-                                </div>
-                                <span class="notification-status danger">EXPIRED</span>
-                                <div class="notification-actions">
-                                    <button class="btn btn-sm btn-primary" onclick="event.stopPropagation(); acknowledgeCashierNotification('expired', ${item.id})" title="Acknowledge">Ack</button>
-                                    <button class="btn btn-sm btn-danger" onclick="event.stopPropagation(); dismissCashierNotification('expired', ${item.id})" title="Dismiss">Dismiss</button>
-                                </div>
-                            </div>`;
-                        });
-                        html += '</div>';
-                    }
-
-                    if (!html) {
-                        html = '<div class="no-notifications">All caught up! No unread alerts.</div>';
-                    }
-
-                    list.innerHTML = html;
-                    if (count > 0) {
-                        badge.style.display = 'flex';
-                        badge.innerText = count;
-                        if (unreadCount) unreadCount.innerText = count;
-                    } else {
-                        badge.style.display = 'none';
-                        if (unreadCount) unreadCount.innerText = '0';
-                    }
-                });
-        }
-
-        function acknowledgeCashierNotification(type, productId) {
-            fetch('/api/alert/acknowledge', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').getAttribute('content') },
-                body: JSON.stringify({ alert_type: type, product_id: productId })
-            })
-            .then(res => res.json())
-            .then(data => {
-                if (data.success) {
-                    location.reload();
-                } else {
-                    alert(data.message);
-                }
-            });
-        }
-
-        function dismissCashierNotification(type, productId) {
-            const reason = prompt('Enter reason for dismissing this alert:');
-            if (reason === null) return;
-            if (!reason.trim()) { alert('Reason is required'); return; }
-            fetch('/api/alert/dismiss', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').getAttribute('content') },
-                body: JSON.stringify({ alert_type: type, product_id: productId, reason: reason.trim() })
-            })
-            .then(res => res.json())
-            .then(data => {
-                if (data.success) {
-                    location.reload();
-                } else {
-                    alert(data.message);
-                }
-            });
-        }
-
-        function markAllCashierAsRead() {
-            const items = document.querySelectorAll('#cashierNotificationList .notification-item');
-            const promises = [];
-            items.forEach(item => {
-                const type = item.getAttribute('data-type');
-                const id = item.getAttribute('data-id');
-                if (type && id) {
-                    promises.push(
-                        fetch('/api/alert/acknowledge', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').getAttribute('content') },
-                            body: JSON.stringify({ alert_type: type, product_id: parseInt(id) })
-                        }).then(res => res.json())
-                    );
-                }
-            });
-            Promise.all(promises).then(() => {
-                location.reload();
-            });
-        }
-
-        document.addEventListener('click', function(e) {
-            const container = document.querySelector('.header-actions');
-            if (container && !container.contains(e.target)) {
-                const dropdown = document.getElementById('cashierNotificationDropdown');
-                if (dropdown) dropdown.classList.remove('show');
-            }
-        });
-    </script>
-<script>
-    document.addEventListener('DOMContentLoaded', function() {
-        loadCashierNotifications();
-    });
-</script>
 </body>
 </html>

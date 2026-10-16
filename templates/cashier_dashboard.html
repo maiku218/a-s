@@ -214,6 +214,9 @@
             <a href="{{ url_for('cashier_history') }}" class="nav-icon" title="Sales History">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
             </a>
+            <a href="/cashier/history" class="nav-icon" title="Transaction History">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 16l4-4 4 4 5-5"/></svg>
+            </a>
             <a href="{{ url_for('cashier_metrics') }}" class="nav-icon" title="Performance">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
             </a>
@@ -608,9 +611,7 @@
             if (query.length < 1) { resultsDiv.style.display = 'none'; return; }
             if (query.length >= 6 && /^\d+$/.test(query)) { resultsDiv.style.display = 'none'; return; }
 
-            fetch(`/search_product?q=${encodeURIComponent(query)}`, {
-                headers: { 'X-Requested-With': 'XMLHttpRequest' }
-            })
+            fetch(`/search_product?q=${query}`)
                 .then(res => res.json())
                 .then(data => {
                     resultsDiv.innerHTML = '';
@@ -633,9 +634,9 @@
                 });
         });
 
-        scanner.addEventListener('keydown', (e) => {
+        scanner.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') {
-                const code = scanner.value.trim();
+                const code = scanner.value;
                 if(code) { processScan(code); scanner.value = ''; resultsDiv.style.display = 'none'; }
             }
         });
@@ -720,9 +721,7 @@
 
         function processScan(barcode) {
             resultsDiv.style.display = 'none';
-            fetch(`/get_product/${encodeURIComponent(barcode)}`, {
-                headers: { 'X-Requested-With': 'XMLHttpRequest' }
-            })
+            fetch(`/get_product/${encodeURIComponent(barcode)}`)
                 .then(res => res.json())
                 .then(data => {
                     if(data.success) {
@@ -826,13 +825,9 @@
         }
 
         function showReceipt(data) {
-            const receiptTotal = document.getElementById('receipt-total');
-            const receiptTendered = document.getElementById('receipt-tendered');
-            const receiptChange = document.getElementById('receipt-change');
-
-            if (receiptTotal) receiptTotal.innerText = data.total.toFixed(2);
-            if (receiptTendered) receiptTendered.innerText = Number(data.tendered || 0).toFixed(2);
-            if (receiptChange) receiptChange.innerText = Number(data.change || 0).toFixed(2);
+            document.getElementById('receipt-total').innerText = data.total.toFixed(2);
+            document.getElementById('receipt-tendered').innerText = Number(data.tendered || 0).toFixed(2);
+            document.getElementById('receipt-change').innerText = Number(data.change || 0).toFixed(2);
 
             const fontSizes = { small: '10px', medium: '12px', large: '14px' };
             const paperWidths = { '58': '224px', '80': '312px', 'a4': '595px' };

@@ -12,7 +12,155 @@ def get_db():
     return conn
 
 
+def _table_exists(cursor, name):
+    cursor.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,))
+    return cursor.fetchone() is not None
+
+
+def _columns(cursor, table):
+    return [r[1] for r in cursor.execute("PRAGMA table_info(%s)" % table)]
+
+
+def run_migrations():
+    """Schema upgrades that ALTER existing tables.
+
+    Kept separate from init_db() because init_db() only issues
+    CREATE TABLE IF NOT EXISTS, which never changes an existing table.
+    """
+    conn = sqlite3.connect(DATABASE)
+    cur = conn.cursor()
+    cur.execute("PRAGMA foreign_keys = OFF")
+
+    # --- stock_movements: snapshot the product name and stop cascading deletes ---
+    # Bug CRITICAL-4: the column used to be
+    #   FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
+    # so deleting a product wiped its entire stock trail, including the
+    # 'Product Deleted' row that delete_product() had just inserted.
+    # The table is rebuilt with ON DELETE SET NULL plus a product_name
+    # snapshot, so history survives the product.
+    if _table_exists(cur, 'stock_movements'):
+        cols = _columns(cur, 'stock_movements')
+        fk_sql = cur.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='stock_movements'"
+        ).fetchone()[0] or ''
+        needs_rebuild = ('ON DELETE CASCADE' in fk_sql) or ('product_name' not in cols)
+
+        if 'product_name' not in cols:
+            cur.execute("ALTER TABLE stock_movements ADD COLUMN product_name TEXT")
+
+        if 'ON DELETE CASCADE' in fk_sql:
+            cur.executescript("""
+                CREATE TABLE stock_movements_new (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    product_id INTEGER,
+                    movement_type VARCHAR(10) NOT NULL,
+                    quantity INTEGER NOT NULL,
+                    reason VARCHAR(100),
+                    movement_date TEXT DEFAULT (datetime('now', 'localtime')),
+                    product_name TEXT,
+                    FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE SET NULL
+                );
+                INSERT INTO stock_movements_new
+                    (id, product_id, movement_type, quantity, reason,
+                     movement_date, product_name)
+                SELECT sm.id, sm.product_id, sm.movement_type, sm.quantity,
+                       sm.reason, sm.movement_date, p.product_name
+                FROM stock_movements sm
+                LEFT JOIN products p ON p.id = sm.product_id;
+                DROP TABLE stock_movements;
+                ALTER TABLE stock_movements_new RENAME TO stock_movements;
+            """)
+
+        # Backfill any movement whose name was never snapshotted.
+        if 'product_name' in _columns(cur, 'stock_movements'):
+            cur.execute("""
+                UPDATE stock_movements
+                   SET product_name = (SELECT p.product_name FROM products p
+                                        WHERE p.id = stock_movements.product_id)
+                 WHERE (product_name IS NULL OR product_name = '')
+                   AND product_id IS NOT NULL
+            """)
+
+        cur.executescript("""
+            CREATE INDEX IF NOT EXISTS idx_stock_movements_date
+                ON stock_movements(movement_date);
+            CREATE INDEX IF NOT EXISTS idx_stock_movements_reason
+                ON stock_movements(reason);
+            CREATE INDEX IF NOT EXISTS idx_admin_activity_time
+                ON admin_activity(activity_time);
+            CREATE INDEX IF NOT EXISTS idx_admin_activity_action
+                ON admin_activity(action);
+            CREATE INDEX IF NOT EXISTS idx_sales_date ON sales(sale_date);
+            CREATE INDEX IF NOT EXISTS idx_sales_status ON sales(sale_status);
+        """)
+
+    # --- products: remember the name of anything that gets deleted ---
+    if _table_exists(cur, 'products') and 'deleted_at' not in _columns(cur, 'products'):
+        cur.execute("ALTER TABLE products ADD COLUMN deleted_at TEXT")
+
+    # Tombstone of removed products, so receipts and history can still name them.
+    cur.executescript("""
+        CREATE TABLE IF NOT EXISTS products_deleted (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            product_id INTEGER,
+            product_name TEXT,
+            barcode TEXT,
+            stock INTEGER,
+            deleted_at TEXT DEFAULT (datetime('now', 'localtime')),
+            deleted_by INTEGER
+        );
+    """)
+
+    # Security audit for both roles. admin_activity.admin_id is NOT NULL and
+    # references admins, so cashier-side security events have nowhere to go
+    # today (bug HIGH-4).
+    cur.executescript("""
+        CREATE TABLE IF NOT EXISTS security_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_type VARCHAR(20) NOT NULL,
+            user_id INTEGER,
+            username VARCHAR(100),
+            event VARCHAR(50) NOT NULL,
+            ip_address VARCHAR(45),
+            details TEXT,
+            created_at TEXT DEFAULT (datetime('now', 'localtime'))
+        );
+    """)
+
+    # Legacy rows from the old checkout flow, which only marked a sale
+    # Completed once the receipt had printed. If printing failed, the stock was
+    # already deducted and the 'Sale' movement already written, yet the sale
+    # stayed Pending and was excluded from every report. Sales are now
+    # Completed at commit, so complete the ones we can prove really happened:
+    # they have line items AND a matching 'Sale' stock movement.
+    #
+    # A Pending row with no items proves nothing (it is an orphaned header) and
+    # is deliberately left alone for a human to decide.
+    if _table_exists(cur, 'sales') and _table_exists(cur, 'sale_items'):
+        cur.execute("""
+            UPDATE sales
+               SET sale_status = 'Completed'
+             WHERE sale_status = 'Pending'
+               AND EXISTS (SELECT 1 FROM sale_items si WHERE si.sale_id = sales.id)
+               AND EXISTS (
+                    SELECT 1
+                      FROM sale_items si
+                      JOIN stock_movements sm
+                        ON sm.product_id = si.product_id
+                       AND sm.movement_type = 'OUT'
+                       AND sm.reason = 'Sale'
+                       AND sm.quantity = si.quantity
+                     WHERE si.sale_id = sales.id
+               )
+        """)
+
+    conn.commit()
+    cur.execute("PRAGMA foreign_keys = ON")
+    conn.close()
+
+
 def init_db():
+    run_migrations()
     conn = get_db()
     cursor = conn.cursor()
     cursor.executescript("""
@@ -69,6 +217,17 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_ip_attempted ON login_attempts(ip_address, attempted_at);
         CREATE INDEX IF NOT EXISTS idx_username_attempted ON login_attempts(username_attempted, attempted_at);
 
+        CREATE TABLE IF NOT EXISTS security_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_type VARCHAR(20) NOT NULL,
+            user_id INTEGER,
+            username VARCHAR(100),
+            event VARCHAR(50) NOT NULL,
+            ip_address VARCHAR(45),
+            details TEXT,
+            created_at TEXT DEFAULT (datetime('now', 'localtime'))
+        );
+
         CREATE TABLE IF NOT EXISTS categories (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             category_name VARCHAR(100) NOT NULL,
@@ -90,12 +249,13 @@ def init_db():
 
         CREATE TABLE IF NOT EXISTS stock_movements (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            product_id INTEGER NOT NULL,
+            product_id INTEGER,
             movement_type VARCHAR(10) NOT NULL,
             quantity INTEGER NOT NULL,
             reason VARCHAR(100),
             movement_date TEXT DEFAULT (datetime('now', 'localtime')),
-            FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
+            product_name TEXT,
+            FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE SET NULL
         );
 
         CREATE TABLE IF NOT EXISTS sales (
@@ -115,8 +275,6 @@ def init_db():
             refunded_by INTEGER NULL DEFAULT NULL,
             refund_reason TEXT NULL DEFAULT NULL,
             original_sale_id INTEGER NULL DEFAULT NULL,
-            amount_tendered REAL DEFAULT 0,
-            change_amount REAL DEFAULT 0,
             FOREIGN KEY (cashier_id) REFERENCES cashiers(id)
         );
 
@@ -198,12 +356,12 @@ def init_db():
 
     cursor.execute("SELECT COUNT(*) FROM admins")
     if cursor.fetchone()[0] == 0:
-        admin_hash = generate_password_hash('admin123')
+        admin_hash = generate_password_hash('admin')
         answer_hash = generate_password_hash('generoso')
         cursor.execute(
             "INSERT INTO admins (username, password, full_name, security_question, security_answer, force_password_change) "
             "VALUES (?, ?, ?, ?, ?, ?)",
-            ('admin', admin_hash, 'System Administrator', 'What is the name of the owner?', answer_hash, 1)
+            ('admin', admin_hash, 'System Administrator', 'What is the name of the owner?', answer_hash, 0)
         )
 
     cursor.execute("SELECT COUNT(*) FROM categories")

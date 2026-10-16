@@ -49,18 +49,15 @@
 
         <div class="form-group">
             <label class="form-label">Reason</label>
+            {# Rendered from STOCK_REASONS_IN / STOCK_REASONS_OUT in app.py so the
+               dropdown and the History filter can never drift apart. #}
             <select name="reason" id="reasonSelect" class="form-input">
-                <option value="Stock Addition" id="in-reasons">Stock Addition</option>
-                <option value="Restock">Restock</option>
-                <option value="Shipment Received">Shipment Received</option>
-                <option value="Return from Customer">Return from Customer</option>
-                <option value="Transfer In">Transfer In</option>
-                <option value="Inventory Adjustment">Inventory Adjustment</option>
-                <option value="Sold" id="out-reasons" style="display:none;">Sold</option>
-                <option value="Damaged" id="out-reasons" style="display:none;">Damaged</option>
-                <option value="Expired" id="out-reasons" style="display:none;">Expired</option>
-                <option value="Theft" id="out-reasons" style="display:none;">Theft</option>
-                <option value="Transfer Out" id="out-reasons" style="display:none;">Transfer Out</option>
+                {% for value, label in reasons_in %}
+                <option value="{{ value }}" data-direction="IN">{{ label }}</option>
+                {% endfor %}
+                {% for value, label in reasons_out %}
+                <option value="{{ value }}" data-direction="OUT" hidden>{{ label }}</option>
+                {% endfor %}
             </select>
         </div>
 
@@ -85,11 +82,18 @@ function updateType() {
 
     for (var i = 0; i < reasonSelect.options.length; i++) {
         var opt = reasonSelect.options[i];
-        if (opt.id === 'in-reasons') {
-            opt.style.display = type === 'IN' ? '' : 'none';
-        } else if (opt.id === 'out-reasons') {
-            opt.style.display = type === 'OUT' ? '' : 'none';
-        }
+        opt.hidden = (opt.getAttribute('data-direction') !== type);
+        opt.disabled = opt.hidden;
+    }
+
+    // A hidden option can still be the selected one, which would silently post
+    // an invalid reason. Always land on the first visible option.
+    var visible = [];
+    for (var j = 0; j < reasonSelect.options.length; j++) {
+        if (!reasonSelect.options[j].hidden) visible.push(reasonSelect.options[j]);
+    }
+    if (visible.length && !visible.some(function (o) { return o.selected; })) {
+        reasonSelect.selectedIndex = visible[0].index;
     }
 
     if (type === 'IN') {

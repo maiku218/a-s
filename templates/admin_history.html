@@ -34,28 +34,27 @@
         </div>
         <select id="history-filter" style="padding:10px 14px;border-radius:var(--radius);border:1px solid var(--border);font-size:14px;background:var(--surface);outline:none;cursor:pointer;min-width:160px;">
             <option value="all">All Types</option>
-            <optgroup label="Stock">
-                <option value="Stock Addition">Stock Addition</option>
-                <option value="Restock">Restock</option>
-                <option value="Shipment Received">Shipment Received</option>
-                <option value="Return">Return</option>
-                <option value="Transfer In">Transfer In</option>
-                <option value="Inventory Adjustment">Inventory Adjustment</option>
-                <option value="Change Quantity">Change Quantity</option>
-                <option value="Sale">Sale</option>
-                <option value="Void Sale">Void Sale</option>
-                <option value="Refund Sale">Refund Sale</option>
-                <option value="Product Deleted">Product Deleted</option>
+            {# Generated from the canonical reason lists in app.py, so a filter
+               option can never name a reason the ledger does not record. #}
+            <optgroup label="Stock In">
+                {% for reason in reasons_in %}
+                <option value="{{ reason }}">{{ reason }}</option>
+                {% endfor %}
+            </optgroup>
+            <optgroup label="Stock Out">
+                {% for reason in reasons_out %}
+                <option value="{{ reason }}">{{ reason }}</option>
+                {% endfor %}
+            </optgroup>
+            <optgroup label="Sales">
+                {% for reason in reasons_sales %}
+                <option value="{{ reason }}">{{ reason }}</option>
+                {% endfor %}
             </optgroup>
             <optgroup label="Admin">
-                <option value="Admin Login">Admin Login</option>
-                <option value="Admin Logout">Admin Logout</option>
-                <option value="Add New Product">Add New Product</option>
-                <option value="Edit Product">Edit Product</option>
-                <option value="Delete Product">Delete Product</option>
-                <option value="Register Cashier">Register Cashier</option>
-                <option value="Delete Cashier">Delete Cashier</option>
-                <option value="Change Password">Change Password</option>
+                {% for reason in reasons_admin %}
+                <option value="{{ reason }}">{{ reason }}</option>
+                {% endfor %}
             </optgroup>
         </select>
         <button class="btn btn-primary" id="refresh-btn" style="padding:10px 18px;">↻ Refresh</button>

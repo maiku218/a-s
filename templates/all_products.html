@@ -177,7 +177,7 @@ function closeEditModal() { document.getElementById('editModal').classList.remov
 function saveEdit() {
     const noExpiry = document.getElementById('editNoExpiry').checked;
     const expiration_date = noExpiry ? '' : document.getElementById('editExpiry').value;
-    const data = { id: document.getElementById('editId').value, barcode: document.getElementById('editBarcode').value.trim(), product_name: document.getElementById('editName').value, category: document.getElementById('editCategory').value, price: document.getElementById('editPrice').value, expiration_date: expiration_date };
+    const data = { id: document.getElementById('editId').value, barcode: document.getElementById('editBarcode').value, product_name: document.getElementById('editName').value, category: document.getElementById('editCategory').value, price: document.getElementById('editPrice').value, expiration_date: expiration_date };
     fetch('/api/update_product', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data) })
         .then(res => res.json())
         .then(result => {
@@ -196,22 +196,12 @@ document.getElementById('editNoExpiry').addEventListener('change', function() {
         dateInput.focus();
     }
 });
-
-const editBarcode = document.getElementById('editBarcode');
-if (editBarcode) {
-    editBarcode.addEventListener('input', function() {
-        this.value = this.value.trim();
-    });
-    editBarcode.addEventListener('blur', function() {
-        this.value = this.value.trim();
-    });
-}
 </script>
 
 {% with messages = get_flashed_messages(with_categories=true) %}
   {% if messages %}
     {% for category, message in messages %}
-      <script>Swal.fire({ icon: '{{ "success" if category == "success" else "error" }}', title: {{ message | tojson }}, showConfirmButton: false, timer: 2500, toast: true, position: 'top-end' });</script>
+      <script>var flashIcon = '{{ "success" if category == "success" else "error" }}'; var flashTitle = {{ message | tojson }}; Swal.fire({ icon: flashIcon, title: flashTitle, showConfirmButton: false, timer: 2500, toast: true, position: 'top-end' });</script>
     {% endfor %}
   {% endif %}
 {% endwith %}
