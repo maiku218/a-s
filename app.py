@@ -1,8 +1,10 @@
 from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify, send_file
-from flask_mysqldb import MySQL
+import sqlite3
+from database_sqlite import get_db
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime
 import random
+import json
 import os
 import subprocess
 import tempfile
@@ -21,20 +23,87 @@ app.config['SESSION_COOKIE_NAME'] = 'pharmacon_session'
 # Add datetime to template context
 @app.context_processor
 def inject_datetime():
-    return dict(datetime=datetime, LOW_STOCK_THRESHOLD=LOW_STOCK_THRESHOLD)
+    return dict(datetime=datetime, LOW_STOCK_THRESHOLD=LOW_STOCK_THRESHOLD, csrf_token=generate_csrf_token)
+
+@app.template_filter('format_date')
+def format_date(value, format='%Y-%m-%d %H:%M'):
+    if not value:
+        return '-'
+    if isinstance(value, str):
+        try:
+            dt = datetime.strptime(value, '%Y-%m-%d %H:%M:%S')
+            return dt.strftime(format)
+        except:
+            try:
+                dt = datetime.strptime(value, '%Y-%m-%d')
+                return dt.strftime(format)
+            except:
+                return value
+    if hasattr(value, 'strftime'):
+        return value.strftime(format)
+    return value
+
+def export_to_csv(data, headers, filename):
+    """Export data to CSV file."""
+    import csv
+    from io import StringIO
+    
+    output = StringIO()
+    writer = csv.writer(output)
+    
+    # Write headers
+    writer.writerow(headers)
+    
+    # Write data
+    for row in data:
+        writer.writerow(row)
+    
+    # Create response
+    mem = BytesIO()
+    mem.write(output.getvalue().encode('utf-8'))
+    mem.seek(0)
+    
+    return send_file(
+        mem,
+        as_attachment=True,
+        download_name=filename,
+        mimetype='text/csv'
+    )
 
 def clean_input(value):
     if not value:
         return ""
     return value.strip()
 
-# MySQL config
-app.config['MYSQL_HOST'] = 'localhost'
-app.config['MYSQL_USER'] = 'root'
-app.config['MYSQL_PASSWORD'] = ''
-app.config['MYSQL_DB'] = 'pharmacon'
+# Security: CSRF Protection
+def generate_csrf_token():
+    if 'csrf_token' not in session:
+        session['csrf_token'] = os.urandom(32).hex()
+    return session['csrf_token']
 
-mysql = MySQL(app)
+def validate_csrf_token():
+    token = request.form.get('csrf_token') or request.headers.get('X-CSRFToken')
+    if not token or token != session.get('csrf_token'):
+        return False
+    return True
+
+@app.before_request
+def csrf_protect():
+    if request.method in ('POST', 'PUT', 'DELETE', 'PATCH'):
+        exempt_routes = ['cashier_login', 'admin_login', 'admin_login_oop', 'cashier_login_oop']
+        if request.endpoint not in exempt_routes:
+            if not validate_csrf_token():
+                if request.is_json:
+                    return jsonify({'success': False, 'message': 'CSRF token missing or invalid'}), 403
+                flash('CSRF token missing or invalid. Please refresh and try again.', 'error')
+                return redirect(request.referrer or url_for('admin_login'))
+
+# Security: Login Attempt Tracking
+MAX_LOGIN_ATTEMPTS = 5
+LOCKOUT_MINUTES = 15
+
+# SQLite config
+DATABASE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'pharmacon.db')
 
 # Low stock threshold
 LOW_STOCK_THRESHOLD = 10
@@ -43,8 +112,8 @@ LOW_STOCK_THRESHOLD = 10
 from models import Product, StockMovement, Cashier
 from services import AuthService, ProductRepository, SalesService
 auth_service = AuthService()
-product_repository = ProductRepository(mysql)
-sales_service = SalesService(mysql)
+product_repository = ProductRepository()
+sales_service = SalesService()
 
 def admin_required(f):
     from functools import wraps
@@ -72,12 +141,13 @@ def cashier_required(f):
                 return jsonify({'success': False, 'message': 'Session expired. Please login again.'}), 401
             return redirect(url_for('cashier_login'))
 
-        cur = mysql.connection.cursor()
+        conn = get_db()
+        cur = conn.cursor()
         try:
-            cur.execute("SELECT status FROM cashiers WHERE id=%s", (session['cashier_id'],))
+            cur.execute("SELECT status FROM cashiers WHERE id=?", (session['cashier_id'],))
             cashier_status = cur.fetchone()
         finally:
-            cur.close()
+            conn.close()
 
         if not cashier_status or (cashier_status[0] or 'active').lower() != 'active':
             session.pop('cashier_user', None)
@@ -112,43 +182,49 @@ def admin_login():
             flash("All fields are required", "error")
             return redirect(url_for('admin_login'))
 
-        cur = mysql.connection.cursor()
-        cur.execute("SELECT id, username, password FROM admins WHERE username=%s", (username,))
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("SELECT id, username, password FROM admins WHERE username=?", (username,))
         admin = cur.fetchone()
-        cur.close()
+        conn.close()
 
         # Create default admin if none exists, or patch security fields if missing
         if not admin:
-            cur = mysql.connection.cursor()
+            conn = get_db()
+            cur = conn.cursor()
             cur.execute("SELECT COUNT(*) FROM admins")
             count = cur.fetchone()[0]
-            cur.close()
+            conn.close()
             if count == 0:
                 hashed = generate_password_hash('admin123')
                 from werkzeug.security import generate_password_hash as gen_hash
                 answer_hashed = gen_hash('admin123')
-                cur = mysql.connection.cursor()
-                cur.execute("INSERT INTO admins (username, password, full_name, security_question, security_answer) VALUES (%s, %s, %s, %s, %s)", ('admin', hashed, 'System Administrator', 'What is the name of the owner?', 'pbkdf2:sha256:600000$BlhM6ndrgPIj0Eui$8c0c6511b8af1f42401c742e1da56b34bfb60e56d703087fcc4f013f2cc2ecae'))
-                mysql.connection.commit()
-                cur.close()
-                cur = mysql.connection.cursor()
+                conn = get_db()
+                cur = conn.cursor()
+                cur.execute("INSERT INTO admins (username, password, full_name, security_question, security_answer) VALUES (?, ?, ?, ?, ?)", ('admin', hashed, 'System Administrator', 'What is the name of the owner?', 'pbkdf2:sha256:600000$BlhM6ndrgPIj0Eui$8c0c6511b8af1f42401c742e1da56b34bfb60e56d703087fcc4f013f2cc2ecae'))
+                conn.commit()
+                conn.close()
+                conn = get_db()
+                cur = conn.cursor()
                 cur.execute("SELECT id, username, password FROM admins WHERE username='admin'")
                 admin = cur.fetchone()
-                cur.close()
+                conn.close()
             else:
                 flash("Invalid username or password", "error")
                 return redirect(url_for('admin_login'))
         else:
-            cur = mysql.connection.cursor()
-            cur.execute("SELECT security_question, security_answer FROM admins WHERE id=%s", (admin[0],))
+            conn = get_db()
+            cur = conn.cursor()
+            cur.execute("SELECT security_question, security_answer FROM admins WHERE id=?", (admin[0],))
             sq = cur.fetchone()
-            cur.close()
+            conn.close()
             if not sq or not sq[0] or not sq[1]:
                 hashed_answer = generate_password_hash('generoso')
-                cur = mysql.connection.cursor()
-                cur.execute("UPDATE admins SET security_question=%s, security_answer=%s WHERE id=%s", ('What is the name of the owner?', hashed_answer, admin[0]))
-                mysql.connection.commit()
-                cur.close()
+                conn = get_db()
+                cur = conn.cursor()
+                cur.execute("UPDATE admins SET security_question=?, security_answer=? WHERE id=?", ('What is the name of the owner?', hashed_answer, admin[0]))
+                conn.commit()
+                conn.close()
         
         if admin and (password == admin[2] or check_password_hash(admin[2], password)):
             session['admin_user'] = admin[1]
@@ -157,7 +233,8 @@ def admin_login():
             session.permanent = True  # Session persists on refresh
             
             # Log admin login activity
-            cur = mysql.connection.cursor()
+            conn = get_db()
+            cur = conn.cursor()
             ip_address = request.remote_addr
             if request.headers.get('X-Forwarded-For'):
                 ip_address = request.headers.get('X-Forwarded-For')
@@ -165,12 +242,12 @@ def admin_login():
             try:
                 cur.execute("""
                     INSERT INTO admin_activity (admin_id, action, ip_address, details)
-                    VALUES (%s, %s, %s, %s)
+                    VALUES (?, ?, ?, ?)
                 """, (admin[0], 'Admin Login', ip_address, f'Admin {admin[1]} logged in'))
-                mysql.connection.commit()
+                conn.commit()
             except:
                 pass  # Table might not exist yet
-            cur.close()
+            conn.close()
             
             return redirect(url_for('admin_dashboard'))
         else:
@@ -186,7 +263,8 @@ def admin_login():
 @app.route('/admin')
 @admin_required
 def admin_dashboard():
-    cur = mysql.connection.cursor()
+    conn = get_db()
+    cur = conn.cursor()
     
     cur.execute("SELECT * FROM cashiers")
     cashiers = cur.fetchall()
@@ -209,27 +287,185 @@ def admin_dashboard():
     """)
     activity_logs = cur.fetchall()
     
-    cur.execute("SELECT COUNT(*) FROM products WHERE stock <= %s", (LOW_STOCK_THRESHOLD,))
+    cur.execute("SELECT COUNT(*) FROM products WHERE stock <= ?", (LOW_STOCK_THRESHOLD,))
     low_stock_count = cur.fetchone()[0]
-    
-    cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date <= CURDATE() + INTERVAL 30 DAY AND expiration_date IS NOT NULL")
-    expiring_count = cur.fetchone()[0]
-    
-    cur.close()
 
+    cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date <= date('now', '+30 days', 'localtime') AND expiration_date IS NOT NULL")
+    expiring_count = cur.fetchone()[0]
+
+    cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date < date('now', 'localtime') AND expiration_date IS NOT NULL")
+    expired_count = cur.fetchone()[0]
+
+    conn.close()
     return render_template('admin_dashboard.html',
                            cashiers=cashiers,
                            active_cashiers=active_cashiers,
                            activity_logs=activity_logs,
                            low_stock_count=low_stock_count,
                            expiring_count=expiring_count,
+                           expired_count=expired_count,
                            active_main='admin',
                            active_sub='dashboard')
+
+@app.route('/alert_history')
+@admin_required
+def alert_history():
+    conn = get_db()
+    cur = conn.cursor()
+    
+    cur.execute("""
+        SELECT al.id, al.alert_type, al.alert_level, p.product_name, 
+               al.message, al.created_at, al.acknowledged_by, al.dismissed_by,
+               al.dismiss_reason
+        FROM alert_logs al
+        JOIN products p ON al.product_id = p.id
+        ORDER BY al.created_at DESC
+    """)
+    logs = cur.fetchall()
+    
+    conn.close()
+    return render_template('alert_history.html', logs=logs,
+                           active_main='alerts', active_sub='alert_history')
+
+@app.route('/api/alert/acknowledge', methods=['POST'])
+def api_alert_acknowledge():
+    if session.get('role') not in ('admin', 'cashier'):
+        return jsonify({'success': False, 'message': 'Session expired. Please login again.'}), 401
+
+    user_type = 'admin' if session.get('role') == 'admin' else 'cashier'
+    user_id = session.get('admin_id') if user_type == 'admin' else session.get('cashier_id')
+
+    data = request.get_json()
+    alert_type = data.get('alert_type')
+    product_id = data.get('product_id')
+
+    if not alert_type or not product_id:
+        return jsonify({'success': False, 'message': 'Missing data'})
+
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            INSERT OR IGNORE INTO alert_logs (alert_type, alert_level, product_id, message, created_at)
+            VALUES (?, 'info', ?, ?, datetime('now', 'localtime'))
+        """, (alert_type, product_id, f'{alert_type} alert for product {product_id}'))
+
+        cur.execute("""
+            UPDATE alert_logs
+            SET acknowledged_by = ?, acknowledged_at = datetime('now', 'localtime')
+            WHERE alert_type = ? AND product_id = ?
+        """, (user_id, alert_type, product_id))
+
+        cur.execute("""
+            INSERT INTO alert_acknowledgments (product_id, alert_type, action, user_id, user_type)
+            VALUES (?, ?, 'acknowledge', ?, ?)
+            ON CONFLICT(alert_type, product_id) DO UPDATE SET
+                action = excluded.action,
+                user_id = excluded.user_id,
+                user_type = excluded.user_type,
+                created_at = datetime('now', 'localtime')
+        """, (product_id, alert_type, user_id, user_type))
+
+        conn.commit()
+        return jsonify({'success': True, 'message': 'Alert acknowledged'})
+    except Exception as e:
+        conn.rollback()
+        return jsonify({'success': False, 'message': str(e)})
+    finally:
+        conn.close()
+
+@app.route('/api/alert/dismiss', methods=['POST'])
+def api_alert_dismiss():
+    if session.get('role') not in ('admin', 'cashier'):
+        return jsonify({'success': False, 'message': 'Session expired. Please login again.'}), 401
+
+    user_type = 'admin' if session.get('role') == 'admin' else 'cashier'
+    user_id = session.get('admin_id') if user_type == 'admin' else session.get('cashier_id')
+
+    data = request.get_json()
+    alert_type = data.get('alert_type')
+    product_id = data.get('product_id')
+    reason = data.get('reason', '')
+
+    if not alert_type or not product_id:
+        return jsonify({'success': False, 'message': 'Missing data'})
+    if not reason:
+        return jsonify({'success': False, 'message': 'Reason is required'})
+
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            INSERT OR IGNORE INTO alert_logs (alert_type, alert_level, product_id, message, created_at)
+            VALUES (?, 'info', ?, ?, datetime('now', 'localtime'))
+        """, (alert_type, product_id, f'{alert_type} alert for product {product_id}'))
+
+        cur.execute("""
+            UPDATE alert_logs
+            SET dismissed_by = ?, dismissed_at = datetime('now', 'localtime'), dismiss_reason = ?
+            WHERE alert_type = ? AND product_id = ?
+        """, (user_id, reason, alert_type, product_id))
+
+        cur.execute("""
+            INSERT INTO alert_acknowledgments (product_id, alert_type, action, reason, user_id, user_type)
+            VALUES (?, ?, 'dismiss', ?, ?, ?)
+            ON CONFLICT(alert_type, product_id) DO UPDATE SET
+                action = excluded.action,
+                reason = excluded.reason,
+                user_id = excluded.user_id,
+                user_type = excluded.user_type,
+                created_at = datetime('now', 'localtime')
+        """, (product_id, alert_type, reason, user_id, user_type))
+
+        conn.commit()
+        return jsonify({'success': True, 'message': 'Alert dismissed'})
+    except Exception as e:
+        conn.rollback()
+        return jsonify({'success': False, 'message': str(e)})
+    finally:
+        conn.close()
+
+@app.route('/cashier_metrics')
+@cashier_required
+def cashier_metrics():
+    conn = get_db()
+    cur = conn.cursor()
+    cashier_id = session.get('cashier_id')
+
+    cur.execute("""
+        SELECT COUNT(s.id) as total_sales,
+               COALESCE(SUM(s.total_amount), 0) as total_revenue,
+               COUNT(DISTINCT DATE(s.sale_date)) as days_active
+        FROM sales s
+        WHERE s.cashier_id = ? AND s.sale_status = 'Completed'
+    """, (cashier_id,))
+    my = cur.fetchone()
+    my_total = my[1] if my else 0
+    my_count = my[0] if my else 0
+    my_avg = (my_total / my_count) if my_count > 0 else 0
+
+    cur.execute("""
+        SELECT c.full_name, c.username,
+               COALESCE(SUM(s.total_amount), 0) as total_revenue,
+               COUNT(s.id) as total_sales
+        FROM cashiers c
+        LEFT JOIN sales s ON c.id = s.cashier_id AND s.sale_status = 'Completed'
+        GROUP BY c.id, c.full_name, c.username
+        ORDER BY total_revenue DESC
+    """)
+    rankings = cur.fetchall()
+    
+    conn.close()
+    return render_template('cashier_metrics.html',
+                           my_total=my_total, my_count=my_count, my_avg=my_avg,
+                           rankings=rankings,
+                           active_main='reports', active_sub='cashier_metrics')
 
 @app.route('/admin/cashier_logs')
 @admin_required
 def cashier_logs():
-    cur = mysql.connection.cursor()
+    conn = get_db()
+    cur = conn.cursor()
     
     cur.execute("""
         SELECT c.full_name, c.username, ca.login_time, ca.logout_time, ca.ip_address
@@ -238,14 +474,19 @@ def cashier_logs():
         ORDER BY ca.login_time DESC
     """)
     activity_logs = cur.fetchall()
+    activity_logs = [
+        (row[0], row[1], datetime.strptime(row[2], '%Y-%m-%d %H:%M:%S') if row[2] else None,
+         datetime.strptime(row[3], '%Y-%m-%d %H:%M:%S') if row[3] else None, row[4])
+        for row in activity_logs
+    ]
     
-    cur.execute("SELECT COUNT(*) FROM products WHERE stock <= %s", (LOW_STOCK_THRESHOLD,))
+    cur.execute("SELECT COUNT(*) FROM products WHERE stock <= ?", (LOW_STOCK_THRESHOLD,))
     low_stock_count = cur.fetchone()[0]
     
-    cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date <= CURDATE() + INTERVAL 30 DAY AND expiration_date IS NOT NULL")
+    cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date <= date('now', '+30 days', 'localtime') AND expiration_date IS NOT NULL")
     expiring_count = cur.fetchone()[0]
     
-    cur.close()
+    conn.close()
 
     return render_template('admin_cashier_logs.html', 
                            activity_logs=activity_logs,
@@ -258,7 +499,8 @@ def cashier_logs():
 @admin_required
 def admin_activity_logs():
     """View detailed admin activity logs"""
-    cur = mysql.connection.cursor()
+    conn = get_db()
+    cur = conn.cursor()
     
     cur.execute("""
         SELECT a.username, aa.action, aa.ip_address, aa.details, aa.activity_time
@@ -269,20 +511,336 @@ def admin_activity_logs():
     """)
     admin_logs = cur.fetchall()
     
-    cur.execute("SELECT COUNT(*) FROM products WHERE stock <= %s", (LOW_STOCK_THRESHOLD,))
+    cur.execute("SELECT COUNT(*) FROM products WHERE stock <= ?", (LOW_STOCK_THRESHOLD,))
     low_stock_count = cur.fetchone()[0]
     
-    cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date <= CURDATE() + INTERVAL 30 DAY AND expiration_date IS NOT NULL")
+    cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date <= date('now', '+30 days', 'localtime') AND expiration_date IS NOT NULL")
     expiring_count = cur.fetchone()[0]
     
-    cur.close()
+    conn.close()
 
     return render_template('admin_activity_logs.html', 
                            admin_logs=admin_logs,
                            low_stock_count=low_stock_count,
                            expiring_count=expiring_count,
-                           active_main='dashboard', 
+                           active_main='dashboard',
                            active_sub='activity_logs')
+
+# =============================
+# HISTORY NAVIGATION
+# =============================
+
+@app.route('/admin/history')
+@admin_required
+def admin_history():
+    conn = get_db()
+    cur = conn.cursor()
+
+    cur.execute("SELECT COUNT(*) FROM products WHERE stock <= ?", (LOW_STOCK_THRESHOLD,))
+    low_stock_count = cur.fetchone()[0]
+
+    cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date <= date('now', '+30 days', 'localtime') AND expiration_date IS NOT NULL")
+    expiring_count = cur.fetchone()[0]
+
+    conn.close()
+    return render_template('admin_history.html',
+                           low_stock_count=low_stock_count,
+                           expiring_count=expiring_count,
+                           active_main='activity_history', active_sub='activity_history')
+
+@app.route('/cashier/history')
+@cashier_required
+def cashier_history_page():
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(*) FROM products WHERE stock <= ?", (LOW_STOCK_THRESHOLD,))
+    low_stock_count = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date <= date('now', '+30 days', 'localtime') AND expiration_date IS NOT NULL")
+    expiring_count = cur.fetchone()[0]
+    conn.close()
+    return render_template('cashier_transaction_history.html',
+                           low_stock_count=low_stock_count,
+                           expiring_count=expiring_count,
+                           active_main='history', active_sub='history')
+
+@app.route('/admin/transaction_history')
+@admin_required
+def transaction_history():
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(*) FROM products WHERE stock <= ?", (LOW_STOCK_THRESHOLD,))
+    low_stock_count = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date <= date('now', '+30 days', 'localtime') AND expiration_date IS NOT NULL")
+    expiring_count = cur.fetchone()[0]
+    conn.close()
+    return render_template('transaction_history.html',
+                           low_stock_count=low_stock_count,
+                           expiring_count=expiring_count,
+                           active_main='activity_history', active_sub='transaction_history')
+
+@app.route('/api/transactions')
+@admin_required
+def api_transactions():
+    conn = get_db()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT s.id, s.receipt_number, s.sale_date, s.total_amount, s.sale_status,
+               s.product_type, c.full_name as cashier_name,
+               (SELECT COUNT(*) FROM sale_items WHERE sale_id = s.id) as items_count
+        FROM sales s
+        JOIN cashiers c ON s.cashier_id = c.id
+        ORDER BY s.sale_date DESC
+    """)
+    sales = cur.fetchall()
+    conn.close()
+
+    transactions = []
+    for s in sales:
+        transactions.append({
+            'id': s[0],
+            'receipt_number': s[1],
+            'sale_date': s[2],
+            'total_amount': s[3],
+            'sale_status': s[4],
+            'product_type': s[5],
+            'cashier_name': s[6],
+            'items_count': s[7]
+        })
+
+    return jsonify({'success': True, 'transactions': transactions})
+
+@app.route('/api/transaction_items/<int:transaction_id>')
+@admin_required
+def api_transaction_items(transaction_id):
+    conn = get_db()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT si.quantity, si.price, p.product_name, p.product_type
+        FROM sale_items si
+        JOIN products p ON si.product_id = p.id
+        WHERE si.sale_id = ?
+    """, (transaction_id,))
+    items = cur.fetchall()
+    conn.close()
+
+    items_list = []
+    for item in items:
+        items_list.append({
+            'quantity': item[0],
+            'price': item[1],
+            'product_name': item[2],
+            'product_type': item[3]
+        })
+
+    return jsonify({'success': True, 'items': items_list})
+
+@app.route('/api/history')
+@admin_required
+def api_history():
+    page = request.args.get('page', 1, type=int)
+    limit = request.args.get('limit', 50, type=int)
+    offset = (page - 1) * limit
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT sm.id, sm.movement_date as datetime, p.product_name,
+               sm.movement_type, sm.quantity, sm.reason, 'stock' as source
+        FROM stock_movements sm
+        JOIN products p ON sm.product_id = p.id
+        ORDER BY sm.movement_date DESC
+    """)
+    stock_entries = cur.fetchall()
+
+    cur.execute("""
+        SELECT aa.id, aa.activity_time as datetime, a.username,
+               aa.action, aa.ip_address, aa.details, 'admin' as source
+        FROM admin_activity aa
+        JOIN admins a ON aa.admin_id = a.id
+        ORDER BY aa.activity_time DESC
+    """)
+    admin_entries = cur.fetchall()
+
+    conn.close()
+
+    combined = []
+
+    for entry in stock_entries:
+        direction = entry[3]
+        product = entry[2]
+        qty = entry[4]
+        reason = entry[5]
+
+        if direction == 'IN':
+            if reason == 'Stock Addition':
+                desc = f"Added {qty} units of {product} to stock"
+            elif reason == 'Restock':
+                desc = f"Restocked {qty} units of {product}"
+            elif reason == 'Shipment Received':
+                desc = f"Received shipment of {qty} units of {product}"
+            elif reason == 'Return':
+                desc = f"Returned {qty} units of {product}"
+            elif reason == 'Transfer In':
+                desc = f"Transferred {qty} units of {product} into inventory"
+            elif reason == 'Inventory Adjustment':
+                desc = f"Adjusted {product} stock by +{qty} units"
+            elif reason == 'Change Quantity':
+                desc = f"Changed {product} stock by +{qty} units"
+            elif reason == 'Void Sale':
+                desc = f"VOIDED - Restored {qty} units of {product}"
+            elif reason == 'Refund Sale':
+                desc = f"REFUNDED - Restored {qty} units of {product}"
+            else:
+                desc = f"+{qty} {product} ({reason})"
+        else:
+            if reason == 'Sale':
+                desc = f"Sold {qty} units of {product}"
+            elif reason == 'Product Deleted':
+                desc = f"Deleted {product} ({qty} units removed)"
+            elif reason == 'Change Quantity':
+                desc = f"Changed {product} stock by -{qty} units"
+            else:
+                desc = f"-{qty} {product} ({reason})"
+
+        combined.append({
+            'id': entry[0],
+            'datetime': entry[1],
+            'product_name': product,
+            'action': reason,
+            'quantity': qty,
+            'display_qty': f"+{qty}" if direction == 'IN' else f"-{qty}",
+            'movement_type': direction,
+            'direction': direction,
+            'reason': reason,
+            'description': desc,
+            'actor': 'admin',
+            'source': 'stock',
+        })
+
+    for entry in admin_entries:
+        action = entry[3] if entry[3] else 'Unknown'
+        details = entry[6] if entry[6] else ''
+        username = entry[2]
+        dt = entry[1]
+
+        if action == 'Admin Login':
+            desc = f"Admin {username} logged in"
+        elif action == 'Admin Logout':
+            desc = f"Admin {username} logged out"
+        elif action == 'Add New Product':
+            desc = f"Added new product: {details}"
+        elif action == 'Edit Product':
+            desc = f"Edited product: {details}"
+        elif action == 'Delete Product':
+            desc = f"Deleted product: {details}"
+        elif action == 'Register Cashier':
+            desc = f"Registered cashier: {details}"
+        elif action == 'Delete Cashier':
+            desc = f"Deleted cashier: {details}"
+        elif action == 'Stock In':
+            desc = f"Stock In: {details}"
+        else:
+            desc = f"{action}: {details}"
+
+        combined.append({
+            'id': entry[0],
+            'datetime': entry[1],
+            'product_name': '-' if action in ('Admin Login', 'Admin Logout', 'Register Cashier', 'Delete Cashier', 'Change Password') else 'System',
+            'action': action,
+            'quantity': None,
+            'display_qty': '',
+            'movement_type': None,
+            'direction': None,
+            'reason': action,
+            'description': desc,
+            'actor': username,
+            'source': 'admin',
+        })
+
+    combined.sort(key=lambda x: x['datetime'], reverse=True)
+
+    total = len(combined)
+    entries = combined[offset:offset + limit]
+
+    return jsonify({
+        'success': True,
+        'entries': entries,
+        'total': total,
+        'page': page,
+        'limit': limit
+    })
+
+@app.route('/api/cashier/history')
+@cashier_required
+def api_cashier_history():
+    page = request.args.get('page', 1, type=int)
+    limit = request.args.get('limit', 50, type=int)
+    offset = (page - 1) * limit
+    cashier_id = session.get('cashier_id')
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT sm.id, sm.movement_date as datetime, p.product_name,
+               sm.movement_type, sm.quantity, sm.reason
+        FROM stock_movements sm
+        JOIN products p ON sm.product_id = p.id
+        WHERE sm.reason IN ('Sale', 'Void Sale', 'Refund Sale')
+        ORDER BY sm.movement_date DESC
+    """)
+    stock_entries = cur.fetchall()
+
+    combined = []
+    for entry in stock_entries:
+        direction = entry[3]
+        product = entry[2]
+        qty = entry[4]
+        reason = entry[5]
+
+        if direction == 'IN':
+            if reason == 'Void Sale':
+                desc = f"VOIDED - Restored {qty} units of {product}"
+            elif reason == 'Refund Sale':
+                desc = f"REFUNDED - Restored {qty} units of {product}"
+            else:
+                desc = f"+{qty} {product} ({reason})"
+        else:
+            if reason == 'Sale':
+                desc = f"Sold {qty} units of {product}"
+            else:
+                desc = f"-{qty} {product} ({reason})"
+
+        combined.append({
+            'id': entry[0],
+            'datetime': entry[1],
+            'product_name': product,
+            'action': reason,
+            'quantity': qty,
+            'display_qty': f"+{qty}" if direction == 'IN' else f"-{qty}",
+            'movement_type': direction,
+            'direction': direction,
+            'reason': reason,
+            'description': desc,
+            'actor': session.get('cashier_user', 'cashier'),
+            'source': 'cashier_stock',
+        })
+
+    combined.sort(key=lambda x: x['datetime'], reverse=True)
+    total = len(combined)
+    entries = combined[offset:offset + limit]
+    conn.close()
+
+    return jsonify({
+        'success': True,
+        'entries': entries,
+        'total': total,
+        'page': page,
+        'limit': limit
+    })
 
 # =============================
 # NOTIFICATIONS API
@@ -291,12 +849,17 @@ def admin_activity_logs():
 @app.route('/api/notifications')
 @admin_required
 def get_notifications():
-    cur = mysql.connection.cursor()
+    conn = get_db()
+    cur = conn.cursor()
     
     cur.execute("""
         SELECT id, product_name, stock, barcode 
         FROM products 
-        WHERE stock <= %s
+        WHERE stock <= ?
+        AND NOT EXISTS (
+            SELECT 1 FROM alert_acknowledgments aa 
+            WHERE aa.product_id = products.id AND aa.alert_type = 'out_of_stock'
+        )
         ORDER BY stock ASC
         LIMIT 10
     """, (LOW_STOCK_THRESHOLD,))
@@ -305,14 +868,18 @@ def get_notifications():
     cur.execute("""
         SELECT id, product_name, expiration_date, barcode
         FROM products 
-        WHERE expiration_date <= CURDATE() + INTERVAL 30 DAY 
+        WHERE expiration_date <= date('now', '+30 days', 'localtime') 
         AND expiration_date IS NOT NULL
+        AND NOT EXISTS (
+            SELECT 1 FROM alert_acknowledgments aa 
+            WHERE aa.product_id = products.id AND aa.alert_type = 'expiring_medical'
+        )
         ORDER BY expiration_date ASC
         LIMIT 10
     """)
     expiring = cur.fetchall()
     
-    cur.close()
+    conn.close()
     
     return jsonify({
         'low_stock': [{'id': p[0], 'name': p[1], 'stock': p[2], 'barcode': p[3]} for p in low_stock],
@@ -322,12 +889,17 @@ def get_notifications():
 @app.route('/api/cashier/notifications')
 @cashier_required
 def get_cashier_notifications():
-    cur = mysql.connection.cursor()
+    conn = get_db()
+    cur = conn.cursor()
     try:
         cur.execute("""
             SELECT id, product_name, stock, barcode
             FROM products
-            WHERE stock <= %s
+            WHERE stock <= ?
+            AND NOT EXISTS (
+                SELECT 1 FROM alert_acknowledgments aa 
+                WHERE aa.product_id = products.id AND aa.alert_type = 'low_stock'
+            )
             ORDER BY stock ASC
             LIMIT 10
         """, (LOW_STOCK_THRESHOLD,))
@@ -336,8 +908,12 @@ def get_cashier_notifications():
         cur.execute("""
             SELECT id, product_name, expiration_date, barcode
             FROM products
-            WHERE expiration_date <= CURDATE() + INTERVAL 30 DAY
+            WHERE expiration_date <= date('now', '+30 days', 'localtime')
               AND expiration_date IS NOT NULL
+              AND NOT EXISTS (
+                  SELECT 1 FROM alert_acknowledgments aa 
+                  WHERE aa.product_id = products.id AND aa.alert_type = 'expiring_medical'
+              )
             ORDER BY expiration_date ASC
             LIMIT 10
         """)
@@ -346,8 +922,12 @@ def get_cashier_notifications():
         cur.execute("""
             SELECT id, product_name, expiration_date, barcode
             FROM products
-            WHERE expiration_date < CURDATE()
+            WHERE expiration_date < date('now', 'localtime')
               AND expiration_date IS NOT NULL
+              AND NOT EXISTS (
+                  SELECT 1 FROM alert_acknowledgments aa 
+                  WHERE aa.product_id = products.id AND aa.alert_type = 'expired'
+              )
             ORDER BY expiration_date ASC
             LIMIT 10
         """)
@@ -359,7 +939,7 @@ def get_cashier_notifications():
             'expired': [{'id': p[0], 'name': p[1], 'expiry': str(p[2]), 'barcode': p[3]} for p in expired]
         })
     finally:
-        cur.close()
+        conn.close()
 
 # =============================
 # CATALOG
@@ -368,26 +948,50 @@ def get_cashier_notifications():
 @app.route('/all_products')
 @admin_required
 def all_products():
-    cur = mysql.connection.cursor()
-    cur.execute("SELECT * FROM products")
-    products = cur.fetchall()
+    conn = get_db()
+    cur = conn.cursor()
     
-    cur.execute("SELECT COUNT(*) FROM products WHERE stock <= %s", (LOW_STOCK_THRESHOLD,))
+    search = request.args.get('search', '').strip()
+    query = "SELECT * FROM products"
+    params = []
+    if search:
+        query += " WHERE product_name LIKE ? OR barcode LIKE ?"
+        params = [f"%{search}%", f"%{search}%"]
+    cur.execute(query, params)
+    products = cur.fetchall()
+    parsed_products = []
+    for p in products:
+        expiry = p[7]
+        expiry_obj = None
+        if expiry:
+            try:
+                date_part = expiry.split(' ')[0]
+                if len(date_part) == 10:
+                    expiry_obj = datetime.strptime(date_part, '%Y-%m-%d').date()
+            except Exception:
+                expiry_obj = None
+        parsed_products.append(tuple(p) + (expiry_obj,))
+    products = parsed_products
+    
+    cur.execute("SELECT COUNT(*) FROM products WHERE stock <= ?", (LOW_STOCK_THRESHOLD,))
     low_stock_count = cur.fetchone()[0]
     
-    cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date <= CURDATE() + INTERVAL 30 DAY AND expiration_date IS NOT NULL")
+    cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date <= date('now', '+30 days', 'localtime') AND expiration_date IS NOT NULL")
     expiring_count = cur.fetchone()[0]
     
-    cur.close()
+    conn.close()
     return render_template('all_products.html', products=products,
                            low_stock_count=low_stock_count,
                            expiring_count=expiring_count,
-                           active_main='inventory', active_sub='all_products')
+                           active_main='inventory', active_sub='all_products',
+                           today=datetime.now().date(),
+                           search=search)
 
 @app.route('/add_product', methods=['GET', 'POST'])
 @admin_required
 def add_product():
-    cur = mysql.connection.cursor()
+    conn = get_db()
+    cur = conn.cursor()
 
     if request.method == 'POST':
         # Check if it's an AJAX request
@@ -419,11 +1023,11 @@ def add_product():
                 # Re-render page
                 cur.execute("SELECT id, category_name FROM categories ORDER BY category_name ASC")
                 categories = cur.fetchall()
-                cur.execute("SELECT COUNT(*) FROM products WHERE stock <= %s", (LOW_STOCK_THRESHOLD,))
+                cur.execute("SELECT COUNT(*) FROM products WHERE stock <= ?", (LOW_STOCK_THRESHOLD,))
                 low_stock_count = cur.fetchone()[0]
-                cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date <= CURDATE() + INTERVAL 30 DAY AND expiration_date IS NOT NULL")
+                cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date <= date('now', '+30 days', 'localtime') AND expiration_date IS NOT NULL")
                 expiring_count = cur.fetchone()[0]
-                cur.close()
+                conn.close()
                 return render_template('add_product.html', 
                                categories=categories, 
                                low_stock_count=low_stock_count,
@@ -445,11 +1049,11 @@ def add_product():
                 flash(error_msg, 'error')
                 cur.execute("SELECT id, category_name FROM categories ORDER BY category_name ASC")
                 categories = cur.fetchall()
-                cur.execute("SELECT COUNT(*) FROM products WHERE stock <= %s", (LOW_STOCK_THRESHOLD,))
+                cur.execute("SELECT COUNT(*) FROM products WHERE stock <= ?", (LOW_STOCK_THRESHOLD,))
                 low_stock_count = cur.fetchone()[0]
-                cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date <= CURDATE() + INTERVAL 30 DAY AND expiration_date IS NOT NULL")
+                cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date <= date('now', '+30 days', 'localtime') AND expiration_date IS NOT NULL")
                 expiring_count = cur.fetchone()[0]
-                cur.close()
+                conn.close()
                 return render_template('add_product.html', 
                                categories=categories, 
                                low_stock_count=low_stock_count,
@@ -460,7 +1064,7 @@ def add_product():
         expiry = request.form.get('expiration_date') or None  # From template: expiration_date
 
         # Get category_id from category name
-        cur.execute("SELECT id FROM categories WHERE category_name=%s", (category_name,))
+        cur.execute("SELECT id FROM categories WHERE category_name=?", (category_name,))
         cat_result = cur.fetchone()
         category_id = cat_result[0] if cat_result else None
         
@@ -469,19 +1073,19 @@ def add_product():
             if barcode:
                 cur.execute("""
                     SELECT id, stock FROM products 
-                    WHERE product_name = %s AND barcode = %s AND expiration_date = %s
+                    WHERE product_name = ? AND barcode = ? AND expiration_date = ?
                 """, (name, barcode, expiry))
             else:
                 cur.execute("""
                     SELECT id, stock FROM products 
-                    WHERE product_name = %s AND (barcode IS NULL OR barcode = '') AND expiration_date = %s
+                    WHERE product_name = ? AND (barcode IS NULL OR barcode = '') AND expiration_date = ?
                 """, (name, expiry))
             existing = cur.fetchone()
             
             if existing:
                 # Update stock if product exists with same expiry
                 new_stock = existing[1] + int(stock)
-                cur.execute("UPDATE products SET stock = %s WHERE id = %s", (new_stock, existing[0]))
+                cur.execute("UPDATE products SET stock = ? WHERE id = ?", (new_stock, existing[0]))
                 product_id = existing[0]
                 message = f"Stock updated! Added {stock} units. Total: {new_stock}"
                 action = 'Stock Update'
@@ -489,7 +1093,7 @@ def add_product():
                 # Insert new product if different expiry or new product
                 query = """
                     INSERT INTO products (product_name, barcode, category_id, product_type, price, stock, expiration_date) 
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
                 """
                 # Set barcode to None if empty
                 barcode_value = barcode if barcode else None
@@ -501,7 +1105,7 @@ def add_product():
             # Log stock movement
             movement_query = """
                 INSERT INTO stock_movements (product_id, movement_type, quantity, reason) 
-                VALUES (%s, 'IN', %s, 'Stock Addition')
+                VALUES (?, 'IN', ?, 'Stock Addition')
             """
             cur.execute(movement_query, (product_id, stock))
             
@@ -513,13 +1117,13 @@ def add_product():
             try:
                 cur.execute("""
                     INSERT INTO admin_activity (admin_id, action, ip_address, details)
-                    VALUES (%s, %s, %s, %s)
+                    VALUES (?, ?, ?, ?)
                 """, (session.get('admin_id'), action, ip_address, f'{name} - {stock} units added'))
             except:
                 pass  # Table might not exist yet
             
-            mysql.connection.commit()
-            cur.close()
+            conn.commit()
+            conn.close()
             
             # Return JSON response for AJAX, render same page for normal form submission (to show flash message)
             if is_ajax:
@@ -527,7 +1131,8 @@ def add_product():
             else:
                 flash(message, "success")
                 # Create new cursor for rendering page
-                cur = mysql.connection.cursor()
+                conn = get_db()
+                cur = conn.cursor()
                 try:
                     cur.execute("SELECT id, category_name FROM categories ORDER BY category_name ASC")
                     categories = cur.fetchall()
@@ -535,12 +1140,12 @@ def add_product():
                     categories = []
                     flash(f"Error loading categories: {str(e)}", "error")
                 
-                cur.execute("SELECT COUNT(*) FROM products WHERE stock <= %s", (LOW_STOCK_THRESHOLD,))
+                cur.execute("SELECT COUNT(*) FROM products WHERE stock <= ?", (LOW_STOCK_THRESHOLD,))
                 low_stock_count = cur.fetchone()[0]
                 
-                cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date <= CURDATE() + INTERVAL 30 DAY AND expiration_date IS NOT NULL")
+                cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date <= date('now', '+30 days', 'localtime') AND expiration_date IS NOT NULL")
                 expiring_count = cur.fetchone()[0]
-                cur.close()
+                conn.close()
                 
                 return render_template('add_product.html', 
                                categories=categories, 
@@ -550,7 +1155,7 @@ def add_product():
                                active_sub='add_product')
             
         except Exception as e:
-            mysql.connection.rollback()
+            conn.rollback()
             error_str = str(e)
             
             # Provide more specific error messages
@@ -568,19 +1173,20 @@ def add_product():
             else:
                 flash(error_message, "error")
                 # Create new cursor for rendering page after error
-                cur = mysql.connection.cursor()
+                conn = get_db()
+                cur = conn.cursor()
                 try:
                     cur.execute("SELECT id, category_name FROM categories ORDER BY category_name ASC")
                     categories = cur.fetchall()
                 except Exception as ex:
                     categories = []
                     
-                cur.execute("SELECT COUNT(*) FROM products WHERE stock <= %s", (LOW_STOCK_THRESHOLD,))
+                cur.execute("SELECT COUNT(*) FROM products WHERE stock <= ?", (LOW_STOCK_THRESHOLD,))
                 low_stock_count = cur.fetchone()[0]
                 
-                cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date <= CURDATE() + INTERVAL 30 DAY AND expiration_date IS NOT NULL")
+                cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date <= date('now', '+30 days', 'localtime') AND expiration_date IS NOT NULL")
                 expiring_count = cur.fetchone()[0]
-                cur.close()
+                conn.close()
                 
                 return render_template('add_product.html', 
                                categories=categories, 
@@ -597,15 +1203,16 @@ def add_product():
             categories = []
             flash(f"Error loading categories: {str(e)}", "error")
         finally:
-            cur.close()
+            conn.close()
         
-        cur = mysql.connection.cursor()
-        cur.execute("SELECT COUNT(*) FROM products WHERE stock <= %s", (LOW_STOCK_THRESHOLD,))
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM products WHERE stock <= ?", (LOW_STOCK_THRESHOLD,))
         low_stock_count = cur.fetchone()[0]
         
-        cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date <= CURDATE() + INTERVAL 30 DAY AND expiration_date IS NOT NULL")
+        cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date <= date('now', '+30 days', 'localtime') AND expiration_date IS NOT NULL")
         expiring_count = cur.fetchone()[0]
-        cur.close()
+        conn.close()
         
         return render_template('add_product.html', 
                                categories=categories, 
@@ -617,42 +1224,44 @@ def add_product():
 @app.route('/delete_product/<int:id>', methods=['GET', 'POST'])
 @admin_required
 def delete_product(id):
-    cur = mysql.connection.cursor()
+    conn = get_db()
+    cur = conn.cursor()
     
     if request.method == 'GET':
-        cur.execute("SELECT id, product_name, barcode, stock FROM products WHERE id=%s", (id,))
+        cur.execute("SELECT id, product_name, barcode, stock FROM products WHERE id=?", (id,))
         product = cur.fetchone()
         if not product:
             flash("Product not found", "error")
             return redirect(url_for('all_products'))
         
-        cur.execute("SELECT COUNT(*) FROM products WHERE stock <= %s", (LOW_STOCK_THRESHOLD,))
+        cur.execute("SELECT COUNT(*) FROM products WHERE stock <= ?", (LOW_STOCK_THRESHOLD,))
         low_stock_count = cur.fetchone()[0]
         
-        cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date <= CURDATE() + INTERVAL 30 DAY AND expiration_date IS NOT NULL")
+        cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date <= date('now', '+30 days', 'localtime') AND expiration_date IS NOT NULL")
         expiring_count = cur.fetchone()[0]
         
-        cur.close()
+        conn.close()
         return render_template('confirm_delete_product.html', product=product,
                                low_stock_count=low_stock_count,
                                expiring_count=expiring_count,
                                active_main='inventory', active_sub='all_products')
     
     if request.method == 'POST':
-        cur = mysql.connection.cursor()
+        conn = get_db()
+        cur = conn.cursor()
         
         # Get product info before deleting
-        cur.execute("SELECT product_name FROM products WHERE id=%s", (id,))
+        cur.execute("SELECT product_name FROM products WHERE id=?", (id,))
         product_info = cur.fetchone()
         product_name = product_info[0] if product_info else "Unknown"
         
         # Delete related records first (stock_movements and sale_items)
-        cur.execute("DELETE FROM stock_movements WHERE product_id=%s", (id,))
-        cur.execute("DELETE FROM sale_items WHERE product_id=%s", (id,))
+        cur.execute("DELETE FROM stock_movements WHERE product_id=?", (id,))
+        cur.execute("DELETE FROM sale_items WHERE product_id=?", (id,))
         
         # Now delete the product
-        cur.execute("DELETE FROM products WHERE id=%s", (id,))
-        mysql.connection.commit()
+        cur.execute("DELETE FROM products WHERE id=?", (id,))
+        conn.commit()
         
         # Log admin activity
         ip_address = request.remote_addr
@@ -662,20 +1271,121 @@ def delete_product(id):
         try:
             cur.execute("""
                 INSERT INTO admin_activity (admin_id, action, ip_address, details)
-                VALUES (%s, %s, %s, %s)
+                VALUES (?, ?, ?, ?)
             """, (session.get('admin_id'), 'Delete Product', ip_address, f'Deleted product: {product_name}'))
-            mysql.connection.commit()
+            conn.commit()
         except:
             pass
         
-        cur.close()
+        conn.close()
         flash("Product deleted successfully", "success")
         return redirect(url_for('all_products'))
+
+@app.route('/stock_in', methods=['GET', 'POST'])
+@admin_required
+def stock_in():
+    conn = get_db()
+    cur = conn.cursor()
+    
+    if request.method == 'POST':
+        product_id = request.form.get('product_id')
+        quantity = request.form.get('quantity')
+        reason = request.form.get('reason', 'Stock Addition')
+        transaction_type = request.form.get('transaction_type', 'IN')
+        
+        if not product_id or not quantity:
+            conn.close()
+            flash("Product and quantity are required", "error")
+            return redirect(url_for('stock_in'))
+        
+        try:
+            quantity = int(quantity)
+            if quantity <= 0:
+                conn.close()
+                flash("Quantity must be greater than 0", "error")
+                return redirect(url_for('stock_in'))
+        except ValueError:
+            conn.close()
+            flash("Invalid quantity value", "error")
+            return redirect(url_for('stock_in'))
+        
+        if transaction_type not in ('IN', 'OUT'):
+            conn.close()
+            flash("Invalid transaction type", "error")
+            return redirect(url_for('stock_in'))
+        
+        cur.execute("SELECT product_name, stock FROM products WHERE id=?", (product_id,))
+        product = cur.fetchone()
+        if not product:
+            conn.close()
+            flash("Product not found", "error")
+            return redirect(url_for('stock_in'))
+        
+        product_name = product[0]
+        old_stock = product[1]
+        
+        if transaction_type == 'OUT':
+            if quantity > old_stock:
+                conn.close()
+                flash(f"Cannot remove {quantity} units. Only {old_stock} units available.", "error")
+                return redirect(url_for('stock_in'))
+            new_stock = old_stock - quantity
+            movement_type = 'OUT'
+        else:
+            new_stock = old_stock + quantity
+            movement_type = 'IN'
+        
+        cur.execute("UPDATE products SET stock=? WHERE id=?", (new_stock, product_id))
+        
+        cur.execute("""
+            INSERT INTO stock_movements (product_id, movement_type, quantity, reason)
+            VALUES (?, ?, ?, ?)
+        """, (product_id, movement_type, quantity, reason))
+        
+        ip_address = request.remote_addr
+        if request.headers.get('X-Forwarded-For'):
+            ip_address = request.headers.get('X-Forwarded-For')
+        
+        action = "Stock In" if transaction_type == 'IN' else "Stock Out"
+        action_type = "Added" if transaction_type == 'IN' else "Removed"
+        
+        # Verify admin_id exists in admins table before logging
+        admin_id = session.get('admin_id')
+        cur.execute("SELECT 1 FROM admins WHERE id=?", (admin_id,))
+        if cur.fetchone():
+            cur.execute("""
+                INSERT INTO admin_activity (admin_id, action, ip_address, details)
+                VALUES (?, ?, ?, ?)
+            """, (admin_id, action, ip_address, f"{product_name} | {action_type}: {quantity} units | Reason: {reason} | Old Stock: {old_stock} | New Stock: {new_stock}"))
+        
+        conn.commit()
+        conn.close()
+        flash(f"{action_type} {quantity} units of {product_name} (Total: {new_stock})", "success")
+        return redirect(url_for('stock_in'))
+    
+    cur.execute("""
+        SELECT id, product_name, barcode, stock, price
+        FROM products
+        ORDER BY product_name ASC
+    """)
+    products = cur.fetchall()
+    
+    cur.execute("SELECT COUNT(*) FROM products WHERE stock <= ?", (LOW_STOCK_THRESHOLD,))
+    low_stock_count = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date <= date('now', '+30 days', 'localtime') AND expiration_date IS NOT NULL")
+    expiring_count = cur.fetchone()[0]
+    
+    conn.close()
+    return render_template('stock_in.html', products=products,
+                           low_stock_count=low_stock_count,
+                           expiring_count=expiring_count,
+                           active_main='inventory', active_sub='stock_in')
 
 @app.route('/edit_product/<int:id>', methods=['GET', 'POST'])
 @admin_required
 def edit_product(id):
-    cur = mysql.connection.cursor()
+    conn = get_db()
+    cur = conn.cursor()
     
     if request.method == 'POST':
         product_name = request.form.get('product_name')
@@ -683,7 +1393,7 @@ def edit_product(id):
         category = request.form.get('category')
         price = request.form.get('price')
         stock = request.form.get('stock')
-        expiration_date = request.form.get('expiration_date')
+        expiration_date = request.form.get('expiration_date') or None
         
         if not product_name or not barcode or not category:
             flash("Product name, barcode, and category are required", "error")
@@ -696,17 +1406,17 @@ def edit_product(id):
             flash("Invalid price or stock value", "error")
             return redirect(url_for('edit_product', id=id))
         
-        cur.execute("SELECT id FROM categories WHERE category_name=%s", (category,))
+        cur.execute("SELECT id FROM categories WHERE category_name=?", (category,))
         cat_result = cur.fetchone()
         category_id = cat_result[0] if cat_result else None
         
         cur.execute("""
             UPDATE products 
-            SET product_name=%s, barcode=%s, category_id=%s, product_type=%s, price=%s, stock=%s, expiration_date=%s
-            WHERE id=%s
+            SET product_name=?, barcode=?, category_id=?, product_type=?, price=?, stock=?, expiration_date=?
+            WHERE id=?
         """, (product_name, barcode, category_id, category, price, stock, expiration_date, id))
         
-        mysql.connection.commit()
+        conn.commit()
         
         ip_address = request.remote_addr
         if request.headers.get('X-Forwarded-For'):
@@ -715,29 +1425,29 @@ def edit_product(id):
         try:
             cur.execute("""
                 INSERT INTO admin_activity (admin_id, action, ip_address, details)
-                VALUES (%s, %s, %s, %s)
+                VALUES (?, ?, ?, ?)
             """, (session.get('admin_id'), 'Edit Product', ip_address, f'Edited product: {product_name}'))
-            mysql.connection.commit()
+            conn.commit()
         except:
             pass
         
-        cur.close()
+        conn.close()
         flash("Product updated successfully", "success")
         return redirect(url_for('all_products'))
     
-    cur.execute("SELECT * FROM products WHERE id=%s", (id,))
+    cur.execute("SELECT * FROM products WHERE id=?", (id,))
     product = cur.fetchone()
     
     cur.execute("SELECT id, category_name FROM categories ORDER BY category_name ASC")
     categories = cur.fetchall()
     
-    cur.execute("SELECT COUNT(*) FROM products WHERE stock <= %s", (LOW_STOCK_THRESHOLD,))
+    cur.execute("SELECT COUNT(*) FROM products WHERE stock <= ?", (LOW_STOCK_THRESHOLD,))
     low_stock_count = cur.fetchone()[0]
     
-    cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date <= CURDATE() + INTERVAL 30 DAY AND expiration_date IS NOT NULL")
+    cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date <= date('now', '+30 days', 'localtime') AND expiration_date IS NOT NULL")
     expiring_count = cur.fetchone()[0]
     
-    cur.close()
+    conn.close()
     
     return render_template('edit_product.html', product=product, categories=categories,
                          low_stock_count=low_stock_count,
@@ -751,32 +1461,34 @@ def edit_product(id):
 @app.route('/medical_sales')
 @admin_required
 def medical_sales():
-    cur = mysql.connection.cursor()
+    conn = get_db()
+    cur = conn.cursor()
     
     # Get sales with product names
     cur.execute("""
-        SELECT s.id, s.receipt_number, GROUP_CONCAT(p.product_name SEPARATOR ', ') as products, 
+        SELECT s.id, s.receipt_number, GROUP_CONCAT(p.product_name, ', ') as products, 
                s.total_amount, s.sale_status, s.product_type, s.sale_date
         FROM sales s
         LEFT JOIN sale_items si ON s.id = si.sale_id
         LEFT JOIN products p ON si.product_id = p.id
-        WHERE s.product_type = 'Medical'
+        WHERE s.product_type = 'Medical' AND s.sale_status = 'Completed'
         GROUP BY s.id
         ORDER BY s.sale_date DESC
     """)
     sales = cur.fetchall()
     
-    cur.execute("SELECT COUNT(*) FROM products WHERE stock <= %s", (LOW_STOCK_THRESHOLD,))
+    cur.execute("SELECT COUNT(*) FROM products WHERE stock <= ?", (LOW_STOCK_THRESHOLD,))
     low_stock_count = cur.fetchone()[0]
     
-    cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date <= CURDATE() + INTERVAL 30 DAY AND expiration_date IS NOT NULL")
+    cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date <= date('now', '+30 days', 'localtime') AND expiration_date IS NOT NULL")
     expiring_count = cur.fetchone()[0]
     
     # Get daily sales for chart (last 30 days)
     cur.execute("""
         SELECT DATE(sale_date) as day, SUM(total_amount) as daily_total
         FROM sales
-        WHERE product_type='Medical' AND sale_date >= CURDATE() - INTERVAL 30 DAY AND sale_status = 'Completed'
+        WHERE product_type='Medical' AND sale_date >= date('now', '-30 days', 'localtime') AND 
+        sale_status = 'Completed'
         GROUP BY DATE(sale_date)
         ORDER BY day ASC
     """)
@@ -784,7 +1496,14 @@ def medical_sales():
     chart_labels = [str(row[0]) for row in chart_data]
     chart_values = [float(row[1]) for row in chart_data]
     
-    cur.close()
+    # Check if CSV export is requested
+    if request.args.get('export') == 'csv':
+        headers = ['ID', 'Receipt Number', 'Products', 'Total Amount', 'Status', 'Product Type', 'Sale Date']
+        filename = f"medical_sales_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        conn.close()
+        return export_to_csv(sales, headers, filename)
+    
+    conn.close()
     return render_template('sales_medical.html', sales=sales,
                            low_stock_count=low_stock_count,
                            expiring_count=expiring_count,
@@ -795,28 +1514,44 @@ def medical_sales():
 @admin_required
 def sales_dashboard():
     """Admin sales dashboard with all views"""
-    cur = mysql.connection.cursor()
+    conn = get_db()
+    cur = conn.cursor()
     
-    cur.execute("SELECT COUNT(*) FROM products WHERE stock <= %s", (LOW_STOCK_THRESHOLD,))
+    cur.execute("SELECT COUNT(*) FROM products WHERE stock <= ?", (LOW_STOCK_THRESHOLD,))
     low_stock_count = cur.fetchone()[0]
     
-    cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date <= CURDATE() + INTERVAL 30 DAY AND expiration_date IS NOT NULL")
+    cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date <= date('now', '+30 days', 'localtime') AND expiration_date IS NOT NULL")
     expiring_count = cur.fetchone()[0]
     
+    date_from = request.args.get('date_from', '').strip()
+    date_to = request.args.get('date_to', '').strip()
+    use_custom_range = bool(date_from or date_to)
+    
+    if use_custom_range and date_from and date_to:
+        date_filter = f"AND sale_date >= '{date_from}' AND sale_date < '{date_to} 23:59:59'"
+        date_filter_medical = f"AND sale_date >= '{date_from}' AND sale_date < '{date_to} 23:59:59'"
+        date_filter_nonmedical = f"AND sale_date >= '{date_from}' AND sale_date < '{date_to} 23:59:59'"
+        chart_date_filter = f"AND sale_date >= '{date_from}' AND sale_date <= '{date_to}'"
+    else:
+        date_filter = ""
+        date_filter_medical = ""
+        date_filter_nonmedical = ""
+        chart_date_filter = ""
+    
     # Daily sales (today) - Medical
-    cur.execute("""
+    cur.execute(f"""
         SELECT IFNULL(SUM(total_amount), 0), COUNT(*) 
         FROM sales 
-        WHERE DATE(sale_date) = CURDATE() AND sale_status = 'Completed' AND product_type = 'Medical'
+        WHERE DATE(sale_date) = date('now', 'localtime') AND sale_status = 'Completed' AND product_type = 'Medical' {date_filter_medical if use_custom_range else ''}
     """)
     daily_medical = cur.fetchone()
     daily_medical_sales = float(daily_medical[0]) if daily_medical[0] else 0
     
     # Daily sales (today) - Non-Medical
-    cur.execute("""
+    cur.execute(f"""
         SELECT IFNULL(SUM(total_amount), 0), COUNT(*) 
         FROM sales 
-        WHERE DATE(sale_date) = CURDATE() AND sale_status = 'Completed' AND product_type = 'Non-Medical'
+        WHERE DATE(sale_date) = date('now', 'localtime') AND sale_status = 'Completed' AND product_type = 'Non-Medical' {date_filter_nonmedical if use_custom_range else ''}
     """)
     daily_nonmedical = cur.fetchone()
     daily_nonmedical_sales = float(daily_nonmedical[0]) if daily_nonmedical[0] else 0
@@ -825,19 +1560,19 @@ def sales_dashboard():
     daily_count = daily_medical[1] if daily_medical[1] else 0
     
     # Weekly sales (last 7 days) - Medical
-    cur.execute("""
+    cur.execute(f"""
         SELECT IFNULL(SUM(total_amount), 0), COUNT(*) 
         FROM sales 
-        WHERE sale_date >= CURDATE() - INTERVAL 7 DAY AND sale_status = 'Completed' AND product_type = 'Medical'
+        WHERE sale_date >= date('now', '-7 days', 'localtime') AND sale_status = 'Completed' AND product_type = 'Medical' {date_filter_medical if use_custom_range else ''}
     """)
     weekly_medical = cur.fetchone()
     weekly_medical_sales = float(weekly_medical[0]) if weekly_medical[0] else 0
     
     # Weekly sales (last 7 days) - Non-Medical
-    cur.execute("""
+    cur.execute(f"""
         SELECT IFNULL(SUM(total_amount), 0), COUNT(*) 
         FROM sales 
-        WHERE sale_date >= CURDATE() - INTERVAL 7 DAY AND sale_status = 'Completed' AND product_type = 'Non-Medical'
+        WHERE sale_date >= date('now', '-7 days', 'localtime') AND sale_status = 'Completed' AND product_type = 'Non-Medical' {date_filter_nonmedical if use_custom_range else ''}
     """)
     weekly_nonmedical = cur.fetchone()
     weekly_nonmedical_sales = float(weekly_nonmedical[0]) if weekly_nonmedical[0] else 0
@@ -846,19 +1581,19 @@ def sales_dashboard():
     weekly_count = weekly_medical[1] if weekly_medical[1] else 0
     
     # Monthly sales (this month) - Medical
-    cur.execute("""
+    cur.execute(f"""
         SELECT IFNULL(SUM(total_amount), 0), COUNT(*) 
         FROM sales 
-        WHERE MONTH(sale_date) = MONTH(CURDATE()) AND YEAR(sale_date) = YEAR(CURDATE()) AND sale_status = 'Completed' AND product_type = 'Medical'
+        WHERE strftime('%m', sale_date) = strftime('%m', 'now') AND strftime('%Y', sale_date) = strftime('%Y', 'now') AND sale_status = 'Completed' AND product_type = 'Medical' {date_filter_medical if use_custom_range else ''}
     """)
     monthly_medical = cur.fetchone()
     monthly_medical_sales = float(monthly_medical[0]) if monthly_medical[0] else 0
     
     # Monthly sales (this month) - Non-Medical
-    cur.execute("""
+    cur.execute(f"""
         SELECT IFNULL(SUM(total_amount), 0), COUNT(*) 
         FROM sales 
-        WHERE MONTH(sale_date) = MONTH(CURDATE()) AND YEAR(sale_date) = YEAR(CURDATE()) AND sale_status = 'Completed' AND product_type = 'Non-Medical'
+        WHERE strftime('%m', sale_date) = strftime('%m', 'now') AND strftime('%Y', sale_date) = strftime('%Y', 'now') AND sale_status = 'Completed' AND product_type = 'Non-Medical' {date_filter_nonmedical if use_custom_range else ''}
     """)
     monthly_nonmedical = cur.fetchone()
     monthly_nonmedical_sales = float(monthly_nonmedical[0]) if monthly_nonmedical[0] else 0
@@ -867,19 +1602,19 @@ def sales_dashboard():
     monthly_count = monthly_medical[1] if monthly_medical[1] else 0
     
     # Yearly sales (this year) - Medical
-    cur.execute("""
+    cur.execute(f"""
         SELECT IFNULL(SUM(total_amount), 0), COUNT(*) 
         FROM sales 
-        WHERE YEAR(sale_date) = YEAR(CURDATE()) AND sale_status = 'Completed' AND product_type = 'Medical'
+        WHERE strftime('%Y', sale_date) = strftime('%Y', 'now') AND sale_status = 'Completed' AND product_type = 'Medical' {date_filter_medical if use_custom_range else ''}
     """)
     yearly_medical = cur.fetchone()
     yearly_medical_sales = float(yearly_medical[0]) if yearly_medical[0] else 0
     
     # Yearly sales (this year) - Non-Medical
-    cur.execute("""
+    cur.execute(f"""
         SELECT IFNULL(SUM(total_amount), 0), COUNT(*) 
         FROM sales 
-        WHERE YEAR(sale_date) = YEAR(CURDATE()) AND sale_status = 'Completed' AND product_type = 'Non-Medical'
+        WHERE strftime('%Y', sale_date) = strftime('%Y', 'now') AND sale_status = 'Completed' AND product_type = 'Non-Medical' {date_filter_nonmedical if use_custom_range else ''}
     """)
     yearly_nonmedical = cur.fetchone()
     yearly_nonmedical_sales = float(yearly_nonmedical[0]) if yearly_nonmedical[0] else 0
@@ -888,17 +1623,17 @@ def sales_dashboard():
     yearly_count = yearly_medical[1] if yearly_medical[1] else 0
     
     # Overall sales - Medical
-    cur.execute("""
+    cur.execute(f"""
         SELECT IFNULL(SUM(total_amount), 0), COUNT(*) 
-        FROM sales WHERE sale_status = 'Completed' AND product_type = 'Medical'
+        FROM sales WHERE sale_status = 'Completed' AND product_type = 'Medical' {date_filter if use_custom_range else ''}
     """)
     overall_medical = cur.fetchone()
     overall_medical_sales = float(overall_medical[0]) if overall_medical[0] else 0
     
     # Overall sales - Non-Medical
-    cur.execute("""
+    cur.execute(f"""
         SELECT IFNULL(SUM(total_amount), 0), COUNT(*) 
-        FROM sales WHERE sale_status = 'Completed' AND product_type = 'Non-Medical'
+        FROM sales WHERE sale_status = 'Completed' AND product_type = 'Non-Medical' {date_filter if use_custom_range else ''}
     """)
     overall_nonmedical = cur.fetchone()
     overall_nonmedical_sales = float(overall_nonmedical[0]) if overall_nonmedical[0] else 0
@@ -907,36 +1642,56 @@ def sales_dashboard():
     overall_count = overall_medical[1] if overall_medical[1] else 0
     
     # Popular products (top 10)
-    cur.execute("""
+    cur.execute(f"""
         SELECT p.product_name, SUM(si.quantity) as total_qty, SUM(si.quantity * si.price) as total_sales
         FROM sale_items si
         JOIN products p ON si.product_id = p.id
+        JOIN sales s ON si.sale_id = s.id
+        WHERE s.sale_status = 'Completed' {date_filter if use_custom_range else ''}
         GROUP BY p.id, p.product_name
         ORDER BY total_qty DESC
         LIMIT 10
     """)
     popular = cur.fetchall()
     
-    # Daily sales for chart - Medical (last 30 days)
-    cur.execute("""
-        SELECT DATE(sale_date) as day, SUM(total_amount) as daily_total
-        FROM sales
-        WHERE sale_date >= CURDATE() - INTERVAL 30 DAY AND sale_status = 'Completed' AND product_type = 'Medical'
-        GROUP BY DATE(sale_date)
-        ORDER BY day ASC
-    """)
+    # Daily sales for chart - Medical (last 30 days or custom range)
+    if use_custom_range and date_from and date_to:
+        cur.execute(f"""
+            SELECT DATE(sale_date) as day, SUM(total_amount) as daily_total
+            FROM sales
+            WHERE sale_date >= '{date_from}' AND sale_date <= '{date_to}' AND sale_status = 'Completed' AND product_type = 'Medical'
+            GROUP BY DATE(sale_date)
+            ORDER BY day ASC
+        """)
+    else:
+        cur.execute(f"""
+            SELECT DATE(sale_date) as day, SUM(total_amount) as daily_total
+            FROM sales
+            WHERE sale_date >= date('now', '-30 days', 'localtime') AND sale_status = 'Completed' AND product_type = 'Medical'
+            GROUP BY DATE(sale_date)
+            ORDER BY day ASC
+        """)
     chart_medical = cur.fetchall()
     medical_labels = [str(row[0]) for row in chart_medical]
     medical_values = [float(row[1]) for row in chart_medical]
     
-    # Daily sales for chart - Non-Medical (last 30 days)
-    cur.execute("""
-        SELECT DATE(sale_date) as day, SUM(total_amount) as daily_total
-        FROM sales
-        WHERE sale_date >= CURDATE() - INTERVAL 30 DAY AND sale_status = 'Completed' AND product_type = 'Non-Medical'
-        GROUP BY DATE(sale_date)
-        ORDER BY day ASC
-    """)
+    # Daily sales for chart - Non-Medical (last 30 days or custom range)
+    if use_custom_range and date_from and date_to:
+        cur.execute(f"""
+            SELECT DATE(sale_date) as day, SUM(total_amount) as daily_total
+            FROM sales
+            WHERE sale_date >= '{date_from}' AND sale_date <= '{date_to}' AND sale_status = 'Completed' AND product_type = 'Non-Medical'
+            GROUP BY DATE(sale_date)
+            ORDER BY day ASC
+        """)
+    else:
+        cur.execute(f"""
+            SELECT DATE(sale_date) as day, SUM(total_amount) as daily_total
+            FROM sales
+            WHERE sale_date >= date('now', '-30 days', 'localtime') AND sale_status = 'Completed' AND product_type = 'Non-Medical'
+            GROUP BY DATE(sale_date)
+            ORDER BY day ASC
+        """)
     chart_nonmedical = cur.fetchall()
     nonmedical_labels = [str(row[0]) for row in chart_nonmedical]
     nonmedical_values = [float(row[1]) for row in chart_nonmedical]
@@ -945,7 +1700,24 @@ def sales_dashboard():
     chart_labels = medical_labels
     chart_values = medical_values
     
-    cur.close()
+    # Check if CSV export is requested
+    if request.args.get('export') == 'csv':
+        # Export all sales with details
+        cur.execute(f"""
+            SELECT s.id, s.receipt_number, s.total_amount, s.sale_status, 
+                   s.product_type, s.sale_date, c.full_name as cashier_name
+            FROM sales s
+            LEFT JOIN cashiers c ON s.cashier_id = c.id
+            WHERE s.sale_status = 'Completed' {date_filter if use_custom_range else ''}
+            ORDER BY s.sale_date DESC
+        """)
+        all_sales = cur.fetchall()
+        headers = ['ID', 'Receipt Number', 'Total Amount', 'Status', 'Product Type', 'Sale Date', 'Cashier']
+        filename = f"all_sales_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        conn.close()
+        return export_to_csv(all_sales, headers, filename)
+    
+    conn.close()
     
     return render_template('sales_dashboard.html',
                            low_stock_count=low_stock_count,
@@ -969,37 +1741,39 @@ def sales_dashboard():
                            chart_labels=chart_labels, chart_values=chart_values,
                            medical_labels=medical_labels, medical_values=medical_values,
                            nonmedical_labels=nonmedical_labels, nonmedical_values=nonmedical_values,
+                           date_from=date_from, date_to=date_to,
                            active_main='sales', active_sub='sales_dashboard')
 
 @app.route('/non_medical_sales')
 @admin_required
 def non_medical_sales():
-    cur = mysql.connection.cursor()
+    conn = get_db()
+    cur = conn.cursor()
     
     # Get sales with product names
     cur.execute("""
-        SELECT s.id, s.receipt_number, GROUP_CONCAT(p.product_name SEPARATOR ', ') as products, 
+        SELECT s.id, s.receipt_number, GROUP_CONCAT(p.product_name, ', ') as products, 
                s.total_amount, s.sale_status, s.product_type, s.sale_date
         FROM sales s
         LEFT JOIN sale_items si ON s.id = si.sale_id
         LEFT JOIN products p ON si.product_id = p.id
-        WHERE s.product_type = 'Non-Medical'
+        WHERE s.product_type = 'Non-Medical' AND s.sale_status = 'Completed'
         GROUP BY s.id
         ORDER BY s.sale_date DESC
     """)
     sales = cur.fetchall()
     
-    cur.execute("SELECT COUNT(*) FROM products WHERE stock <= %s", (LOW_STOCK_THRESHOLD,))
+    cur.execute("SELECT COUNT(*) FROM products WHERE stock <= ?", (LOW_STOCK_THRESHOLD,))
     low_stock_count = cur.fetchone()[0]
     
-    cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date <= CURDATE() + INTERVAL 30 DAY AND expiration_date IS NOT NULL")
+    cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date <= date('now', '+30 days', 'localtime') AND expiration_date IS NOT NULL")
     expiring_count = cur.fetchone()[0]
     
     # Get daily sales for chart (last 30 days)
     cur.execute("""
         SELECT DATE(sale_date) as day, SUM(total_amount) as daily_total
         FROM sales
-        WHERE product_type='Non-Medical' AND sale_date >= CURDATE() - INTERVAL 30 DAY AND sale_status = 'Completed'
+        WHERE product_type='Non-Medical' AND sale_date >= date('now', '-30 days', 'localtime') AND sale_status = 'Completed'
         GROUP BY DATE(sale_date)
         ORDER BY day ASC
     """)
@@ -1007,7 +1781,14 @@ def non_medical_sales():
     chart_labels = [str(row[0]) for row in chart_data]
     chart_values = [float(row[1]) for row in chart_data]
     
-    cur.close()
+    # Check if CSV export is requested
+    if request.args.get('export') == 'csv':
+        headers = ['ID', 'Receipt Number', 'Products', 'Total Amount', 'Status', 'Product Type', 'Sale Date']
+        filename = f"non_medical_sales_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        conn.close()
+        return export_to_csv(sales, headers, filename)
+    
+    conn.close()
     return render_template('sales_non_medical.html', sales=sales,
                            low_stock_count=low_stock_count,
                            expiring_count=expiring_count,
@@ -1022,63 +1803,176 @@ def non_medical_sales():
 @admin_required
 def out_of_stock():
     category_filter = request.args.get('category', 'all')
+    tab = request.args.get('tab', 'active')
 
-    cur = mysql.connection.cursor()
+    conn = get_db()
+    cur = conn.cursor()
+
+    base_query = "SELECT p.* FROM products p"
+    where = " WHERE p.stock <= ?"
+    params = [LOW_STOCK_THRESHOLD]
 
     if category_filter == 'Medical':
-        cur.execute("SELECT * FROM products WHERE stock <= %s AND product_type = 'Medical' ORDER BY stock ASC", (LOW_STOCK_THRESHOLD,))
+        where += " AND p.product_type = 'Medical'"
     elif category_filter == 'Non-Medical':
-        cur.execute("SELECT * FROM products WHERE stock <= %s AND product_type = 'Non-Medical' ORDER BY stock ASC", (LOW_STOCK_THRESHOLD,))
+        where += " AND p.product_type = 'Non-Medical'"
+
+    if tab == 'acknowledged':
+        where += " AND EXISTS (SELECT 1 FROM alert_acknowledgments aa WHERE aa.product_id = p.id AND aa.alert_type = 'out_of_stock' AND aa.action = 'acknowledge')"
+    elif tab == 'dismissed':
+        where += " AND EXISTS (SELECT 1 FROM alert_acknowledgments aa WHERE aa.product_id = p.id AND aa.alert_type = 'out_of_stock' AND aa.action = 'dismiss')"
     else:
-        cur.execute("SELECT * FROM products WHERE stock <= %s ORDER BY stock ASC", (LOW_STOCK_THRESHOLD,))
+        where += " AND NOT EXISTS (SELECT 1 FROM alert_acknowledgments aa WHERE aa.product_id = p.id AND aa.alert_type = 'out_of_stock')"
+
+    cur.execute(base_query + where + " ORDER BY p.stock ASC", params)
     products = cur.fetchall()
 
-    cur.execute("SELECT COUNT(*) FROM products WHERE stock <= %s", (LOW_STOCK_THRESHOLD,))
+    cur.execute("SELECT COUNT(*) FROM products WHERE stock <= ?", (LOW_STOCK_THRESHOLD,))
     low_stock_count = cur.fetchone()[0]
 
-    cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date <= CURDATE() + INTERVAL 30 DAY AND expiration_date IS NOT NULL")
+    cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date <= date('now', '+30 days', 'localtime') AND expiration_date IS NOT NULL")
     expiring_count = cur.fetchone()[0]
 
-    cur.close()
+    conn.close()
     return render_template('inventory_out_of_stock.html', products=products,
                            low_stock_count=low_stock_count,
                            expiring_count=expiring_count,
                            active_main='alerts', active_sub='out_of_stock',
-                           category_filter=category_filter)
+                           category_filter=category_filter, tab=tab)
+
+@app.route('/low_stock')
+@admin_required
+def low_stock():
+    category_filter = request.args.get('category', 'all')
+    tab = request.args.get('tab', 'active')
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    base_query = "SELECT p.* FROM products p"
+    where = " WHERE p.stock > 0 AND p.stock <= ?"
+    params = [LOW_STOCK_THRESHOLD]
+
+    if category_filter == 'Medical':
+        where += " AND p.product_type = 'Medical'"
+    elif category_filter == 'Non-Medical':
+        where += " AND p.product_type = 'Non-Medical'"
+
+    if tab == 'acknowledged':
+        where += " AND EXISTS (SELECT 1 FROM alert_acknowledgments aa WHERE aa.product_id = p.id AND aa.alert_type = 'low_stock' AND aa.action = 'acknowledge')"
+    elif tab == 'dismissed':
+        where += " AND EXISTS (SELECT 1 FROM alert_acknowledgments aa WHERE aa.product_id = p.id AND aa.alert_type = 'low_stock' AND aa.action = 'dismiss')"
+    else:
+        where += " AND NOT EXISTS (SELECT 1 FROM alert_acknowledgments aa WHERE aa.product_id = p.id AND aa.alert_type = 'low_stock')"
+
+    cur.execute(base_query + where + " ORDER BY p.stock ASC", params)
+    products = cur.fetchall()
+
+    cur.execute("SELECT COUNT(*) FROM products WHERE stock > 0 AND stock <= ?", (LOW_STOCK_THRESHOLD,))
+    low_stock_count = cur.fetchone()[0]
+
+    cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date <= date('now', '+30 days', 'localtime') AND expiration_date IS NOT NULL")
+    expiring_count = cur.fetchone()[0]
+
+    conn.close()
+    return render_template('inventory_low_stock.html', products=products,
+                           low_stock_count=low_stock_count,
+                           expiring_count=expiring_count,
+                           active_main='alerts', active_sub='low_stock',
+                           category_filter=category_filter, tab=tab)
+
+@app.route('/expired_products')
+@admin_required
+def expired_products():
+    category_filter = request.args.get('category', 'all')
+    tab = request.args.get('tab', 'active')
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    base_query = "SELECT p.* FROM products p"
+    where = " WHERE p.expiration_date IS NOT NULL AND p.expiration_date < date('now', 'localtime')"
+    params = []
+
+    if category_filter == 'Medical':
+        where += " AND p.product_type = 'Medical'"
+    elif category_filter == 'Non-Medical':
+        where += " AND p.product_type = 'Non-Medical'"
+
+    if tab == 'acknowledged':
+        where += " AND EXISTS (SELECT 1 FROM alert_acknowledgments aa WHERE aa.product_id = p.id AND aa.alert_type = 'expired' AND aa.action = 'acknowledge')"
+    elif tab == 'dismissed':
+        where += " AND EXISTS (SELECT 1 FROM alert_acknowledgments aa WHERE aa.product_id = p.id AND aa.alert_type = 'expired' AND aa.action = 'dismiss')"
+    else:
+        where += " AND NOT EXISTS (SELECT 1 FROM alert_acknowledgments aa WHERE aa.product_id = p.id AND aa.alert_type = 'expired')"
+
+    cur.execute(base_query + where + " ORDER BY p.expiration_date ASC", params)
+    products = cur.fetchall()
+
+    cur.execute("SELECT COUNT(*) FROM products WHERE stock <= ?", (LOW_STOCK_THRESHOLD,))
+    low_stock_count = cur.fetchone()[0]
+
+    cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date <= date('now', '+30 days', 'localtime') AND expiration_date IS NOT NULL")
+    expiring_count = cur.fetchone()[0]
+
+    conn.close()
+    return render_template('inventory_expired.html', products=products,
+                           low_stock_count=low_stock_count,
+                           expiring_count=expiring_count,
+                           active_main='alerts', active_sub='expired_products',
+                           category_filter=category_filter, tab=tab)
 
 @app.route('/expiring_medical')
 @admin_required
 def expiring_medical():
-    from datetime import date
+    from datetime import date, timedelta
     category_filter = request.args.get('category', 'all')
-    
-    cur = mysql.connection.cursor()
-    
-    if category_filter == 'all':
-        cur.execute("SELECT * FROM products WHERE expiration_date <= CURDATE() + INTERVAL 30 DAY AND expiration_date IS NOT NULL")
-        products = cur.fetchall()
-    elif category_filter == 'Medical':
-        cur.execute("SELECT * FROM products WHERE expiration_date <= CURDATE() + INTERVAL 30 DAY AND expiration_date IS NOT NULL AND product_type = 'Medical'")
-        products = cur.fetchall()
-    elif category_filter == 'Non-Medical':
-        cur.execute("SELECT * FROM products WHERE expiration_date <= CURDATE() + INTERVAL 30 DAY AND expiration_date IS NOT NULL AND product_type = 'Non-Medical'")
-        products = cur.fetchall()
+    level = request.args.get('level', 'all')
+    tab = request.args.get('tab', 'active')
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    base_query = "SELECT p.* FROM products p"
+    where = " WHERE p.expiration_date IS NOT NULL"
+    params = []
+
+    if level == 'expired':
+        where += " AND p.expiration_date < date('now', 'localtime')"
+    elif level == 'critical':
+        where += " AND p.expiration_date >= date('now', 'localtime') AND p.expiration_date <= date('now', '+7 days', 'localtime')"
+    elif level == 'warning':
+        where += " AND p.expiration_date > date('now', '+7 days', 'localtime') AND p.expiration_date <= date('now', '+30 days', 'localtime')"
     else:
-        cur.execute("SELECT * FROM products WHERE expiration_date <= CURDATE() + INTERVAL 30 DAY AND expiration_date IS NOT NULL")
-        products = cur.fetchall()
-    
-    cur.execute("SELECT COUNT(*) FROM products WHERE stock <= %s", (LOW_STOCK_THRESHOLD,))
+        where += " AND p.expiration_date <= date('now', '+30 days', 'localtime')"
+
+    if category_filter != 'all':
+        where += " AND p.product_type = ?"
+        params.append(category_filter)
+
+    if tab == 'acknowledged':
+        where += " AND EXISTS (SELECT 1 FROM alert_acknowledgments aa WHERE aa.product_id = p.id AND aa.alert_type = 'expiring_medical' AND aa.action = 'acknowledge')"
+    elif tab == 'dismissed':
+        where += " AND EXISTS (SELECT 1 FROM alert_acknowledgments aa WHERE aa.product_id = p.id AND aa.alert_type = 'expiring_medical' AND aa.action = 'dismiss')"
+    else:
+        where += " AND NOT EXISTS (SELECT 1 FROM alert_acknowledgments aa WHERE aa.product_id = p.id AND aa.alert_type = 'expiring_medical')"
+
+    cur.execute(base_query + where + " ORDER BY p.expiration_date ASC", params)
+    products = cur.fetchall()
+
+    cur.execute("SELECT COUNT(*) FROM products WHERE stock <= ?", (LOW_STOCK_THRESHOLD,))
     low_stock_count = cur.fetchone()[0]
-    
-    cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date <= CURDATE() + INTERVAL 30 DAY AND expiration_date IS NOT NULL")
+
+    cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date <= date('now', '+30 days', 'localtime') AND expiration_date IS NOT NULL")
     expiring_count = cur.fetchone()[0]
-    
-    cur.close()
+
+    conn.close()
     return render_template('inventory_expiring.html', products=products,
                            low_stock_count=low_stock_count,
                            expiring_count=expiring_count,
                            active_main='alerts', active_sub='expiring_medical',
-                           now=date.today, category_filter=category_filter)
+                           now=date.today(), category_filter=category_filter,
+                           level=level, tab=tab)
 
 # =============================
 # ADMIN MANAGEMENT
@@ -1087,12 +1981,13 @@ def expiring_medical():
 @app.route('/register_cashier', methods=['GET','POST'])
 @admin_required
 def register_cashier():
-    cur = mysql.connection.cursor()
+    conn = get_db()
+    cur = conn.cursor()
     
-    cur.execute("SELECT COUNT(*) FROM products WHERE stock <= %s", (LOW_STOCK_THRESHOLD,))
+    cur.execute("SELECT COUNT(*) FROM products WHERE stock <= ?", (LOW_STOCK_THRESHOLD,))
     low_stock_count = cur.fetchone()[0]
     
-    cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date <= CURDATE() + INTERVAL 30 DAY AND expiration_date IS NOT NULL")
+    cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date <= date('now', '+30 days', 'localtime') AND expiration_date IS NOT NULL")
     expiring_count = cur.fetchone()[0]
     
     if request.method == 'POST':
@@ -1106,9 +2001,9 @@ def register_cashier():
             flash("All fields are required", "error")
             return redirect(url_for('register_cashier'))
 
-        cur.execute("SELECT id FROM cashiers WHERE username=%s", (username,))
+        cur.execute("SELECT id FROM cashiers WHERE username=?", (username,))
         if cur.fetchone():
-            cur.close()
+            conn.close()
             flash("Username already exists", "error")
             return redirect(url_for('register_cashier'))
 
@@ -1117,10 +2012,10 @@ def register_cashier():
 
         cur.execute("""
             INSERT INTO cashiers (full_name, username, password, security_question, security_answer)
-            VALUES (%s, %s, %s, %s, %s)
+            VALUES (?, ?, ?, ?, ?)
         """, (full_name, username, hashed_password, security_question, hashed_answer))
 
-        mysql.connection.commit()
+        conn.commit()
         
         # Log admin activity
         ip_address = request.remote_addr
@@ -1130,18 +2025,18 @@ def register_cashier():
         try:
             cur.execute("""
                 INSERT INTO admin_activity (admin_id, action, ip_address, details)
-                VALUES (%s, %s, %s, %s)
+                VALUES (?, ?, ?, ?)
             """, (session.get('admin_id'), 'Register Cashier', ip_address, f'Registered cashier: {username}'))
-            mysql.connection.commit()
+            conn.commit()
         except:
             pass
         
-        cur.close()
+        conn.close()
 
         flash("Cashier registered successfully", "success")
         return redirect(url_for('register_cashier'))
 
-    cur.close()
+    conn.close()
     return render_template('register_cashier.html',
                            low_stock_count=low_stock_count,
                            expiring_count=expiring_count,
@@ -1152,24 +2047,25 @@ def register_cashier():
 @app.route('/delete_cashier', methods=['GET','POST'])
 @admin_required
 def delete_cashier():
-    cur = mysql.connection.cursor()
+    conn = get_db()
+    cur = conn.cursor()
     
-    cur.execute("SELECT COUNT(*) FROM products WHERE stock <= %s", (LOW_STOCK_THRESHOLD,))
+    cur.execute("SELECT COUNT(*) FROM products WHERE stock <= ?", (LOW_STOCK_THRESHOLD,))
     low_stock_count = cur.fetchone()[0]
     
-    cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date <= CURDATE() + INTERVAL 30 DAY AND expiration_date IS NOT NULL")
+    cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date <= date('now', '+30 days', 'localtime') AND expiration_date IS NOT NULL")
     expiring_count = cur.fetchone()[0]
     
     if request.method == 'POST':
         cashier_id = request.form['id']
         
         # Get cashier info before deleting
-        cur.execute("SELECT username FROM cashiers WHERE id=%s", (cashier_id,))
+        cur.execute("SELECT username FROM cashiers WHERE id=?", (cashier_id,))
         cashier_info = cur.fetchone()
         cashier_username = cashier_info[0] if cashier_info else 'Unknown'
         
-        cur.execute("DELETE FROM cashiers WHERE id=%s", (cashier_id,))
-        mysql.connection.commit()
+        cur.execute("DELETE FROM cashiers WHERE id=?", (cashier_id,))
+        conn.commit()
         
         # Log admin activity
         ip_address = request.remote_addr
@@ -1179,9 +2075,9 @@ def delete_cashier():
         try:
             cur.execute("""
                 INSERT INTO admin_activity (admin_id, action, ip_address, details)
-                VALUES (%s, %s, %s, %s)
+                VALUES (?, ?, ?, ?)
             """, (session.get('admin_id'), 'Delete Cashier', ip_address, f'Deleted cashier: {cashier_username}'))
-            mysql.connection.commit()
+            conn.commit()
         except:
             pass
         
@@ -1189,7 +2085,7 @@ def delete_cashier():
 
     cur.execute("SELECT * FROM cashiers")
     cashiers = cur.fetchall()
-    cur.close()
+    conn.close()
     return render_template('delete_cashier.html', cashiers=cashiers,
                            low_stock_count=low_stock_count,
                            expiring_count=expiring_count,
@@ -1208,11 +2104,12 @@ def edit_cashier():
         flash("Full name, username, and status are required", "error")
         return redirect(url_for('delete_cashier'))
 
-    cur = mysql.connection.cursor()
+    conn = get_db()
+    cur = conn.cursor()
 
-    cur.execute("SELECT id FROM cashiers WHERE username=%s AND id!=%s", (username, cashier_id))
+    cur.execute("SELECT id FROM cashiers WHERE username=? AND id!=?", (username, cashier_id))
     if cur.fetchone():
-        cur.close()
+        conn.close()
         flash("Username already exists", "error")
         return redirect(url_for('delete_cashier'))
 
@@ -1221,17 +2118,17 @@ def edit_cashier():
             hashed_pw = generate_password_hash(password)
             cur.execute("""
                 UPDATE cashiers 
-                SET full_name=%s, username=%s, password=%s, status=%s
-                WHERE id=%s
+                SET full_name=?, username=?, password=?, status=?
+                WHERE id=?
             """, (full_name, username, hashed_pw, status, cashier_id))
         else:
             cur.execute("""
                 UPDATE cashiers 
-                SET full_name=%s, username=%s, status=%s
-                WHERE id=%s
+                SET full_name=?, username=?, status=?
+                WHERE id=?
             """, (full_name, username, status, cashier_id))
 
-        mysql.connection.commit()
+        conn.commit()
         
         # Log admin activity
         ip_address = request.remote_addr
@@ -1241,32 +2138,33 @@ def edit_cashier():
         try:
             cur.execute("""
                 INSERT INTO admin_activity (admin_id, action, ip_address, details)
-                VALUES (%s, %s, %s, %s)
+                VALUES (?, ?, ?, ?)
             """, (session.get('admin_id'), 'Update Cashier', ip_address, f'Updated cashier: {username}'))
-            mysql.connection.commit()
+            conn.commit()
         except:
             pass
         
         flash("Cashier updated successfully!", "success")
 
     except Exception as e:
-        mysql.connection.rollback()
+        conn.rollback()
         flash(f"Error: {str(e)}", "error")
 
     finally:
-        cur.close()
+        conn.close()
 
     return redirect(url_for('delete_cashier'))
 
 @app.route('/admin/change_password', methods=['GET','POST'])
 @admin_required
 def admin_change_password():
-    cur = mysql.connection.cursor()
-    cur.execute("SELECT COUNT(*) FROM products WHERE stock <= %s", (LOW_STOCK_THRESHOLD,))
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(*) FROM products WHERE stock <= ?", (LOW_STOCK_THRESHOLD,))
     low_stock_count = cur.fetchone()[0]
-    cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date <= CURDATE() + INTERVAL 30 DAY AND expiration_date IS NOT NULL")
+    cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date <= date('now', '+30 days', 'localtime') AND expiration_date IS NOT NULL")
     expiring_count = cur.fetchone()[0]
-    cur.close()
+    conn.close()
     admin_id = session.get('admin_id')
 
     if request.method == 'POST':
@@ -1282,30 +2180,31 @@ def admin_change_password():
             flash("New passwords do not match", "error")
             return render_template('change_admin_password.html', low_stock_count=low_stock_count, expiring_count=expiring_count, active_main='management', active_sub='change_admin_password')
 
-        cur = mysql.connection.cursor()
-        cur.execute("SELECT id, password FROM admins WHERE id=%s", (admin_id,))
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("SELECT id, password FROM admins WHERE id=?", (admin_id,))
         admin = cur.fetchone()
 
         if not admin or not check_password_hash(admin[1], old_password):
             flash("Current password is incorrect", "error")
-            cur.close()
+            conn.close()
             return render_template('change_admin_password.html', low_stock_count=low_stock_count, expiring_count=expiring_count, active_main='management', active_sub='change_admin_password')
 
         hashed = generate_password_hash(new_password)
-        cur.execute("UPDATE admins SET password=%s WHERE id=%s", (hashed, admin_id))
-        mysql.connection.commit()
+        cur.execute("UPDATE admins SET password=? WHERE id=?", (hashed, admin_id))
+        conn.commit()
         
         ip_address = request.remote_addr
         if request.headers.get('X-Forwarded-For'):
             ip_address = request.headers.get('X-Forwarded-For')
         
         try:
-            cur.execute("""INSERT INTO admin_activity (admin_id, action, ip_address, details) VALUES (%s, %s, %s, %s)""", (admin_id, 'Change Password', ip_address, 'Admin changed password from dashboard'))
-            mysql.connection.commit()
+            cur.execute("""INSERT INTO admin_activity (admin_id, action, ip_address, details) VALUES (?, ?, ?, ?)""", (admin_id, 'Change Password', ip_address, 'Admin changed password from dashboard'))
+            conn.commit()
         except:
             pass
         
-        cur.close()
+        conn.close()
         flash("Password updated successfully", "success")
         return redirect(url_for('admin_dashboard'))
 
@@ -1329,29 +2228,30 @@ def cashier_change_password():
             flash("New passwords do not match", "error")
             return render_template('change_cashier_password.html')
 
-        cur = mysql.connection.cursor()
-        cur.execute("SELECT id, password FROM cashiers WHERE id=%s", (cashier_id,))
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("SELECT id, password FROM cashiers WHERE id=?", (cashier_id,))
         cashier = cur.fetchone()
 
         if not cashier or not check_password_hash(cashier[1], old_password):
             flash("Current password is incorrect", "error")
-            cur.close()
+            conn.close()
             return render_template('change_cashier_password.html')
 
         hashed = generate_password_hash(new_password)
-        cur.execute("UPDATE cashiers SET password=%s WHERE id=%s", (hashed, cashier_id))
-        mysql.connection.commit()
+        cur.execute("UPDATE cashiers SET password=? WHERE id=?", (hashed, cashier_id))
+        conn.commit()
         
         try:
             ip_address = request.remote_addr
             if request.headers.get('X-Forwarded-For'):
                 ip_address = request.headers.get('X-Forwarded-For')
-            cur.execute("""INSERT INTO cashier_activity (cashier_id, login_time, ip_address) VALUES (%s, NOW(), %s)""", (cashier_id, ip_address))
-            mysql.connection.commit()
+            cur.execute("""INSERT INTO cashier_activity (cashier_id, login_time, ip_address) VALUES (?, datetime('now', 'localtime'), ?)""", (cashier_id, ip_address))
+            conn.commit()
         except:
             pass
         
-        cur.close()
+        conn.close()
         flash("Password updated successfully", "success")
         return redirect(url_for('cashier_dashboard'))
 
@@ -1359,14 +2259,15 @@ def cashier_change_password():
 
 @app.route('/change_admin_password', methods=['GET','POST'])
 def change_admin_password():
-    cur = mysql.connection.cursor()
+    conn = get_db()
+    cur = conn.cursor()
     
-    cur.execute("SELECT COUNT(*) FROM products WHERE stock <= %s", (LOW_STOCK_THRESHOLD,))
+    cur.execute("SELECT COUNT(*) FROM products WHERE stock <= ?", (LOW_STOCK_THRESHOLD,))
     low_stock_count = cur.fetchone()[0]
     
-    cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date <= CURDATE() + INTERVAL 30 DAY AND expiration_date IS NOT NULL")
+    cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date <= date('now', '+30 days', 'localtime') AND expiration_date IS NOT NULL")
     expiring_count = cur.fetchone()[0]
-    cur.close()
+    conn.close()
     
     security_question = None
 
@@ -1378,21 +2279,22 @@ def change_admin_password():
             flash("Username is required", "error")
             return redirect(url_for('change_admin_password'))
 
-        cur = mysql.connection.cursor()
-        cur.execute("SELECT id, security_question, security_answer FROM admins WHERE username=%s", (username,))
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("SELECT id, security_question, security_answer FROM admins WHERE username=?", (username,))
         admin = cur.fetchone()
 
         if not admin:
             flash("Invalid username", "error")
-            cur.close()
+            conn.close()
             return redirect(url_for('change_admin_password'))
 
         if step == '1':
             security_question = admin[1] if len(admin) > 1 and admin[1] else None
             if not security_question:
                 hashed_answer = generate_password_hash('generoso')
-                cur.execute("UPDATE admins SET security_question=%s, security_answer=%s WHERE id=%s", ('What is the name of the owner?', hashed_answer, admin[0]))
-                mysql.connection.commit()
+                cur.execute("UPDATE admins SET security_question=?, security_answer=? WHERE id=?", ('What is the name of the owner?', hashed_answer, admin[0]))
+                conn.commit()
                 security_question = 'What is the name of the owner?'
         elif step == '2':
             security_answer = request.form.get('security_answer', '').strip()
@@ -1400,14 +2302,14 @@ def change_admin_password():
 
             if not security_answer or not new_pass:
                 flash("All fields are required", "error")
-                cur.close()
+                conn.close()
                 return redirect(url_for('change_admin_password'))
 
             stored_answer = admin[2] if len(admin) > 2 else None
             if stored_answer and check_password_hash(stored_answer, security_answer):
                 hashed = generate_password_hash(new_pass)
-                cur.execute("UPDATE admins SET password=%s WHERE username=%s", (hashed, username))
-                mysql.connection.commit()
+                cur.execute("UPDATE admins SET password=? WHERE username=?", (hashed, username))
+                conn.commit()
                 
                 ip_address = request.remote_addr
                 if request.headers.get('X-Forwarded-For'):
@@ -1416,16 +2318,16 @@ def change_admin_password():
                 try:
                     cur.execute("""
                         INSERT INTO admin_activity (admin_id, action, ip_address, details)
-                        VALUES (%s, %s, %s, %s)
+                        VALUES (?, ?, ?, ?)
                     """, (admin[0], 'Change Password', ip_address, 'Admin changed password via forgot password'))
-                    mysql.connection.commit()
+                    conn.commit()
                 except:
                     pass
                 
                 flash("Password updated successfully", "success")
             else:
                 flash("Security answer is incorrect", "error")
-        cur.close()
+        conn.close()
 
     return render_template('forgot_admin_password.html',
                            low_stock_count=low_stock_count,
@@ -1434,7 +2336,8 @@ def change_admin_password():
 
 @app.route('/change_cashier_password', methods=['GET', 'POST'])
 def change_cashier_password():
-    cur = mysql.connection.cursor()
+    conn = get_db()
+    cur = conn.cursor()
     try:
         security_question = None
 
@@ -1446,7 +2349,7 @@ def change_cashier_password():
                 flash("Username is required", "error")
                 return redirect(url_for('change_cashier_password'))
 
-            cur.execute("SELECT id, password, security_question, security_answer FROM cashiers WHERE username=%s", (username,))
+            cur.execute("SELECT id, password, security_question, security_answer FROM cashiers WHERE username=?", (username,))
             row = cur.fetchone()
 
             if not row:
@@ -1457,8 +2360,8 @@ def change_cashier_password():
                 security_question = row[2] if row[2] else None
                 if not security_question:
                     hashed_answer = generate_password_hash('generoso')
-                    cur.execute("UPDATE cashiers SET security_question=%s, security_answer=%s WHERE id=%s", ('What is the name of the owner?', hashed_answer, row[0]))
-                    mysql.connection.commit()
+                    cur.execute("UPDATE cashiers SET security_question=?, security_answer=? WHERE id=?", ('What is the name of the owner?', hashed_answer, row[0]))
+                    conn.commit()
                     security_question = 'What is the name of the owner?'
             elif step == '2':
                 security_answer = request.form.get('security_answer', '').strip()
@@ -1470,13 +2373,13 @@ def change_cashier_password():
 
                 if check_password_hash(row[3], security_answer):
                     hashed = generate_password_hash(new_password)
-                    cur.execute("UPDATE cashiers SET password=%s WHERE id=%s", (hashed, row[0]))
-                    mysql.connection.commit()
+                    cur.execute("UPDATE cashiers SET password=? WHERE id=?", (hashed, row[0]))
+                    conn.commit()
                     flash("Password updated successfully", "success")
                 else:
                     flash("Security answer is incorrect", "error")
     finally:
-        cur.close()
+        conn.close()
 
     return render_template('forgot_cashier_password.html', security_question=security_question)
 
@@ -1497,10 +2400,11 @@ def cashier_login():
             flash("All fields are required", "error")
             return redirect(url_for('cashier_login'))
 
-        cur = mysql.connection.cursor()
-        cur.execute("SELECT id, full_name, username, password, status FROM cashiers WHERE username=%s", (username,))
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("SELECT id, full_name, username, password, status FROM cashiers WHERE username=?", (username,))
         cashier = cur.fetchone()
-        cur.close()
+        conn.close()
 
         if not cashier or not check_password_hash(cashier[3], password):
             flash("Invalid login credentials", "error")
@@ -1511,21 +2415,23 @@ def cashier_login():
             flash("Cashier account is inactive. Contact the administrator.", "error")
             return redirect(url_for('cashier_login'))
 
-        cur = mysql.connection.cursor()
-        cur.execute("SELECT security_question, security_answer FROM cashiers WHERE id=%s", (cashier[0],))
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("SELECT security_question, security_answer FROM cashiers WHERE id=?", (cashier[0],))
         sq = cur.fetchone()
         if not sq or not sq[0] or not sq[1]:
             hashed_answer = generate_password_hash('generoso')
-            cur.execute("UPDATE cashiers SET security_question=%s, security_answer=%s WHERE id=%s", ('What is the name of the owner?', hashed_answer, cashier[0]))
-            mysql.connection.commit()
-        cur.close()
+            cur.execute("UPDATE cashiers SET security_question=?, security_answer=? WHERE id=?", ('What is the name of the owner?', hashed_answer, cashier[0]))
+            conn.commit()
+        conn.close()
 
         session['cashier_user'] = cashier[1]
         session['cashier_id'] = cashier[0]
         session['role'] = 'cashier'
         session.permanent = True  # Session persists on refresh
 
-        cur = mysql.connection.cursor()
+        conn = get_db()
+        cur = conn.cursor()
 
         # Get IP address
         ip_address = request.remote_addr
@@ -1535,10 +2441,10 @@ def cashier_login():
         # Log cashier login with IP address
         cur.execute("""
             INSERT INTO cashier_activity (cashier_id, login_time, ip_address)
-            VALUES (%s, NOW(), %s)
+            VALUES (?, datetime('now', 'localtime'), ?)
         """, (cashier[0], ip_address))
-        mysql.connection.commit()
-        cur.close()
+        conn.commit()
+        conn.close()
 
         return redirect(url_for('cashier_dashboard'))
 
@@ -1548,7 +2454,8 @@ def cashier_login():
 @app.route('/active_cashiers')
 @admin_required
 def get_active_cashiers():
-    cur = mysql.connection.cursor()
+    conn = get_db()
+    cur = conn.cursor()
     
     cur.execute("SELECT id, full_name, username FROM cashiers")
     cashiers = cur.fetchall()
@@ -1560,7 +2467,7 @@ def get_active_cashiers():
         WHERE ca.logout_time IS NULL
     """)
     active_data = {row[0]: row[1] for row in cur.fetchall()}
-    cur.close()
+    conn.close()
 
     cashier_list = []
     for c in cashiers:
@@ -1582,12 +2489,13 @@ def get_active_cashiers():
 @app.route('/cashier')
 @cashier_required
 def cashier_dashboard():
-    cur = mysql.connection.cursor()
+    conn = get_db()
+    cur = conn.cursor()
     
     cur.execute("""
         SELECT IFNULL(SUM(total_amount), 0) as total, COUNT(*) as count
         FROM sales 
-        WHERE cashier_id = %s AND DATE(sale_date) = CURDATE() AND sale_status = 'Completed'
+        WHERE cashier_id = ? AND DATE(sale_date) = date('now', 'localtime') AND sale_status = 'Completed'
     """, (session['cashier_id'],))
     today_data = cur.fetchone()
     today_total = today_data[0] if today_data else 0
@@ -1596,20 +2504,20 @@ def cashier_dashboard():
     cur.execute("""
         SELECT sale_date, receipt_number, total_amount, sale_status 
         FROM sales 
-        WHERE cashier_id = %s
+        WHERE cashier_id = ?
         ORDER BY sale_date DESC 
         LIMIT 5
     """, (session['cashier_id'],))
 
     recent_sales = cur.fetchall()
 
-    settings = get_store_settings(mysql)
+    settings = get_store_settings()
 
-    cur.execute("SELECT COUNT(*) FROM products WHERE stock <= %s", (LOW_STOCK_THRESHOLD,))
+    cur.execute("SELECT COUNT(*) FROM products WHERE stock <= ?", (LOW_STOCK_THRESHOLD,))
     low_stock_count = cur.fetchone()[0]
-    cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date <= CURDATE() + INTERVAL 30 DAY AND expiration_date IS NOT NULL")
+    cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date <= date('now', '+30 days', 'localtime') AND expiration_date IS NOT NULL")
     expiring_count = cur.fetchone()[0]
-    cur.close()
+    conn.close()
 
     return render_template('cashier_dashboard.html', 
                            recent_sales=recent_sales,
@@ -1622,35 +2530,36 @@ def cashier_dashboard():
 @app.route('/cashier_history')
 @cashier_required
 def cashier_history():
-    cur = mysql.connection.cursor()
+    conn = get_db()
+    cur = conn.cursor()
 
-    # Get daily sales (today only for chart)
-    cur.execute("""
-        SELECT DATE(sale_date) as sale_day,
-               IFNULL(SUM(total_amount),0) as total_sales,
-               COUNT(id) as total_transactions
-        FROM sales
-        WHERE cashier_id = %s
-        AND sale_status = 'Completed'
-        AND DATE(sale_date) = CURDATE()
-        GROUP BY DATE(sale_date)
-        ORDER BY sale_day ASC
-    """, (session['cashier_id'],))
-    daily_data = cur.fetchall()
+    receipt_search = request.args.get('receipt_number', '').strip()
+    date_from = request.args.get('date_from', '').strip()
+    date_to = request.args.get('date_to', '').strip()
 
-    labels = [str(row[0]) for row in daily_data]
-    sales_values = [float(row[1]) for row in daily_data]
-    transaction_counts = [int(row[2]) for row in daily_data]
+    # Build filters for the transaction list
+    conditions = ["cashier_id = ?", "sale_status = 'Completed'"]
+    params = [session['cashier_id']]
 
-    # Get today's transactions only
-    cur.execute("""
+    if receipt_search:
+        conditions.append("receipt_number LIKE ?")
+        params.append(f"%{receipt_search}%")
+    if date_from:
+        conditions.append("DATE(sale_date) >= ?")
+        params.append(date_from)
+    if date_to:
+        conditions.append("DATE(sale_date) <= ?")
+        params.append(date_to)
+
+    where_clause = " AND ".join(conditions)
+
+    # Get filtered transactions for the history list
+    cur.execute(f"""
         SELECT id, receipt_number, total_amount, sale_date
         FROM sales
-        WHERE cashier_id = %s
-        AND DATE(sale_date) = CURDATE()
-        AND sale_status = 'Completed'
+        WHERE {where_clause}
         ORDER BY sale_date DESC
-    """, (session['cashier_id'],))
+    """, params)
     sales = cur.fetchall()
 
     sales_data = []
@@ -1660,7 +2569,7 @@ def cashier_history():
             SELECT si.quantity, si.price, p.product_name
             FROM sale_items si
             LEFT JOIN products p ON si.product_id = p.id
-            WHERE si.sale_id = %s
+            WHERE si.sale_id = ?
         """, (sale_id,))
         items = cur.fetchall()
         sales_data.append({
@@ -1671,37 +2580,77 @@ def cashier_history():
             "items": items
         })
 
-    cur.close()
+    # Summary stats based on the current filter
+    cur.execute(f"""
+        SELECT IFNULL(SUM(total_amount), 0), COUNT(id)
+        FROM sales
+        WHERE {where_clause}
+    """, params)
+    summary = cur.fetchone()
+    filtered_total = float(summary[0])
+    filtered_count = int(summary[1])
+
+    # Daily sales (today only for chart)
+    cur.execute("""
+        SELECT DATE(sale_date) as sale_day,
+               IFNULL(SUM(total_amount),0) as total_sales,
+               COUNT(id) as total_transactions
+        FROM sales
+        WHERE cashier_id = ?
+        AND sale_status = 'Completed'
+        AND DATE(sale_date) = date('now', 'localtime')
+        GROUP BY DATE(sale_date)
+        ORDER BY sale_day ASC
+    """, (session['cashier_id'],))
+    daily_data = cur.fetchall()
+
+    labels = [str(row[0]) for row in daily_data]
+    sales_values = [float(row[1]) for row in daily_data]
+    transaction_counts = [int(row[2]) for row in daily_data]
+
+    conn.close()
     return render_template(
         "cashier_history.html",
         sales=sales_data,
         chart_labels=labels,
         chart_sales=sales_values,
-        chart_transactions=transaction_counts
+        chart_transactions=transaction_counts,
+        receipt_search=receipt_search,
+        date_from=date_from,
+        date_to=date_to,
+        filtered_total=filtered_total,
+        filtered_count=filtered_count
     )
 
 @app.route('/search_product')
 @cashier_required
 def search_product():
     query = request.args.get('q')
-    cur = mysql.connection.cursor()
+    conn = get_db()
+    cur = conn.cursor()
 
     cur.execute("""
         SELECT id, product_name, price, stock, barcode, expiration_date
         FROM products
-        WHERE (product_name LIKE %s OR barcode LIKE %s)
+        WHERE (product_name LIKE ? OR barcode LIKE ?)
         AND stock > 0
         ORDER BY product_name, expiration_date
         LIMIT 10
     """, (f"%{query}%", f"%{query}%"))
 
     products = cur.fetchall()
-    cur.close()
+    conn.close()
 
     result = []
     for p in products:
-        expiry = p[5].strftime('%m/%d/%Y') if p[5] else 'N/A'
-        is_expired = p[5] is not None and p[5] < datetime.now().date()
+        expiry_date = None
+        if p[5]:
+            try:
+                expiry_date = datetime.strptime(p[5], '%Y-%m-%d').date()
+            except Exception:
+                expiry_date = None
+        expiry = expiry_date.strftime('%m/%d/%Y') if expiry_date else 'N/A'
+        is_expired = expiry_date is not None and expiry_date < datetime.now().date()
         result.append({
             "id": p[0],
             "name": p[1],
@@ -1718,15 +2667,22 @@ def search_product():
 @cashier_required
 def api_products():
     """API endpoint for live product updates"""
-    cur = mysql.connection.cursor()
+    conn = get_db()
+    cur = conn.cursor()
     cur.execute("SELECT id, product_name, price, stock, barcode, expiration_date FROM products WHERE stock > 0 ORDER BY product_name, expiration_date")
     products = cur.fetchall()
-    cur.close()
+    conn.close()
     
     result = []
     for p in products:
-        expiry = p[5].strftime('%m/%d/%Y') if p[5] else 'N/A'
-        is_expired = p[5] is not None and p[5] < datetime.now().date()
+        expiry_date = None
+        if p[5]:
+            try:
+                expiry_date = datetime.strptime(p[5], '%Y-%m-%d').date()
+            except Exception:
+                expiry_date = None
+        expiry = expiry_date.strftime('%m/%d/%Y') if expiry_date else 'N/A'
+        is_expired = expiry_date is not None and expiry_date < datetime.now().date()
         result.append({
             "id": p[0],
             "name": p[1],
@@ -1746,16 +2702,17 @@ def search_by_name():
     if not query:
         return jsonify([])
     
-    cur = mysql.connection.cursor()
+    conn = get_db()
+    cur = conn.cursor()
     cur.execute("""
         SELECT id, product_name, barcode, price, category_id, expiration_date 
         FROM products 
-        WHERE product_name LIKE %s 
+        WHERE product_name LIKE ? 
         ORDER BY product_name, expiration_date
         LIMIT 5
     """, (f"%{query}%",))
     products = cur.fetchall()
-    cur.close()
+    conn.close()
     
     result = []
     for p in products:
@@ -1773,10 +2730,11 @@ def search_by_name():
 @app.route('/api/product/<int:product_id>')
 @admin_required
 def api_get_product(product_id):
-    cur = mysql.connection.cursor()
-    cur.execute("SELECT id, product_name, barcode, category_id, product_type, price, stock, expiration_date FROM products WHERE id = %s", (product_id,))
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT id, product_name, barcode, category_id, product_type, price, stock, expiration_date FROM products WHERE id = ?", (product_id,))
     row = cur.fetchone()
-    cur.close()
+    conn.close()
     
     if row:
         return jsonify({
@@ -1803,31 +2761,35 @@ def api_update_product():
     barcode = data.get('barcode')
     category = data.get('category')
     price = data.get('price')
-    stock = data.get('stock')
-    expiration_date = data.get('expiration_date')
+    expiration_date = data.get('expiration_date') or None
     
     if not product_name or not barcode or not category:
         return jsonify({'success': False, 'message': 'All fields are required'})
     
     try:
         price = float(price) if price else 0
-        stock = int(stock) if stock else 0
     except ValueError:
-        return jsonify({'success': False, 'message': 'Invalid price or stock value'})
+        return jsonify({'success': False, 'message': 'Invalid price value'})
     
-    cur = mysql.connection.cursor()
+    conn = get_db()
+    cur = conn.cursor()
     
-    cur.execute("SELECT id FROM categories WHERE category_name=%s", (category,))
+    cur.execute("SELECT id FROM categories WHERE category_name=?", (category,))
     cat_result = cur.fetchone()
     category_id = cat_result[0] if cat_result else None
+    if not category_id:
+        conn.close()
+        return jsonify({'success': False, 'message': 'Invalid category'})
     
+    # Stock is intentionally not updated here - stock changes go through the
+    # Stock In page (/stock_in) so every movement is logged in stock_movements.
     cur.execute("""
         UPDATE products 
-        SET product_name=%s, barcode=%s, category_id=%s, product_type=%s, price=%s, stock=%s, expiration_date=%s
-        WHERE id=%s
-    """, (product_name, barcode, category_id, category, price, stock, expiration_date, product_id))
+        SET product_name=?, barcode=?, category_id=?, product_type=?, price=?, expiration_date=?
+        WHERE id=?
+    """, (product_name, barcode, category_id, category, price, expiration_date, product_id))
     
-    mysql.connection.commit()
+    conn.commit()
     
     ip_address = request.remote_addr
     if request.headers.get('X-Forwarded-For'):
@@ -1836,33 +2798,40 @@ def api_update_product():
     try:
         cur.execute("""
             INSERT INTO admin_activity (admin_id, action, ip_address, details)
-            VALUES (%s, %s, %s, %s)
+            VALUES (?, ?, ?, ?)
         """, (session.get('admin_id'), 'Edit Product', ip_address, f'Edited product: {product_name}'))
-        mysql.connection.commit()
+        conn.commit()
     except:
         pass
     
-    cur.close()
+    conn.close()
     return jsonify({'success': True, 'message': 'Product updated successfully!'})
 
 @app.route('/get_product/<barcode>')
 @cashier_required
 def get_product(barcode):
-    cur = mysql.connection.cursor()
+    conn = get_db()
+    cur = conn.cursor()
 
     cur.execute("""
         SELECT id, product_name, price, stock, barcode, expiration_date
         FROM products
-        WHERE barcode = %s AND stock > 0
+        WHERE barcode = ? AND stock > 0
         LIMIT 1
     """, (barcode,))
 
     row = cur.fetchone()
-    cur.close()
+    conn.close()
 
     if row:
-        expiry = row[5].strftime('%m/%d/%Y') if row[5] else 'N/A'
-        is_expired = row[5] is not None and row[5] < datetime.now().date()
+        expiry_date = None
+        if row[5]:
+            try:
+                expiry_date = datetime.strptime(row[5], '%Y-%m-%d').date()
+            except Exception:
+                expiry_date = None
+        expiry = expiry_date.strftime('%m/%d/%Y') if expiry_date else 'N/A'
+        is_expired = expiry_date is not None and expiry_date < datetime.now().date()
         return jsonify({
             "success": True,
             "product": {
@@ -1915,9 +2884,10 @@ def complete_sale():
         quantity_by_product[product_id] = quantity_by_product.get(product_id, 0) + quantity
 
     product_ids = list(quantity_by_product.keys())
-    placeholders = ','.join(['%s'] * len(product_ids))
+    placeholders = ','.join(['?'] * len(product_ids))
 
-    cur = mysql.connection.cursor()
+    conn = get_db()
+    cur = conn.cursor()
     try:
         cur.execute(f"""
             SELECT id, product_name, product_type, price, stock, expiration_date
@@ -1942,7 +2912,13 @@ def complete_sale():
             product_type_key = product_type.lower()
             price = float(row[3])
             stock = int(row[4])
-            expiry_date = row[5]
+            expiry_date_str = row[5]
+            expiry_date = None
+            if expiry_date_str:
+                try:
+                    expiry_date = datetime.strptime(expiry_date_str, '%Y-%m-%d').date()
+                except Exception:
+                    expiry_date = None
 
             if price < 0:
                 return jsonify({'success': False, 'message': f'Invalid price for {name}'})
@@ -1986,57 +2962,59 @@ def complete_sale():
             receipt_number = f"REC-{datetime.now().strftime('%Y%m%d')}-{random.randint(1000, 9999)}"
             receipt_numbers.append(receipt_number)
             medical_total = round(sum(item[2] * item[1] for item in medical_items), 2)
+            change = round(tendered - total_amount, 2)
 
             cur.execute("""
-                INSERT INTO sales (receipt_number, cashier_id, total_amount, sale_status, product_type, sale_date)
-                VALUES (%s, %s, %s, 'Pending', 'Medical', NOW())
-            """, (receipt_number, session['cashier_id'], medical_total))
+                INSERT INTO sales (receipt_number, cashier_id, total_amount, sale_status, product_type, sale_date, amount_tendered, change_amount)
+                VALUES (?, ?, ?, 'Completed', 'Medical', datetime('now', 'localtime'), ?, ?)
+            """, (receipt_number, session['cashier_id'], medical_total, tendered, change))
 
             sale_id = cur.lastrowid
 
             for product_id, quantity, price in medical_items:
                 cur.execute("""
                     INSERT INTO sale_items (sale_id, product_id, quantity, price)
-                    VALUES (%s, %s, %s, %s)
+                    VALUES (?, ?, ?, ?)
                 """, (sale_id, product_id, quantity, price))
 
                 cur.execute("""
-                    UPDATE products SET stock = stock - %s WHERE id = %s
+                    UPDATE products SET stock = stock - ? WHERE id = ?
                 """, (quantity, product_id))
 
                 cur.execute("""
                     INSERT INTO stock_movements (product_id, movement_type, quantity, reason)
-                    VALUES (%s, 'OUT', %s, 'Sale')
+                    VALUES (?, 'OUT', ?, 'Sale')
                 """, (product_id, quantity))
 
         if non_medical_items:
             receipt_number = f"REC-{datetime.now().strftime('%Y%m%d')}-{random.randint(1000, 9999)}"
             receipt_numbers.append(receipt_number)
             non_medical_total = round(sum(item[2] * item[1] for item in non_medical_items), 2)
+            change = round(tendered - total_amount, 2)
 
             cur.execute("""
-                INSERT INTO sales (receipt_number, cashier_id, total_amount, sale_status, product_type, sale_date)
-                VALUES (%s, %s, %s, 'Pending', 'Non-Medical', NOW())
-            """, (receipt_number, session['cashier_id'], non_medical_total))
+                INSERT INTO sales (receipt_number, cashier_id, total_amount, sale_status, product_type, sale_date, amount_tendered, change_amount)
+                VALUES (?, ?, ?, 'Completed', 'Non-Medical', datetime('now', 'localtime'), ?, ?)
+            """, (receipt_number, session['cashier_id'], non_medical_total, tendered, change))
 
             sale_id = cur.lastrowid
 
             for product_id, quantity, price in non_medical_items:
                 cur.execute("""
                     INSERT INTO sale_items (sale_id, product_id, quantity, price)
-                    VALUES (%s, %s, %s, %s)
+                    VALUES (?, ?, ?, ?)
                 """, (sale_id, product_id, quantity, price))
 
                 cur.execute("""
-                    UPDATE products SET stock = stock - %s WHERE id = %s
+                    UPDATE products SET stock = stock - ? WHERE id = ?
                 """, (quantity, product_id))
 
                 cur.execute("""
                     INSERT INTO stock_movements (product_id, movement_type, quantity, reason)
-                    VALUES (%s, 'OUT', %s, 'Sale')
+                    VALUES (?, 'OUT', ?, 'Sale')
                 """, (product_id, quantity))
 
-        mysql.connection.commit()
+        conn.commit()
         main_receipt = receipt_numbers[0] if receipt_numbers else 'N/A'
         change = round(tendered - total_amount, 2)
 
@@ -2052,12 +3030,12 @@ def complete_sale():
 
     except Exception as e:
         try:
-            mysql.connection.rollback()
+            conn.rollback()
         except:
             pass
         return jsonify({'success': False, 'message': f'Error: {str(e)}'})
     finally:
-        cur.close()
+        conn.close()
 
 # =============================
 # LOGOUT
@@ -2068,36 +3046,47 @@ def complete_sale():
 def setup_remote_db():
     """Grant remote access to root user - run this once from Computer 1"""
     try:
-        cur = mysql.connection.cursor()
+        conn = get_db()
+        cur = conn.cursor()
         # Create user for remote access with all privileges
         try:
             cur.execute("CREATE USER IF NOT EXISTS 'root'@'%' IDENTIFIED BY ''")
         except Exception:
-            mysql.connection.rollback()
+            conn.rollback()
         cur.execute("GRANT ALL PRIVILEGES ON *.* TO 'root'@'%' WITH GRANT OPTION")
         cur.execute("FLUSH PRIVILEGES")
-        cur.close()
+        conn.close()
         return "Database remote access granted! You can now connect from other computers."
     except Exception as e:
         return f"Error: {str(e)}"
 
 @app.route('/admin_logout')
+@app.route('/admin_logout')
+@admin_required
 def admin_logout():
     """Admin logout - only clears admin session, does not affect cashier"""
     # Log admin activity
     if 'admin_user' in session:
-        cur = mysql.connection.cursor()
+        conn = get_db()
+        cur = conn.cursor()
         # Get IP address
         ip_address = request.remote_addr
         if request.headers.get('X-Forwarded-For'):
             ip_address = request.headers.get('X-Forwarded-For')
         
-        cur.execute("""
-            INSERT INTO admin_activity (admin_id, action, ip_address, details)
-            VALUES (%s, %s, %s, %s)
-        """, (session.get('admin_id'), 'Admin Logout', ip_address, 'Admin logged out'))
-        mysql.connection.commit()
-        cur.close()
+        try:
+            # Verify admin still exists before logging
+            cur.execute("SELECT id FROM admins WHERE id = ?", (session.get('admin_id'),))
+            if cur.fetchone():
+                cur.execute("""
+                    INSERT INTO admin_activity (admin_id, action, ip_address, details)
+                    VALUES (?, ?, ?, ?)
+                """, (session.get('admin_id'), 'Admin Logout', ip_address, 'Admin logged out'))
+                conn.commit()
+        except Exception:
+            pass  # Silently ignore activity logging errors
+        finally:
+            conn.close()
     
     # Only clear admin session keys, keep cashier session intact
     session.pop('admin_user', None)
@@ -2110,7 +3099,8 @@ def admin_logout():
 def cashier_logout():
     """Cashier logout - clears cashier session and logs activity"""
     if 'cashier_user' in session:
-        cur = mysql.connection.cursor()
+        conn = get_db()
+        cur = conn.cursor()
         cashier_id = session.get('cashier_id')
         
         # Get IP address
@@ -2121,12 +3111,12 @@ def cashier_logout():
         # Log the logout time in cashier_activity
         cur.execute("""
             UPDATE cashier_activity
-            SET logout_time = NOW(),
-                ip_address = COALESCE(ip_address, %s)
-            WHERE cashier_id = %s AND logout_time IS NULL
+            SET logout_time = datetime('now', 'localtime'),
+                ip_address = COALESCE(ip_address, ?)
+            WHERE cashier_id = ? AND logout_time IS NULL
         """, (ip_address, cashier_id))
-        mysql.connection.commit()
-        cur.close()
+        conn.commit()
+        conn.close()
     
     # Only clear cashier session keys, keep admin session intact
     session.pop('cashier_user', None)
@@ -2181,7 +3171,7 @@ def add_product_oop():
     except ValueError as e:
         flash(f"Validation error: {str(e)}", "error")
     except Exception as e:
-        mysql.connection.rollback()
+        conn.rollback()
         flash(f"Database error: {str(e)}", "error")
     return redirect(url_for('add_product'))
 
@@ -2195,12 +3185,13 @@ def complete_sale_oop():
         items = data.get('items', [])
         if not items:
             return jsonify({'success': False, 'message': 'No items in cart'})
-        cur = mysql.connection.cursor()
+        conn = get_db()
+        cur = conn.cursor()
         try:
             enriched_items = []
             for item in items:
                 cur.execute(
-                    "SELECT product_name, product_type, price FROM products WHERE id=%s",
+                    "SELECT product_name, product_type, price FROM products WHERE id=?",
                     (item['id'],)
                 )
                 row = cur.fetchone()
@@ -2213,7 +3204,7 @@ def complete_sale_oop():
                         'quantity': item['quantity']
                     })
         finally:
-            cur.close()
+            conn.close()
         cashier = Cashier(
             user_id=session['cashier_id'],
             username=session['cashier_user'],
@@ -2235,7 +3226,7 @@ def admin_login_oop():
         if not username or not password:
             flash("All fields are required", "error")
             return redirect(url_for('admin_login'))
-        success, user = auth_service.login(username, password, request, mysql, 'admin')
+        success, user = auth_service.login(username, password, request, 'admin')
         if success and user:
             session_data = auth_service.get_session_data(user)
             session.update(session_data)
@@ -2254,7 +3245,7 @@ def cashier_login_oop():
         if not username or not password:
             flash("All fields are required", "error")
             return redirect(url_for('cashier_login'))
-        success, user = auth_service.login(username, password, request, mysql, 'cashier')
+        success, user = auth_service.login(username, password, request, 'cashier')
         if success and user:
             session_data = auth_service.get_session_data(user)
             session.update(session_data)
@@ -2267,18 +3258,19 @@ def cashier_login_oop():
 # STORE SETTINGS & UTILITIES
 # =============================
 
-def get_store_settings(mysql):
-    cur = mysql.connection.cursor()
+def get_store_settings():
+    conn = get_db()
+    cur = conn.cursor()
     try:
         cur.execute("SELECT setting_key, setting_value FROM store_settings")
         rows = cur.fetchall()
         settings = {row[0]: row[1] for row in rows}
         return settings
     finally:
-        cur.close()
+        conn.close()
 
-def get_setting(mysql, key, default=''):
-    settings = get_store_settings(mysql)
+def get_setting(key, default=''):
+    settings = get_store_settings()
     return settings.get(key, default)
 
 # =============================
@@ -2288,7 +3280,8 @@ def get_setting(mysql, key, default=''):
 @app.route('/receipt_customization', methods=['GET', 'POST'])
 @admin_required
 def receipt_customization():
-    cur = mysql.connection.cursor()
+    conn = get_db()
+    cur = conn.cursor()
     try:
         if request.method == 'POST':
             receipt_header = request.form.get('receipt_header', '').strip()
@@ -2308,25 +3301,26 @@ def receipt_customization():
             for key, value in settings_to_update:
                 cur.execute("""
                     INSERT INTO store_settings (setting_key, setting_value)
-                    VALUES (%s, %s)
+                    VALUES (?, ?)
                     ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)
                 """, (key, value))
 
-            mysql.connection.commit()
+            conn.commit()
             flash("Receipt settings saved successfully!", "success")
 
         cur.execute("SELECT setting_key, setting_value FROM store_settings")
         rows = cur.fetchall()
         settings = {row[0]: row[1] for row in rows}
     finally:
-        cur.close()
+        conn.close()
 
-    cur = mysql.connection.cursor()
-    cur.execute("SELECT COUNT(*) FROM products WHERE stock <= %s", (LOW_STOCK_THRESHOLD,))
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(*) FROM products WHERE stock <= ?", (LOW_STOCK_THRESHOLD,))
     low_stock_count = cur.fetchone()[0]
-    cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date <= CURDATE() + INTERVAL 30 DAY AND expiration_date IS NOT NULL")
+    cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date <= date('now', '+30 days', 'localtime') AND expiration_date IS NOT NULL")
     expiring_count = cur.fetchone()[0]
-    cur.close()
+    conn.close()
 
     return render_template('receipt_customization.html',
                            settings=settings,
@@ -2348,14 +3342,15 @@ def mark_receipt_printed():
         if not receipt_number:
             return jsonify({'success': False, 'message': 'Receipt number is required'}), 400
 
-        cur = mysql.connection.cursor()
+        conn = get_db()
+        cur = conn.cursor()
         cur.execute("""
             UPDATE sales 
-            SET receipt_printed = 1, printed_at = NOW(), sale_status = 'Completed'
-            WHERE receipt_number = %s AND cashier_id = %s AND sale_status = 'Pending'
+            SET receipt_printed = 1, printed_at = datetime('now', 'localtime')
+            WHERE receipt_number = ? AND cashier_id = ? AND sale_status = 'Completed'
         """, (receipt_number, session['cashier_id']))
-        mysql.connection.commit()
-        cur.close()
+        conn.commit()
+        conn.close()
 
         return jsonify({'success': True, 'message': 'Receipt marked as printed'})
     except Exception as e:
@@ -2370,11 +3365,12 @@ def cancel_pending_sale():
         if not receipt_number:
             return jsonify({'success': False, 'message': 'Receipt number is required'}), 400
 
-        cur = mysql.connection.cursor()
+        conn = get_db()
+        cur = conn.cursor()
         try:
             cur.execute("""
                 SELECT id FROM sales 
-                WHERE receipt_number = %s AND cashier_id = %s AND sale_status = 'Pending'
+                WHERE receipt_number = ? AND cashier_id = ? AND sale_status = 'Pending'
                 LIMIT 1
             """, (receipt_number, session['cashier_id']))
             sale_row = cur.fetchone()
@@ -2384,32 +3380,223 @@ def cancel_pending_sale():
             sale_id = sale_row[0]
 
             cur.execute("""
-                SELECT product_id, quantity FROM sale_items WHERE sale_id = %s
+                SELECT product_id, quantity FROM sale_items WHERE sale_id = ?
             """, (sale_id,))
             items = cur.fetchall()
 
             for product_id, quantity in items:
                 cur.execute("""
-                    UPDATE products SET stock = stock + %s WHERE id = %s
+                    UPDATE products SET stock = stock + ? WHERE id = ?
                 """, (quantity, product_id))
 
                 cur.execute("""
                     DELETE FROM stock_movements 
-                    WHERE product_id = %s AND movement_type = 'OUT' 
+                    WHERE product_id = ? AND movement_type = 'OUT' 
                     AND reason = 'Sale' AND movement_date >= (
-                        SELECT sale_date FROM sales WHERE id = %s
+                        SELECT sale_date FROM sales WHERE id = ?
                     )
                     LIMIT 1
                 """, (product_id, sale_id))
 
-            cur.execute("DELETE FROM sale_items WHERE sale_id = %s", (sale_id,))
-            cur.execute("DELETE FROM sales WHERE id = %s", (sale_id,))
-            mysql.connection.commit()
+            cur.execute("DELETE FROM sale_items WHERE sale_id = ?", (sale_id,))
+            cur.execute("DELETE FROM sales WHERE id = ?", (sale_id,))
+            conn.commit()
             return jsonify({'success': True, 'message': 'Pending sale cancelled'})
         finally:
-            cur.close()
+            conn.close()
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/reprint_receipt/<int:sale_id>')
+@cashier_required
+def reprint_receipt(sale_id):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT receipt_number, total_amount, sale_date, cashier_id, amount_tendered, change_amount FROM sales WHERE id = ?", (sale_id,))
+    sale = cur.fetchone()
+    if not sale:
+        conn.close()
+        return "Sale not found", 404
+    cur.execute("""
+        SELECT p.product_name, si.quantity, si.price
+        FROM sale_items si
+        JOIN products p ON si.product_id = p.id
+        WHERE si.sale_id = ?
+    """, (sale_id,))
+    items = cur.fetchall()
+    conn.close()
+    return render_template('reprint_receipt.html', sale=sale, items=items)
+
+@app.route('/api/void_sale', methods=['POST'])
+@cashier_required
+def api_void_sale():
+    data = request.get_json()
+    sale_id = data.get('sale_id')
+    reason = data.get('reason', '')
+
+    if not sale_id:
+        return jsonify({'success': False, 'message': 'Sale ID is required'})
+    if not reason:
+        return jsonify({'success': False, 'message': 'Reason is required'})
+
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT sale_status FROM sales WHERE id = ? AND cashier_id = ?", (sale_id, session['cashier_id']))
+        row = cur.fetchone()
+        if not row:
+            return jsonify({'success': False, 'message': 'Sale not found'})
+        if row[0] == 'Voided':
+            return jsonify({'success': False, 'message': 'Sale is already voided'})
+
+        cur.execute("""
+            UPDATE sales
+            SET sale_status = 'Voided', voided_at = datetime('now', 'localtime'),
+                voided_by = ?, void_reason = ?
+            WHERE id = ? AND cashier_id = ?
+        """, (session['cashier_id'], reason, sale_id, session['cashier_id']))
+
+        cur.execute("SELECT product_id, quantity FROM sale_items WHERE sale_id = ?", (sale_id,))
+        items = cur.fetchall()
+        for product_id, quantity in items:
+            cur.execute("UPDATE products SET stock = stock + ? WHERE id = ?", (quantity, product_id))
+            cur.execute("""
+                INSERT INTO stock_movements (product_id, movement_type, quantity, reason)
+                VALUES (?, 'IN', ?, 'Void Sale')
+            """, (product_id, quantity))
+
+        conn.commit()
+        return jsonify({'success': True, 'message': 'Sale voided successfully'})
+    except Exception as e:
+        conn.rollback()
+        return jsonify({'success': False, 'message': str(e)})
+    finally:
+        conn.close()
+
+@app.route('/api/refund_sale', methods=['POST'])
+@cashier_required
+def api_refund_sale():
+    data = request.get_json()
+    sale_id = data.get('sale_id')
+    reason = data.get('reason', '')
+
+    if not sale_id:
+        return jsonify({'success': False, 'message': 'Sale ID is required'})
+    if not reason:
+        return jsonify({'success': False, 'message': 'Reason is required'})
+
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT sale_status FROM sales WHERE id = ? AND cashier_id = ?", (sale_id, session['cashier_id']))
+        row = cur.fetchone()
+        if not row:
+            return jsonify({'success': False, 'message': 'Sale not found'})
+        if row[0] in ('Voided', 'Refunded'):
+            return jsonify({'success': False, 'message': 'Sale is already voided or refunded'})
+
+        cur.execute("""
+            UPDATE sales
+            SET sale_status = 'Refunded', refunded_at = datetime('now', 'localtime'),
+                refunded_by = ?, refund_reason = ?
+            WHERE id = ? AND cashier_id = ?
+        """, (session['cashier_id'], reason, sale_id, session['cashier_id']))
+
+        cur.execute("SELECT product_id, quantity FROM sale_items WHERE sale_id = ?", (sale_id,))
+        items = cur.fetchall()
+        for product_id, quantity in items:
+            cur.execute("UPDATE products SET stock = stock + ? WHERE id = ?", (quantity, product_id))
+            cur.execute("""
+                INSERT INTO stock_movements (product_id, movement_type, quantity, reason)
+                VALUES (?, 'IN', ?, 'Refund Sale')
+            """, (product_id, quantity))
+
+        conn.commit()
+        return jsonify({'success': True, 'message': 'Sale refunded successfully'})
+    except Exception as e:
+        conn.rollback()
+        return jsonify({'success': False, 'message': str(e)})
+    finally:
+        conn.close()
+
+@app.route('/api/hold_transaction', methods=['POST'])
+@cashier_required
+def api_hold_transaction():
+    data = request.get_json()
+    name = data.get('name', '').strip()
+    cart = data.get('cart', [])
+
+    if not name:
+        return jsonify({'success': False, 'message': 'Hold name is required'})
+
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            INSERT INTO held_transactions (cashier_id, name, cart)
+            VALUES (?, ?, ?)
+        """, (session['cashier_id'], name, json.dumps(cart)))
+        conn.commit()
+        return jsonify({'success': True, 'message': 'Transaction held'})
+    except Exception as e:
+        conn.rollback()
+        return jsonify({'success': False, 'message': str(e)})
+    finally:
+        conn.close()
+
+@app.route('/api/held_transactions')
+@cashier_required
+def api_held_transactions():
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT id, name, cart, created_at
+        FROM held_transactions
+        WHERE cashier_id = ?
+        ORDER BY created_at DESC
+    """, (session['cashier_id'],))
+    rows = cur.fetchall()
+    conn.close()
+
+    holds = []
+    for row in rows:
+        holds.append({
+            'id': row[0],
+            'name': row[1],
+            'cart': json.loads(row[2]) if row[2] else [],
+            'timestamp': row[3]
+        })
+    return jsonify({'holds': holds})
+
+@app.route('/api/resume_transaction', methods=['POST'])
+@cashier_required
+def api_resume_transaction():
+    data = request.get_json()
+    hold_id = data.get('id')
+
+    if hold_id is None:
+        return jsonify({'success': False, 'message': 'Hold ID is required'})
+
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            SELECT cart FROM held_transactions
+            WHERE id = ? AND cashier_id = ?
+        """, (hold_id, session['cashier_id']))
+        row = cur.fetchone()
+        if not row:
+            return jsonify({'success': False, 'message': 'Held transaction not found'})
+
+        cart = json.loads(row[0]) if row[0] else []
+        cur.execute("DELETE FROM held_transactions WHERE id = ?", (hold_id,))
+        conn.commit()
+        return jsonify({'success': True, 'cart': cart})
+    except Exception as e:
+        conn.rollback()
+        return jsonify({'success': False, 'message': str(e)})
+    finally:
+        conn.close()
 
 # =============================
 # BACKUP & RESTORE
@@ -2418,12 +3605,13 @@ def cancel_pending_sale():
 @app.route('/backup_restore')
 @admin_required
 def backup_restore():
-    cur = mysql.connection.cursor()
-    cur.execute("SELECT COUNT(*) FROM products WHERE stock <= %s", (LOW_STOCK_THRESHOLD,))
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(*) FROM products WHERE stock <= ?", (LOW_STOCK_THRESHOLD,))
     low_stock_count = cur.fetchone()[0]
-    cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date <= CURDATE() + INTERVAL 30 DAY AND expiration_date IS NOT NULL")
+    cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date <= date('now', '+30 days', 'localtime') AND expiration_date IS NOT NULL")
     expiring_count = cur.fetchone()[0]
-    cur.close()
+    conn.close()
 
     return render_template('backup_restore.html',
                            low_stock_count=low_stock_count,
@@ -2435,57 +3623,156 @@ def backup_restore():
 @admin_required
 def backup_database():
     try:
-        db_name = app.config['MYSQL_DB']
-        db_user = app.config['MYSQL_USER']
-        db_pass = app.config['MYSQL_PASSWORD']
-        db_host = app.config['MYSQL_HOST']
-
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         filename = f"pharmacon_backup_{timestamp}.sql"
-
-        mysqldump_path = r"C:\xampp\mysql\bin\mysqldump.exe"
-        if not os.path.exists(mysqldump_path):
-            mysqldump_path = "mysqldump"
-
-        cmd = [
-            mysqldump_path,
-            f"--host={db_host}",
-            f"--user={db_user}",
-            db_name
-        ]
-        if db_pass:
-            cmd.append(f"--password={db_pass}")
-
-        result = subprocess.run(cmd, capture_output=True, text=True)
-
-        if result.returncode != 0:
-            flash(f"Backup failed: {result.stderr}", "error")
-            return redirect(url_for('backup_restore'))
-
-        sql_dump = result.stdout
-        if sql_dump is None:
-            sql_dump = ""
+        conn = get_db()
+        sql_dump = '\n'.join(conn.iterdump())
+        
+        # Modify dump to include DROP TABLE IF EXISTS before CREATE TABLE
+        # This allows restoring to an existing database
+        modified_dump = []
+        for line in sql_dump.split('\n'):
+            if line.startswith('CREATE TABLE '):
+                table_name = line.split('CREATE TABLE ')[1].split('(')[0].strip().strip('"')
+                modified_dump.append(f'DROP TABLE IF EXISTS {table_name};')
+            modified_dump.append(line)
+        modified_dump = '\n'.join(modified_dump)
+        
+        # Exclude admin and cashier credentials (username, password) from backup
+        # Filter out INSERT statements for admins and cashiers that contain credentials
+        filtered_dump = []
+        skip_insert = False
+        for line in modified_dump.split('\n'):
+            # Check if this is an INSERT for admins or cashiers table
+            if line.strip().upper().startswith('INSERT INTO "ADMINS"') or line.strip().upper().startswith('INSERT INTO "CASHIERS"'):
+                skip_insert = True
+                # Replace with INSERT that excludes username and password columns
+                if 'INSERT INTO "ADMINS"' in line.upper():
+                    # Extract values and create new INSERT without username, password
+                    filtered_dump.append('-- Admin credentials excluded from backup')
+                elif 'INSERT INTO "CASHIERS"' in line.upper():
+                    filtered_dump.append('-- Cashier credentials excluded from backup')
+                continue
+            elif skip_insert and line.strip().endswith(';'):
+                skip_insert = False
+                continue
+            elif skip_insert:
+                continue
+            
+            filtered_dump.append(line)
+        
+        final_dump = '\n'.join(filtered_dump)
+        
         mem = BytesIO()
-        mem.write(sql_dump.encode('utf-8'))
+        mem.write(final_dump.encode('utf-8'))
         mem.seek(0)
-
-        try:
-            return send_file(
-                mem,
-                as_attachment=True,
-                download_name=filename,
-                mimetype='application/sql'
-            )
-        except TypeError:
-            return send_file(
-                mem,
-                as_attachment=True,
-                attachment_filename=filename,
-                mimetype='application/sql'
-            )
+        return send_file(mem, as_attachment=True, download_name=filename, mimetype='application/sql')
     except Exception as e:
         flash(f"Backup error: {str(e)}", "error")
         return redirect(url_for('backup_restore'))
+
+def convert_mysql_to_sqlite(sql_content):
+    """Convert MySQL SQL syntax to SQLite-compatible syntax."""
+    
+    # Remove CREATE DATABASE and USE statements
+    lines = sql_content.split('\n')
+    filtered_lines = []
+    for line in lines:
+        upper_line = line.strip().upper()
+        if upper_line.startswith('CREATE DATABASE') or upper_line.startswith('USE '):
+            continue
+        filtered_lines.append(line)
+    sql_content = '\n'.join(filtered_lines)
+    
+    # Replace data types
+    sql_content = sql_content.replace('INT AUTO_INCREMENT PRIMARY KEY', 'INTEGER PRIMARY KEY AUTOINCREMENT')
+    sql_content = sql_content.replace('TINYINT(1)', 'INTEGER')
+    sql_content = sql_content.replace('DECIMAL(10,2)', 'REAL')
+    sql_content = sql_content.replace('DATETIME', 'TEXT')
+    sql_content = sql_content.replace('TIMESTAMP DEFAULT CURRENT_TIMESTAMP', "TEXT DEFAULT (datetime('now', 'localtime'))")
+    sql_content = sql_content.replace('TIMESTAMP NULL DEFAULT NULL', "TEXT NULL DEFAULT NULL")
+    sql_content = sql_content.replace('TIMESTAMP', 'TEXT')
+    
+    # Remove ENGINE and CHARSET clauses
+    import re
+    sql_content = re.sub(r'\)\s*ENGINE=\w+.*?;', ');', sql_content)
+    sql_content = re.sub(r'\)\s*DEFAULT CHARSET=\w+.*?;', ');', sql_content)
+    sql_content = re.sub(r'COLLATE=\w+', '', sql_content)
+    
+    # Replace UNIQUE KEY with UNIQUE
+    sql_content = re.sub(r'UNIQUE KEY\s+\w+\s*\(([^)]+)\)', r'UNIQUE(\1)', sql_content)
+    
+    # Replace INDEX with CREATE INDEX
+    def replace_index(match):
+        index_name = match.group(1)
+        columns = match.group(2)
+        table_name = match.group(3)
+        return f'CREATE INDEX {index_name} ON {table_name}({columns})'
+    
+    sql_content = re.sub(
+        r'INDEX\s+(\w+)\s*\(([^)]+)\)\s*ON\s+(\w+)',
+        replace_index,
+        sql_content
+    )
+    
+    # Replace ON DUPLICATE KEY UPDATE with ON CONFLICT DO UPDATE SET
+    sql_content = sql_content.replace('ON DUPLICATE KEY UPDATE', 'ON CONFLICT DO UPDATE SET')
+    sql_content = sql_content.replace('VALUES(', 'excluded.')
+    
+    # Replace date functions
+    sql_content = sql_content.replace('NOW()', "datetime('now', 'localtime')")
+    sql_content = sql_content.replace('CURDATE()', "date('now', 'localtime')")
+    
+    # Replace date arithmetic
+    sql_content = re.sub(
+        r'CURDATE\(\)\s*\+\s*INTERVAL\s+(\d+)\s+DAY',
+        r"date('now', '+\1 days', 'localtime')",
+        sql_content
+    )
+    sql_content = re.sub(
+        r'CURDATE\(\)\s*-\s*INTERVAL\s+(\d+)\s+DAY',
+        r"date('now', '-\1 days', 'localtime')",
+        sql_content
+    )
+    sql_content = re.sub(
+        r'CURDATE\(\)\s*\+\s*INTERVAL\s+(\d+)\s+HOUR',
+        r"datetime('now', '+\1 hours', 'localtime')",
+        sql_content
+    )
+    sql_content = re.sub(
+        r'CURDATE\(\)\s*-\s*INTERVAL\s+(\d+)\s+HOUR',
+        r"datetime('now', '-\1 hours', 'localtime')",
+        sql_content
+    )
+    
+    # Replace DATEDIFF
+    sql_content = re.sub(
+        r'DATEDIFF\(([^,]+),\s*([^)]+)\)',
+        r"CAST(julianday(\1) - julianday(\2) AS INTEGER)",
+        sql_content
+    )
+    
+    # Replace GROUP_CONCAT SEPARATOR
+    sql_content = re.sub(
+        r'GROUP_CONCAT\(([^)]+)\s+SEPARATOR\s+\', \'\)',
+        r"GROUP_CONCAT(\1, ', ')",
+        sql_content
+    )
+    
+    # Replace MONTH() and YEAR()
+    sql_content = re.sub(
+        r'MONTH\(([^)]+)\)',
+        r"strftime('%m', \1)",
+        sql_content
+    )
+    sql_content = re.sub(
+        r'YEAR\(([^)]+)\)',
+        r"strftime('%Y', \1)",
+        sql_content
+    )
+    
+    return sql_content
+
 
 @app.route('/restore_database', methods=['POST'])
 @admin_required
@@ -2504,80 +3791,100 @@ def restore_database():
             flash("Please upload a .sql file", "error")
             return redirect(url_for('backup_restore'))
 
-        db_name = app.config['MYSQL_DB']
-        db_user = app.config['MYSQL_USER']
-        db_pass = app.config['MYSQL_PASSWORD']
-        db_host = app.config['MYSQL_HOST']
+        conn = get_db()
+        cur = conn.cursor()
 
-        mysql_path = r"C:\xampp\mysql\bin\mysql.exe"
-        if not os.path.exists(mysql_path):
-            mysql_path = "mysql"
+        # Save current admin credentials before restore
+        cur.execute("SELECT id, username, password FROM admins")
+        admin_creds = cur.fetchall()
+        admin_cred_map = {row[0]: {'username': row[1], 'password': row[2]} for row in admin_creds}
 
-        sql_content = file.read().decode('utf-8')
+        # Save current cashier credentials before restore
+        cur.execute("SELECT id, username, password FROM cashiers")
+        cashier_creds = cur.fetchall()
+        cashier_cred_map = {row[0]: {'username': row[1], 'password': row[2]} for row in cashier_creds}
 
-        cmd = [
-            mysql_path,
-            f"--host={db_host}",
-            f"--user={db_user}",
-            db_name
-        ]
-        if db_pass:
-            cmd.append(f"--password={db_pass}")
+        # Get all table names
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
+        tables = cur.fetchall()
 
-        result = subprocess.run(cmd, input=sql_content, capture_output=True, text=True)
+        # Delete all data from non-credential tables
+        cur.execute("PRAGMA foreign_keys = OFF")
+        for table in tables:
+            table_name = table[0]
+            if table_name in ('admins', 'cashiers'):
+                continue
+            try:
+                cur.execute(f"DELETE FROM {table_name}")
+            except Exception:
+                pass
 
-        if result.returncode != 0:
-            flash(f"Restore failed: {result.stderr}", "error")
-        else:
-            flash("Database restored successfully!", "success")
+        sql_content = file.read().decode('utf-8', errors='ignore')
 
+        # Convert MySQL syntax to SQLite if needed
+        if 'CREATE DATABASE' in sql_content or 'AUTO_INCREMENT' in sql_content or 'ENGINE=' in sql_content:
+            sql_content = convert_mysql_to_sqlite(sql_content)
+            flash("Converted MySQL format to SQLite and restored successfully!", "success")
+
+        # Filter out statements touching admins/cashiers to preserve credentials
+        filtered_lines = []
+        skip = False
+        for line in sql_content.split('\n'):
+            l_upper = line.strip().upper()
+            # Skip inserts/updates/deletes on admins/cashiers
+            if l_upper.startswith('INSERT INTO "ADMINS"') or l_upper.startswith("INSERT INTO 'ADMINS'") or l_upper.startswith('INSERT INTO ADMINS'):
+                skip = True
+                continue
+            if l_upper.startswith('INSERT INTO "CASHIERS"') or l_upper.startswith("INSERT INTO 'CASHIERS'") or l_upper.startswith('INSERT INTO CASHIERS'):
+                skip = True
+                continue
+            if l_upper.startswith('DELETE FROM "ADMINS"') or l_upper.startswith("DELETE FROM 'ADMINS'") or l_upper.startswith('DELETE FROM ADMINS'):
+                continue
+            if l_upper.startswith('DELETE FROM "CASHIERS"') or l_upper.startswith("DELETE FROM 'CASHIERS'") or l_upper.startswith('DELETE FROM CASHIERS'):
+                continue
+            if l_upper.startswith('UPDATE "ADMINS"') or l_upper.startswith("UPDATE 'ADMINS'") or l_upper.startswith('UPDATE ADMINS'):
+                continue
+            if l_upper.startswith('UPDATE "CASHIERS"') or l_upper.startswith("UPDATE 'CASHIERS'") or l_upper.startswith('UPDATE CASHIERS'):
+                continue
+            if l_upper.startswith('DROP TABLE IF EXISTS "ADMINS"') or l_upper.startswith("DROP TABLE IF EXISTS 'ADMINS'") or l_upper.startswith('DROP TABLE IF EXISTS ADMINS'):
+                continue
+            if l_upper.startswith('DROP TABLE IF EXISTS "CASHIERS"') or l_upper.startswith("DROP TABLE IF EXISTS 'CASHIERS'") or l_upper.startswith('DROP TABLE IF EXISTS CASHIERS'):
+                continue
+            if l_upper.startswith('CREATE TABLE "ADMINS"') or l_upper.startswith("CREATE TABLE 'ADMINS'") or l_upper.startswith('CREATE TABLE ADMINS'):
+                continue
+            if l_upper.startswith('CREATE TABLE "CASHIERS"') or l_upper.startswith("CREATE TABLE 'CASHIERS'") or l_upper.startswith('CREATE TABLE CASHIERS'):
+                continue
+            if skip:
+                if l_upper.endswith(';'):
+                    skip = False
+                continue
+            filtered_lines.append(line)
+        sql_content_f = '\n'.join(filtered_lines)
+
+        try:
+            cur.executescript(sql_content_f)
+            conn.commit()
+        except Exception as e:
+            conn.rollback()
+            raise e
+
+        # Restore admin credentials (username and password) after restore
+        for admin_id, creds in admin_cred_map.items():
+            cur.execute("UPDATE admins SET username=?, password=? WHERE id=?", (creds['username'], creds['password'], admin_id))
+
+        # Restore cashier credentials (username and password) after restore
+        for cashier_id, creds in cashier_cred_map.items():
+            cur.execute("UPDATE cashiers SET username=?, password=? WHERE id=?", (creds['username'], creds['password'], cashier_id))
+
+        conn.commit()
+        cur.execute("PRAGMA foreign_keys = ON")
+        flash("Database restored successfully! Admin and cashier credentials preserved.", "success")
     except Exception as e:
-        flash(f"Restore error: {str(e)}", "error")
+        flash(f"Restore failed: {str(e)}", "error")
 
     return redirect(url_for('backup_restore'))
 
 if __name__ == '__main__':
-    with app.app_context():
-        try:
-            cur = mysql.connection.cursor()
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS store_settings (
-                    id INT AUTO_INCREMENT PRIMARY KEY,
-                    setting_key VARCHAR(100) NOT NULL UNIQUE,
-                    setting_value TEXT,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-                )
-            """)
-            cur.execute("""
-                INSERT INTO store_settings (setting_key, setting_value) VALUES
-                ('receipt_header', 'PHARMACON'),
-                ('receipt_subtitle', 'A\\'s PharmaHealth & Convenience'),
-                ('receipt_footer', 'Thank you for your purchase!\\nPlease come again.'),
-                ('store_name', 'PharmaCon'),
-                ('store_address', ''),
-                ('store_contact', '')
-                ON DUPLICATE KEY UPDATE setting_value = setting_value
-            """)
-            cur.execute("SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'sales' AND column_name = 'receipt_printed'")
-            if cur.fetchone()[0] == 0:
-                cur.execute("ALTER TABLE sales ADD COLUMN receipt_printed TINYINT(1) DEFAULT 0")
-            cur.execute("SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'sales' AND column_name = 'printed_at'")
-            if cur.fetchone()[0] == 0:
-                cur.execute("ALTER TABLE sales ADD COLUMN printed_at TIMESTAMP NULL DEFAULT NULL")
-            cur.execute("SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'admins' AND column_name = 'security_question'")
-            if cur.fetchone()[0] == 0:
-                cur.execute("ALTER TABLE admins ADD COLUMN security_question VARCHAR(255)")
-            cur.execute("SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'admins' AND column_name = 'security_answer'")
-            if cur.fetchone()[0] == 0:
-                cur.execute("ALTER TABLE admins ADD COLUMN security_answer VARCHAR(255)")
-            cur.execute("SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'cashiers' AND column_name = 'security_question'")
-            if cur.fetchone()[0] == 0:
-                cur.execute("ALTER TABLE cashiers ADD COLUMN security_question VARCHAR(255)")
-            cur.execute("SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'cashiers' AND column_name = 'security_answer'")
-            if cur.fetchone()[0] == 0:
-                cur.execute("ALTER TABLE cashiers ADD COLUMN security_answer VARCHAR(255)")
-            mysql.connection.commit()
-            cur.close()
-        except Exception as e:
-            print(f"Store settings init error: {e}")
+    from database_sqlite import init_db
+    init_db()
     app.run(debug=True)

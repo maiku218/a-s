@@ -1,0 +1,225 @@
+{% extends 'admin_dashboard.html' %}
+{% block page_title %}History{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="page-header">
+        <h1 class="page-title">My Transaction History</h1>
+        <p class="page-subtitle">Your recorded sales, voids, and refunds</p>
+    </div>
+
+    <div class="stats-grid" style="margin-bottom:24px;">
+        <div class="stat-card">
+            <div class="stat-label">Total Records</div>
+            <div class="stat-value" id="stat-total" style="color:var(--accent);">0</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Stock Added</div>
+            <div class="stat-value" id="stat-in" style="color:#166534;">0</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Stock Removed</div>
+            <div class="stat-value" id="stat-out" style="color:#991b1b;">0</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Cashier Actions</div>
+            <div class="stat-value" id="stat-admin" style="color:#1e40af;">0</div>
+        </div>
+    </div>
+
+    <div class="filter-bar">
+        <input type="text" id="history-search" placeholder="Search description, product, or user..." style="flex:1;min-width:200px;">
+        <select id="history-filter">
+            <option value="all">All Types</option>
+            <optgroup label="Stock">
+                <option value="Stock Addition">Stock Addition</option>
+                <option value="Restock">Restock</option>
+                <option value="Shipment Received">Shipment Received</option>
+                <option value="Return">Return</option>
+                <option value="Transfer In">Transfer In</option>
+                <option value="Inventory Adjustment">Inventory Adjustment</option>
+                <option value="Change Quantity">Change Quantity</option>
+                <option value="Sale">Sale</option>
+                <option value="Void Sale">Void Sale</option>
+                <option value="Refund Sale">Refund Sale</option>
+            </optgroup>
+        </select>
+        <button class="btn btn-primary" id="refresh-btn">Refresh</button>
+        <span style="font-size:13px;color:var(--text-secondary);display:flex;align-items:center;gap:6px;">
+            <span class="live-dot" style="display:inline-block;width:8px;height:8px;background:var(--accent);border-radius:50%;animation:pulse 1.5s infinite;"></span>
+            Live
+        </span>
+    </div>
+
+    <div class="table-container" style="max-height:500px;overflow-y:auto;">
+        <table>
+            <thead>
+                <tr>
+                    <th style="width:180px;">Date/Time</th>
+                    <th style="width:120px;">Actor</th>
+                    <th>Description</th>
+                    <th style="width:100px;">Status</th>
+                </tr>
+            </thead>
+            <tbody id="history-body">
+                <tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:40px;">Loading history...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<style>
+.live-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    background: var(--accent);
+    border-radius: 50%;
+    animation: pulse 1.5s infinite;
+}
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+.highlight-new { animation: highlightFade 3s ease-out; }
+@keyframes highlightFade { 0% { background-color: #fef9c3; } 100% { background-color: transparent; } }
+</style>
+
+<script>
+(function() {
+    var historyEntries = [];
+    var lastUpdateTime = new Date().toISOString();
+    var API_URL = '/api/cashier/history';
+
+    function getBadge(reason, direction) {
+        if (reason === 'Void Sale') return '<span class="badge badge-void">VOID</span>';
+        if (reason === 'Refund Sale') return '<span class="badge badge-info">REFUND</span>';
+        if (direction === 'IN') return '<span class="badge badge-success">+IN</span>';
+        if (direction === 'OUT') return '<span class="badge badge-danger">-OUT</span>';
+        return '<span class="badge badge-secondary">-</span>';
+    }
+
+    function renderHistory(entries) {
+        var tbody = document.getElementById('history-body');
+        if (!tbody) return;
+        tbody.innerHTML = '';
+
+        var total = 0, inCount = 0, outCount = 0, adminCount = 0;
+
+        entries.forEach(function(entry) {
+            total++;
+            if (entry.source === 'stock' || entry.source === 'cashier_stock') {
+                if (entry.direction === 'IN') inCount++;
+                if (entry.direction === 'OUT') outCount++;
+            } else {
+                adminCount++;
+            }
+
+            var row = document.createElement('tr');
+            row.id = 'entry-' + entry.id;
+
+            var desc = entry.description || '-';
+            var badge = getBadge(entry.reason, entry.direction);
+
+            row.innerHTML =
+                '<td style="white-space:nowrap;font-size:13px;">' + entry.datetime + '</td>' +
+                '<td><strong>' + entry.actor + '</strong></td>' +
+                '<td style="font-size:13px;">' + desc + '</td>' +
+                '<td>' + badge + '</td>';
+
+            tbody.appendChild(row);
+        });
+
+        var elTotal = document.getElementById('stat-total');
+        var elIn = document.getElementById('stat-in');
+        var elOut = document.getElementById('stat-out');
+        var elAdmin = document.getElementById('stat-admin');
+        var elResult = document.getElementById('result-count');
+        if (elTotal) elTotal.textContent = total;
+        if (elIn) elIn.textContent = inCount;
+        if (elOut) elOut.textContent = outCount;
+        if (elAdmin) elAdmin.textContent = adminCount;
+        if (elResult) elResult.textContent = total + ' results';
+    }
+
+    function loadHistory() {
+        fetch(API_URL + '?limit=200')
+            .then(function(res) { return res.json(); })
+            .then(function(data) {
+                historyEntries = data.entries;
+                renderHistory(data.entries);
+                lastUpdateTime = new Date().toISOString();
+            })
+            .catch(function(err) {
+                console.error('Failed to load history:', err);
+                var tbody = document.getElementById('history-body');
+                if (tbody) {
+                    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--danger);padding:40px;">Error loading history. <a href="#" id="retry-link">Click to retry</a></td></tr>';
+                    var link = document.getElementById('retry-link');
+                    if (link) {
+                        link.addEventListener('click', function(e) { e.preventDefault(); loadHistory(); });
+                    }
+                }
+            });
+    }
+
+    function loadNewEntries() {
+        fetch(API_URL + '?limit=200')
+            .then(function(res) { return res.json(); })
+            .then(function(data) {
+                var newEntries = data.entries.filter(function(e) { return e.datetime > lastUpdateTime; });
+                if (newEntries.length > 0) {
+                    historyEntries = data.entries;
+                    renderHistory(data.entries);
+                    lastUpdateTime = new Date().toISOString();
+                    newEntries.forEach(function(entry, idx) {
+                        setTimeout(function() {
+                            var row = document.getElementById('entry-' + entry.id);
+                            if (row) row.classList.add('highlight-new');
+                        }, idx * 200);
+                    });
+                }
+            })
+            .catch(function(err) {
+                console.error('Failed to load new entries:', err);
+            });
+    }
+
+    function filterHistory() {
+        var searchEl = document.getElementById('history-search');
+        var filterEl = document.getElementById('history-filter');
+        if (!searchEl || !filterEl) return;
+
+        var search = searchEl.value.toLowerCase();
+        var filter = filterEl.value;
+
+        var filtered = historyEntries.filter(function(entry) {
+            var matchesSearch = !search ||
+                (entry.description && entry.description.toLowerCase().indexOf(search) !== -1) ||
+                (entry.product_name && entry.product_name.toLowerCase().indexOf(search) !== -1) ||
+                (entry.actor && entry.actor.toLowerCase().indexOf(search) !== -1) ||
+                (entry.reason && entry.reason.toLowerCase().indexOf(search) !== -1);
+            var matchesFilter = filter === 'all' || (entry.reason && entry.reason === filter);
+            return matchesSearch && matchesFilter;
+        });
+
+        renderHistory(filtered);
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+        loadHistory();
+        setInterval(loadNewEntries, 5000);
+
+        var searchEl = document.getElementById('history-search');
+        var filterEl = document.getElementById('history-filter');
+        var refreshBtn = document.getElementById('refresh-btn');
+
+        if (searchEl) searchEl.addEventListener('input', filterHistory);
+        if (filterEl) filterEl.addEventListener('change', filterHistory);
+        if (refreshBtn) {
+            refreshBtn.addEventListener('click', function(e) {
+                e.preventDefault();
+                loadHistory();
+            });
+        }
+    });
+})();
+</script>
+{% endblock %}
