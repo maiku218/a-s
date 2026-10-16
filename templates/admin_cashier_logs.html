@@ -26,8 +26,8 @@
             {% for log in activity_logs %}
             <tr>
                 <td><strong>{{ log[0] }}</strong> ({{ log[1] }})</td>
-                <td>{{ log[2].strftime('%Y-%m-%d %H:%M') if log[2] else '-' }}</td>
-                <td>{{ log[3].strftime('%Y-%m-%d %H:%M') if log[3] else 'Still Online' }}</td>
+                <td>{{log[2] | format_date('%Y-%m-%d %H:%M') if log[2] else '-' }}</td>
+                <td>{{log[3] | format_date('%Y-%m-%d %H:%M') if log[3] else 'Still Online' }}</td>
                 <td>{{ log[4] if log[4] else 'N/A' }}</td>
                 <td>
                     {% if log[2] and log[3] %}
@@ -56,4 +56,27 @@
     <p style="color: var(--text-secondary); margin-top: 20px;">No activity logs found.</p>
     {% endif %}
 </div>
+{% endblock %}
+
+{% block help_tour %}
+<script>
+const HELP_TOUR_STEPS = [
+  {
+    selector: ".table-container table",
+    title: "Cashier Activity Log",
+    category: "advanced",
+    purpose: "Cashier activity logs provide an auditable record of login and logout times, IP addresses, and session durations.",
+    how_to_use: [
+      "Review cashier names, login times, and logout times in the table",
+      "Check IP addresses to verify sessions originated from expected locations",
+      "Use the duration and status columns to investigate unusual session lengths"
+    ],
+    description: "Complete history of cashier login and logout times with IP tracking.",
+    instruction: "The table shows cashier names, login times, logout times, IP addresses, duration, and status."
+  }
+];
+window.HELP_TOUR_STEPS = HELP_TOUR_STEPS;
+window.HELP_TOUR_STORAGE_KEY = "helptour_cashier_logs";
+</script>
+<script src="/static/js/help-tour.js"></script>
 {% endblock %}

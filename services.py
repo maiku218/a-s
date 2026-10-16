@@ -21,7 +21,7 @@ class IAuthService(ABC):
         ...
 
     @abstractmethod
-    def logout(self, user: User, mysql) -> bool:
+    def logout(self, user: User) -> bool:
 
         ...
 
@@ -48,41 +48,40 @@ class ISalesService(ABC):
 class AuthService(IAuthService):
     """Polymorphism: different login/logout behavior for admin vs cashier."""
 
-    def login(self, username: str, password: str, request, mysql,
-              user_type: str = 'admin') -> tuple[bool, Optional[User]]:
-        user = self._fetch_user(username, user_type, mysql)
+    def login(self, username: str, password: str, request, user_type: str = 'admin') -> tuple[bool, Optional[User]]:
+        user = self._fetch_user(username, user_type)
         if not user:
-            # Create default admin if none exists (admin-specific logic)
             if user_type == 'admin':
-                user = self._create_default_admin(mysql)
+                user = self._create_default_admin()
             if not user:
                 return False, None
 
-        user_from_db = self._hydrate_user(user, user_type, mysql)
+        user_from_db = self._hydrate_user(user, user_type)
         if not user_from_db:
             return False, None
         if isinstance(user_from_db, Cashier) and user_from_db.status.lower() != 'active':
             return False, None
 
         if user_type == 'cashier' and isinstance(user_from_db, Cashier):
-            cur = mysql.connection.cursor()
+            conn = get_db()
+            cur = conn.cursor()
             try:
-                cur.execute("SELECT security_question, security_answer FROM cashiers WHERE id=%s", (user_from_db.id,))
+                cur.execute("SELECT security_question, security_answer FROM cashiers WHERE id=?", (user_from_db.id,))
                 sq = cur.fetchone()
                 if not sq or not sq[0] or not sq[1]:
                     hashed_answer = self._generate_password('generoso')
-                    cur.execute("UPDATE cashiers SET security_question=%s, security_answer=%s WHERE id=%s", ('What is the name of the owner?', hashed_answer, user_from_db.id))
-                    mysql.connection.commit()
+                    cur.execute("UPDATE cashiers SET security_question=?, security_answer=? WHERE id=?", ('What is the name of the owner?', hashed_answer, user_from_db.id))
+                    conn.commit()
             finally:
-                cur.close()
+                conn.close()
 
-        success, result_user = user_from_db.authenticate(password, mysql, request)
+        success, result_user = user_from_db.authenticate(password, request)
         return success, result_user
 
-    def logout(self, user: User, mysql) -> bool:
+    def logout(self, user: User) -> bool:
         try:
             if isinstance(user, Cashier):
-                user.log_logout(mysql)
+                user.log_logout()
             return True
         except Exception:
             return False
@@ -103,17 +102,19 @@ class AuthService(IAuthService):
         return {}
 
     # --- Private methods (Encapsulation) ---
-    def _fetch_user(self, username: str, user_type: str, mysql):
-        cur = mysql.connection.cursor()
+    def _fetch_user(self, username: str, user_type: str):
+        conn = get_db()
+        cur = conn.cursor()
         try:
             table = 'admins' if user_type == 'admin' else 'cashiers'
-            cur.execute(f"SELECT * FROM {table} WHERE username=%s", (username,))
+            cur.execute(f"SELECT * FROM {table} WHERE username=?", (username,))
             return cur.fetchone()
         finally:
-            cur.close()
+            conn.close()
 
-    def _create_default_admin(self, mysql):
-        cur = mysql.connection.cursor()
+    def _create_default_admin(self):
+        conn = get_db()
+        cur = conn.cursor()
         try:
             cur.execute("SELECT COUNT(*) FROM admins")
             count = cur.fetchone()[0]
@@ -122,16 +123,16 @@ class AuthService(IAuthService):
                 answer_hashed = self._generate_password('generoso')
                 cur.execute(
                     "INSERT INTO admins (username, password, full_name, security_question, security_answer) "
-                    "VALUES (%s, %s, %s, %s, %s)",
+                    "VALUES (?, ?, ?, ?, ?)",
                     ('admin', hashed, 'System Administrator', 'What is the name of the owner?', answer_hashed)
                 )
-                mysql.connection.commit()
+                conn.commit()
                 return Admin(1, 'admin', 'System Administrator', hashed)
         finally:
-            cur.close()
+            conn.close()
         return None
 
-    def _hydrate_user(self, row, user_type: str, mysql):
+    def _hydrate_user(self, row, user_type: str):
         if not row:
             return None
         password_hash = row[2] if user_type == 'admin' else row[3]
@@ -152,41 +153,41 @@ class ProductRepository:
     """Abstraction: hides all raw SQL from the rest of the codebase.
     Clients work with Product objects, never raw tuples."""
 
-    def __init__(self, mysql):
-        self.mysql = mysql
+    def __init__(self):
+        pass
 
     def find_by_id(self, product_id: int) -> Optional[Product]:
-        cur = self.mysql.connection.cursor()
+        conn = get_db()
         try:
             cur.execute(
                 "SELECT id, product_name, barcode, category_id, "
                 "product_type, price, stock, expiration_date "
-                "FROM products WHERE id=%s", (product_id,)
+                "FROM products WHERE id=?", (product_id,)
             )
             row = cur.fetchone()
             if not row:
                 return None
             return self._row_to_product(row)
         finally:
-            cur.close()
+            conn.close()
 
     def find_by_barcode(self, barcode: str) -> Optional[Product]:
-        cur = self.mysql.connection.cursor()
+        conn = get_db()
         try:
             cur.execute(
                 "SELECT id, product_name, barcode, category_id, "
                 "product_type, price, stock, expiration_date "
-                "FROM products WHERE barcode=%s LIMIT 1", (barcode,)
+                "FROM products WHERE barcode=? LIMIT 1", (barcode,)
             )
             row = cur.fetchone()
             if not row:
                 return None
             return self._row_to_product(row)
         finally:
-            cur.close()
+            conn.close()
 
     def find_all(self) -> List[Product]:
-        cur = self.mysql.connection.cursor()
+        conn = get_db()
         try:
             cur.execute("SELECT id, product_name, barcode, category_id, "
                         "product_type, price, stock, expiration_date "
@@ -194,63 +195,63 @@ class ProductRepository:
             rows = cur.fetchall()
             return [self._row_to_product(r) for r in rows]
         finally:
-            cur.close()
+            conn.close()
 
     def find_low_stock(self, threshold: int = 10) -> List[Product]:
         products = self.find_all()
         return [p for p in products if p.is_low_stock]
 
     def link_stock_movement(self, product: Product, movement: StockMovement):
-        processor = get_movement_processor(movement, self.mysql)
+        processor = get_movement_processor(movement)
         processor.process(product)
 
     def save(self, product: Product):
-        cur = self.mysql.connection.cursor()
+        conn = get_db()
         try:
             cur.execute("""
                 INSERT INTO products (product_name, barcode, category_id, product_type,
                                      price, stock, expiration_date)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
             """, (
                 product.name, product.barcode, product.category_id,
                 product.product_type, float(product.price),
                 product.stock, product.expiration_date
             ))
-            self.mysql.connection.commit()
+            self.conn.commit()
         finally:
-            cur.close()
+            conn.close()
 
     def update_stock(self, product_id: int, new_stock: int):
-        cur = self.mysql.connection.cursor()
+        conn = get_db()
         try:
-            cur.execute("UPDATE products SET stock=%s WHERE id=%s",
+            cur.execute("UPDATE products SET stock=? WHERE id=?",
                         (new_stock, product_id))
-            self.mysql.connection.commit()
+            self.conn.commit()
         finally:
-            cur.close()
+            conn.close()
 
     def delete(self, product_id: int):
-        cur = self.mysql.connection.cursor()
+        conn = get_db()
         try:
-            cur.execute("DELETE FROM stock_movements WHERE product_id=%s", (product_id,))
-            cur.execute("DELETE FROM sale_items WHERE product_id=%s", (product_id,))
-            cur.execute("DELETE FROM products WHERE id=%s", (product_id,))
-            self.mysql.connection.commit()
+            cur.execute("DELETE FROM stock_movements WHERE product_id=?", (product_id,))
+            cur.execute("DELETE FROM sale_items WHERE product_id=?", (product_id,))
+            cur.execute("DELETE FROM products WHERE id=?", (product_id,))
+            self.conn.commit()
         finally:
-            cur.close()
+            conn.close()
 
     def count_low_stock(self, threshold: int = 10) -> int:
-        cur = self.mysql.connection.cursor()
+        conn = get_db()
         try:
             cur.execute(
-                "SELECT COUNT(*) FROM products WHERE stock <= %s", (threshold,)
+                "SELECT COUNT(*) FROM products WHERE stock <= ?", (threshold,)
             )
             return cur.fetchone()[0]
         finally:
-            cur.close()
+            conn.close()
 
     def count_expiring(self) -> int:
-        cur = self.mysql.connection.cursor()
+        conn = get_db()
         try:
             cur.execute(
                 "SELECT COUNT(*) FROM products WHERE expiration_date <= "
@@ -258,7 +259,7 @@ class ProductRepository:
             )
             return cur.fetchone()[0]
         finally:
-            cur.close()
+            conn.close()
 
     def _row_to_product(self, row) -> Product:
         return Product(
@@ -293,19 +294,19 @@ class ProductRepository:
 class SalesService(ISalesService):
     """Polymorphism Example 3: different sale processors for Medical vs Non-Medical."""
 
-    def __init__(self, mysql):
-        self.mysql = mysql
+    def __init__(self):
+        pass
 
     def process_sale(self, items: list, cashier: Cashier) -> dict:
         try:
             items = self._validate_items(items)
-            cur = self.mysql.connection.cursor()
+            conn = get_db()
             try:
                 return self._process_sale_impl(items, cashier, cur)
             finally:
-                cur.close()
+                conn.close()
         except Exception as e:
-            self.mysql.connection.rollback()
+            self.conn.rollback()
             return {'success': False, 'message': str(e)}
 
     def _validate_items(self, items: list):
@@ -321,7 +322,7 @@ class SalesService(ISalesService):
         non_medical_items = []
 
         for item in items:
-            cur.execute("SELECT product_type FROM products WHERE id = %s", (item['id'],))
+            cur.execute("SELECT product_type FROM products WHERE id = ?", (item['id'],))
             result = cur.fetchone()
             product_type = result[0] if result else 'Non-Medical'
             if product_type == 'Medical':
@@ -349,13 +350,13 @@ class SalesService(ISalesService):
             total_amount += sale_total
             receipt_items.extend(sale_items)
 
-        self.mysql.connection.commit()
+        self.conn.commit()
         return {
             'success': True,
             'receipt_number': receipt_numbers[0] if receipt_numbers else 'N/A',
             'total': total_amount,
             'items': receipt_items,
-            'date': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            'date': datetime.now().strftime('%Y-%m-%d %H:%M:?')
         }
 
     def _create_sale(self, cur, items: list, cashier_id: int,
@@ -367,7 +368,7 @@ class SalesService(ISalesService):
         cur.execute("""
             INSERT INTO sales (receipt_number, cashier_id, total_amount,
                                sale_status, product_type, sale_date)
-            VALUES (%s, %s, %s, 'Pending', %s, NOW())
+            VALUES (?, ?, ?, 'Pending', ?, NOW())
         """, (receipt_number, cashier_id, sale_total, product_type))
         sale_id = cur.lastrowid
 
@@ -375,16 +376,16 @@ class SalesService(ISalesService):
         for item in items:
             cur.execute("""
                 INSERT INTO sale_items (sale_id, product_id, quantity, price)
-                VALUES (%s, %s, %s, %s)
+                VALUES (?, ?, ?, ?)
             """, (sale_id, item['id'], item['quantity'], item['price']))
 
             cur.execute("""
-                UPDATE products SET stock = stock - %s WHERE id = %s
+                UPDATE products SET stock = stock - ? WHERE id = ?
             """, (item['quantity'], item['id']))
 
             cur.execute("""
                 INSERT INTO stock_movements (product_id, movement_type, quantity, reason)
-                VALUES (%s, 'OUT', %s, 'Sale')
+                VALUES (?, 'OUT', ?, 'Sale')
             """, (item['id'], item['quantity']))
 
             sale_items.append({

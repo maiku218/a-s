@@ -1,0 +1,83 @@
+ * Serving Flask app 'app'
+ * Debug mode: on
+WARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.
+ * Running on http://127.0.0.1:5000
+Press CTRL+C to quit
+ * Restarting with stat
+ * Debugger is active!
+ * Debugger PIN: 142-468-016
+127.0.0.1 - - [15/Oct/2026 20:19:25] "GET / HTTP/1.1" 302 -
+127.0.0.1 - - [15/Oct/2026 20:19:25] "GET /admin_login HTTP/1.1" 200 -
+127.0.0.1 - - [15/Oct/2026 20:19:26] "GET /favicon.ico HTTP/1.1" 404 -
+127.0.0.1 - - [15/Oct/2026 20:19:33] "POST /admin_login HTTP/1.1" 302 -
+127.0.0.1 - - [15/Oct/2026 20:19:33] "GET /admin HTTP/1.1" 200 -
+127.0.0.1 - - [15/Oct/2026 20:19:33] "GET /static/css/help-tour.css HTTP/1.1" 200 -
+127.0.0.1 - - [15/Oct/2026 20:19:33] "GET /static/js/help-tour.js HTTP/1.1" 200 -
+127.0.0.1 - - [15/Oct/2026 20:19:33] "GET /api/notifications HTTP/1.1" 200 -
+127.0.0.1 - - [15/Oct/2026 20:19:38] "GET /admin_logout HTTP/1.1" 302 -
+127.0.0.1 - - [15/Oct/2026 20:19:38] "GET /admin_login HTTP/1.1" 200 -
+127.0.0.1 - - [15/Oct/2026 20:19:43] "GET /cashier_login HTTP/1.1" 200 -
+127.0.0.1 - - [15/Oct/2026 20:19:58] "POST /cashier_login HTTP/1.1" 302 -
+127.0.0.1 - - [15/Oct/2026 20:19:58] "GET /cashier HTTP/1.1" 200 -
+127.0.0.1 - - [15/Oct/2026 20:19:58] "GET /static/css/help-tour.css HTTP/1.1" 304 -
+127.0.0.1 - - [15/Oct/2026 20:19:58] "GET /static/js/help-tour.js HTTP/1.1" 304 -
+127.0.0.1 - - [15/Oct/2026 20:19:58] "GET /api/cashier/notifications HTTP/1.1" 200 -
+127.0.0.1 - - [15/Oct/2026 20:19:58] "GET /api/products HTTP/1.1" 200 -
+127.0.0.1 - - [15/Oct/2026 20:20:03] "GET /api/products HTTP/1.1" 200 -
+127.0.0.1 - - [15/Oct/2026 20:20:04] "GET /search_product?q=a HTTP/1.1" 200 -
+127.0.0.1 - - [15/Oct/2026 20:20:08] "GET /api/products HTTP/1.1" 200 -
+127.0.0.1 - - [15/Oct/2026 20:20:13] "GET /api/products HTTP/1.1" 200 -
+127.0.0.1 - - [15/Oct/2026 20:20:15] "POST /complete_sale HTTP/1.1" 200 -
+127.0.0.1 - - [15/Oct/2026 20:20:18] "GET /api/products HTTP/1.1" 200 -
+127.0.0.1 - - [15/Oct/2026 20:20:23] "GET /api/products HTTP/1.1" 200 -
+127.0.0.1 - - [15/Oct/2026 20:20:23] "POST /api/cancel_pending_sale HTTP/1.1" 200 -
+127.0.0.1 - - [15/Oct/2026 20:20:28] "GET /api/products HTTP/1.1" 200 -
+127.0.0.1 - - [15/Oct/2026 20:20:33] "GET /api/products HTTP/1.1" 200 -
+127.0.0.1 - - [15/Oct/2026 20:20:38] "GET /api/products HTTP/1.1" 200 -
+127.0.0.1 - - [15/Oct/2026 20:20:43] "GET /api/products HTTP/1.1" 200 -
+127.0.0.1 - - [15/Oct/2026 20:20:48] "GET /api/products HTTP/1.1" 200 -
+127.0.0.1 - - [15/Oct/2026 20:20:53] "GET /api/products HTTP/1.1" 200 -
+127.0.0.1 - - [15/Oct/2026 20:20:58] "GET /api/products HTTP/1.1" 200 -
+127.0.0.1 - - [15/Oct/2026 20:21:03] "GET /api/products HTTP/1.1" 200 -
+127.0.0.1 - - [15/Oct/2026 20:21:08] "GET /api/products HTTP/1.1" 200 -
+127.0.0.1 - - [15/Oct/2026 20:21:13] "GET /api/products HTTP/1.1" 200 -
+127.0.0.1 - - [15/Oct/2026 20:21:18] "GET /api/products HTTP/1.1" 200 -
+127.0.0.1 - - [15/Oct/2026 20:21:23] "GET /api/products HTTP/1.1" 200 -
+127.0.0.1 - - [15/Oct/2026 20:21:28] "GET /api/products HTTP/1.1" 200 -
+127.0.0.1 - - [15/Oct/2026 20:21:58] "GET /api/products HTTP/1.1" 200 -
+127.0.0.1 - - [15/Oct/2026 20:22:58] "GET /api/products HTTP/1.1" 200 -
+127.0.0.1 - - [15/Oct/2026 20:23:58] "GET /api/products HTTP/1.1" 200 -
+127.0.0.1 - - [15/Oct/2026 20:24:58] "GET /api/products HTTP/1.1" 200 -
+127.0.0.1 - - [15/Oct/2026 20:25:58] "GET /api/products HTTP/1.1" 200 -
+127.0.0.1 - - [15/Oct/2026 20:26:58] "GET /api/products HTTP/1.1" 200 -
+127.0.0.1 - - [15/Oct/2026 20:27:58] "GET /api/products HTTP/1.1" 200 -
+127.0.0.1 - - [15/Oct/2026 20:28:58] "GET /api/products HTTP/1.1" 200 -
+127.0.0.1 - - [15/Oct/2026 20:29:58] "GET /api/products HTTP/1.1" 200 -
+127.0.0.1 - - [15/Oct/2026 20:30:58] "GET /api/products HTTP/1.1" 200 -
+127.0.0.1 - - [15/Oct/2026 20:31:58] "GET /api/products HTTP/1.1" 200 -
+127.0.0.1 - - [15/Oct/2026 20:32:58] "GET /api/products HTTP/1.1" 200 -
+127.0.0.1 - - [15/Oct/2026 20:33:58] "GET /api/products HTTP/1.1" 200 -
+127.0.0.1 - - [15/Oct/2026 20:34:58] "GET /api/products HTTP/1.1" 200 -
+127.0.0.1 - - [15/Oct/2026 20:35:58] "GET /api/products HTTP/1.1" 200 -
+127.0.0.1 - - [15/Oct/2026 20:36:58] "GET /api/products HTTP/1.1" 200 -
+127.0.0.1 - - [15/Oct/2026 20:37:58] "GET /api/products HTTP/1.1" 200 -
+127.0.0.1 - - [15/Oct/2026 20:38:58] "GET /api/products HTTP/1.1" 200 -
+127.0.0.1 - - [15/Oct/2026 20:39:58] "GET /api/products HTTP/1.1" 200 -
+127.0.0.1 - - [15/Oct/2026 20:43:04] "GET /api/products HTTP/1.1" 200 -
+127.0.0.1 - - [15/Oct/2026 20:43:18] "GET /api/products HTTP/1.1" 200 -
+127.0.0.1 - - [15/Oct/2026 20:43:19] "GET /cashier HTTP/1.1" 200 -
+127.0.0.1 - - [15/Oct/2026 20:43:20] "GET /static/css/help-tour.css HTTP/1.1" 304 -
+127.0.0.1 - - [15/Oct/2026 20:43:20] "GET /static/js/help-tour.js HTTP/1.1" 304 -
+127.0.0.1 - - [15/Oct/2026 20:43:20] "GET /api/cashier/notifications HTTP/1.1" 200 -
+127.0.0.1 - - [15/Oct/2026 20:43:20] "GET /api/products HTTP/1.1" 200 -
+127.0.0.1 - - [15/Oct/2026 20:43:25] "GET /api/products HTTP/1.1" 200 -
+127.0.0.1 - - [15/Oct/2026 20:43:30] "GET /api/products HTTP/1.1" 200 -
+127.0.0.1 - - [15/Oct/2026 20:43:35] "GET /api/products HTTP/1.1" 200 -
+127.0.0.1 - - [15/Oct/2026 20:43:40] "GET /api/products HTTP/1.1" 200 -
+127.0.0.1 - - [15/Oct/2026 20:43:45] "GET /api/products HTTP/1.1" 200 -
+127.0.0.1 - - [15/Oct/2026 20:43:50] "GET /api/products HTTP/1.1" 200 -
+127.0.0.1 - - [15/Oct/2026 20:43:55] "GET /api/products HTTP/1.1" 200 -
+127.0.0.1 - - [15/Oct/2026 20:44:00] "GET /api/products HTTP/1.1" 200 -
+127.0.0.1 - - [15/Oct/2026 20:44:05] "GET /api/products HTTP/1.1" 200 -
+127.0.0.1 - - [15/Oct/2026 20:44:10] "GET /api/products HTTP/1.1" 200 -
+127.0.0.1 - - [15/Oct/2026 20:44:15] "GET /api/products HTTP/1.1" 200 -
