@@ -73,16 +73,21 @@ if not exist "pharmacon.db" (
 echo.
 echo [INFO] Starting PharmaCon POS on http://%HOST%:%PORT%
 echo [INFO] Default admin login: admin / admin123
-echo [INFO] Press Ctrl+C to stop the server
+echo [INFO] Browser will open automatically after server starts...
 echo ==========================================
 echo.
 
-REM Start Flask server directly (foreground)
-set FLASK_RUN_HOST=%HOST%
-set FLASK_RUN_PORT=%PORT%
-%PYTHON_CMD% %FLASK_APP%
+REM Start Flask server in background
+start "PharmaCon POS" python app.py
 
+REM Wait for server to start
+timeout /t 4 >nul
+
+REM Open browser automatically
+start http://%HOST%:%PORT%/
+
+echo [OK] PharmaCon POS is running!
+echo [OK] Browser opened automatically.
 echo.
-echo [INFO] Server stopped.
-echo ==========================================
-pause
+echo Press any key to close this launcher window (server keeps running).
+pause >nul

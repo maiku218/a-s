@@ -3605,12 +3605,21 @@ def api_resume_transaction():
 @app.route('/backup_restore')
 @admin_required
 def backup_restore():
+    from database_sqlite import init_db
+    init_db()  # Ensure all tables exist before querying
+
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT COUNT(*) FROM products WHERE stock <= ?", (LOW_STOCK_THRESHOLD,))
-    low_stock_count = cur.fetchone()[0]
-    cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date <= date('now', '+30 days', 'localtime') AND expiration_date IS NOT NULL")
-    expiring_count = cur.fetchone()[0]
+    try:
+        cur.execute("SELECT COUNT(*) FROM products WHERE stock <= ?", (LOW_STOCK_THRESHOLD,))
+        low_stock_count = cur.fetchone()[0]
+    except Exception:
+        low_stock_count = 0
+    try:
+        cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date <= date('now', '+30 days', 'localtime') AND expiration_date IS NOT NULL")
+        expiring_count = cur.fetchone()[0]
+    except Exception:
+        expiring_count = 0
     conn.close()
 
     return render_template('backup_restore.html',
@@ -3794,92 +3803,88 @@ def restore_database():
         conn = get_db()
         cur = conn.cursor()
 
-        # Save current admin credentials before restore
-        cur.execute("SELECT id, username, password FROM admins")
-        admin_creds = cur.fetchall()
-        admin_cred_map = {row[0]: {'username': row[1], 'password': row[2]} for row in admin_creds}
+        # Read SQL content
+        sql_content = file.read().decode('utf-8', errors='ignore')
 
-        # Save current cashier credentials before restore
-        cur.execute("SELECT id, username, password FROM cashiers")
-        cashier_creds = cur.fetchall()
-        cashier_cred_map = {row[0]: {'username': row[1], 'password': row[2]} for row in cashier_creds}
+        # Detect MySQL syntax and convert to SQLite if needed
+        is_mysql = any(marker in sql_content.upper() for marker in [
+            'CREATE DATABASE', 'AUTO_INCREMENT', 'ENGINE=', 'USE ',
+            'TINYINT(1)', 'DECIMAL(10,2)', 'ON DUPLICATE KEY', '`'
+        ])
 
-        # Get all table names
-        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
-        tables = cur.fetchall()
+        if is_mysql:
+            sql_content = convert_mysql_to_sqlite(sql_content)
+            flash("Converted MySQL format to SQLite-compatible syntax.", "info")
 
-        # Delete all data from non-credential tables
+        # Disable foreign keys during restore
         cur.execute("PRAGMA foreign_keys = OFF")
-        for table in tables:
-            table_name = table[0]
+
+        # Drop all existing tables EXCEPT admins and cashiers (preserve login accounts & credentials)
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
+        tables = [row[0] for row in cur.fetchall()]
+        for table_name in tables:
             if table_name in ('admins', 'cashiers'):
                 continue
             try:
-                cur.execute(f"DELETE FROM {table_name}")
+                cur.execute(f'DROP TABLE IF EXISTS "{table_name}"')
             except Exception:
                 pass
 
-        sql_content = file.read().decode('utf-8', errors='ignore')
-
-        # Convert MySQL syntax to SQLite if needed
-        if 'CREATE DATABASE' in sql_content or 'AUTO_INCREMENT' in sql_content or 'ENGINE=' in sql_content:
-            sql_content = convert_mysql_to_sqlite(sql_content)
-            flash("Converted MySQL format to SQLite and restored successfully!", "success")
-
-        # Filter out statements touching admins/cashiers to preserve credentials
-        filtered_lines = []
+        # Clean SQL: remove transaction control and skip admins/cashiers statements entirely
+        # so registered admin/cashier credentials are never modified or overwritten
+        sql_lines = []
         skip = False
         for line in sql_content.split('\n'):
-            l_upper = line.strip().upper()
-            # Skip inserts/updates/deletes on admins/cashiers
-            if l_upper.startswith('INSERT INTO "ADMINS"') or l_upper.startswith("INSERT INTO 'ADMINS'") or l_upper.startswith('INSERT INTO ADMINS'):
+            upper = line.strip().upper()
+
+            # Strip transaction control (executescript manages its own transaction)
+            if upper in ('BEGIN TRANSACTION;', 'COMMIT;', 'BEGIN;', 'ROLLBACK;'):
+                continue
+
+            # Skip admins/cashiers DDL/DML entirely — credentials stay as registered
+            if upper.startswith('DROP TABLE IF EXISTS "ADMINS"') or upper.startswith("DROP TABLE IF EXISTS 'ADMINS'") or upper.startswith('DROP TABLE IF EXISTS ADMINS'):
+                continue
+            if upper.startswith('DROP TABLE IF EXISTS "CASHIERS"') or upper.startswith("DROP TABLE IF EXISTS 'CASHIERS'") or upper.startswith('DROP TABLE IF EXISTS CASHIERS'):
+                continue
+            if upper.startswith('CREATE TABLE "ADMINS"') or upper.startswith("CREATE TABLE 'ADMINS'") or upper.startswith('CREATE TABLE ADMINS'):
+                continue
+            if upper.startswith('CREATE TABLE "CASHIERS"') or upper.startswith("CREATE TABLE 'CASHIERS'") or upper.startswith('CREATE TABLE CASHIERS'):
+                continue
+            if upper.startswith('INSERT INTO "ADMINS"') or upper.startswith("INSERT INTO 'ADMINS'") or upper.startswith('INSERT INTO ADMINS'):
                 skip = True
                 continue
-            if l_upper.startswith('INSERT INTO "CASHIERS"') or l_upper.startswith("INSERT INTO 'CASHIERS'") or l_upper.startswith('INSERT INTO CASHIERS'):
+            if upper.startswith('INSERT INTO "CASHIERS"') or upper.startswith("INSERT INTO 'CASHIERS'") or upper.startswith('INSERT INTO CASHIERS'):
                 skip = True
                 continue
-            if l_upper.startswith('DELETE FROM "ADMINS"') or l_upper.startswith("DELETE FROM 'ADMINS'") or l_upper.startswith('DELETE FROM ADMINS'):
+            if upper.startswith('DELETE FROM "ADMINS"') or upper.startswith("DELETE FROM 'ADMINS'") or upper.startswith('DELETE FROM ADMINS'):
                 continue
-            if l_upper.startswith('DELETE FROM "CASHIERS"') or l_upper.startswith("DELETE FROM 'CASHIERS'") or l_upper.startswith('DELETE FROM CASHIERS'):
+            if upper.startswith('DELETE FROM "CASHIERS"') or upper.startswith("DELETE FROM 'CASHIERS'") or upper.startswith('DELETE FROM CASHIERS'):
                 continue
-            if l_upper.startswith('UPDATE "ADMINS"') or l_upper.startswith("UPDATE 'ADMINS'") or l_upper.startswith('UPDATE ADMINS'):
+            if upper.startswith('UPDATE "ADMINS"') or upper.startswith("UPDATE 'ADMINS'") or upper.startswith('UPDATE ADMINS'):
                 continue
-            if l_upper.startswith('UPDATE "CASHIERS"') or l_upper.startswith("UPDATE 'CASHIERS'") or l_upper.startswith('UPDATE CASHIERS'):
+            if upper.startswith('UPDATE "CASHIERS"') or upper.startswith("UPDATE 'CASHIERS'") or upper.startswith('UPDATE CASHIERS'):
                 continue
-            if l_upper.startswith('DROP TABLE IF EXISTS "ADMINS"') or l_upper.startswith("DROP TABLE IF EXISTS 'ADMINS'") or l_upper.startswith('DROP TABLE IF EXISTS ADMINS'):
-                continue
-            if l_upper.startswith('DROP TABLE IF EXISTS "CASHIERS"') or l_upper.startswith("DROP TABLE IF EXISTS 'CASHIERS'") or l_upper.startswith('DROP TABLE IF EXISTS CASHIERS'):
-                continue
-            if l_upper.startswith('CREATE TABLE "ADMINS"') or l_upper.startswith("CREATE TABLE 'ADMINS'") or l_upper.startswith('CREATE TABLE ADMINS'):
-                continue
-            if l_upper.startswith('CREATE TABLE "CASHIERS"') or l_upper.startswith("CREATE TABLE 'CASHIERS'") or l_upper.startswith('CREATE TABLE CASHIERS'):
-                continue
+
             if skip:
-                if l_upper.endswith(';'):
+                if upper.endswith(';'):
                     skip = False
                 continue
-            filtered_lines.append(line)
-        sql_content_f = '\n'.join(filtered_lines)
 
-        try:
-            cur.executescript(sql_content_f)
-            conn.commit()
-        except Exception as e:
-            conn.rollback()
-            raise e
+            sql_lines.append(line)
 
-        # Restore admin credentials (username and password) after restore
-        for admin_id, creds in admin_cred_map.items():
-            cur.execute("UPDATE admins SET username=?, password=? WHERE id=?", (creds['username'], creds['password'], admin_id))
+        sql_content_clean = '\n'.join(sql_lines)
 
-        # Restore cashier credentials (username and password) after restore
-        for cashier_id, creds in cashier_cred_map.items():
-            cur.execute("UPDATE cashiers SET username=?, password=? WHERE id=?", (creds['username'], creds['password'], cashier_id))
-
+        # Execute the cleaned SQL script
+        cur.executescript(sql_content_clean)
         conn.commit()
+
         cur.execute("PRAGMA foreign_keys = ON")
-        flash("Database restored successfully! Admin and cashier credentials preserved.", "success")
+        flash("Database restored successfully! Admin and cashier accounts and credentials are preserved as registered.", "success")
     except Exception as e:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
         flash(f"Restore failed: {str(e)}", "error")
 
     return redirect(url_for('backup_restore'))
