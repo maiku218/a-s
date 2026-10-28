@@ -2,13 +2,23 @@ from flask import Flask, render_template, request, redirect, url_for, session, f
 import sqlite3
 from database_sqlite import get_db
 from werkzeug.security import generate_password_hash, check_password_hash
-from datetime import datetime
+from datetime import datetime, timedelta
 import random
 import json
 import os
 import subprocess
 import tempfile
-from io import BytesIO
+import csv
+from io import BytesIO, StringIO
+
+# Offline report generation libraries
+from reportlab.lib.pagesizes import letter, A4
+from reportlab.lib import colors
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from openpyxl import Workbook
+from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+from openpyxl.utils import get_column_letter
 
 app = Flask(__name__)
 app.secret_key = "simple_secret_key"
@@ -68,6 +78,390 @@ def export_to_csv(data, headers, filename):
         as_attachment=True,
         download_name=filename,
         mimetype='text/csv'
+    )
+
+# =============================
+# SHARED SALES ANALYTICS ENGINE
+# =============================
+
+def get_date_filter_params(date_from=None, date_to=None):
+    """Build SQL date filter clause and params from date_from/date_to strings."""
+    params = []
+    clause = ""
+    if date_from and date_to:
+        clause = " AND DATE(s.sale_date) >= ? AND DATE(s.sale_date) <= ?"
+        params = [date_from, date_to]
+    elif date_from:
+        clause = " AND DATE(s.sale_date) >= ?"
+        params = [date_from]
+    elif date_to:
+        clause = " AND DATE(s.sale_date) <= ?"
+        params = [date_to]
+    return clause, params
+
+
+def get_product_type_filter(product_scope):
+    """Return SQL filter for product_type scope: 'overall', 'medical', 'non_medical'."""
+    if product_scope == 'medical':
+        return " AND p.product_type = 'Medical'"
+    elif product_scope == 'non_medical':
+        return " AND p.product_type = 'Non-Medical'"
+    return ""
+
+
+def calculate_sales_analytics(conn, date_from=None, date_to=None, product_scope='overall'):
+    """
+    Reusable analytics calculation supporting three scopes:
+    - overall: all sales
+    - medical: medical products only (calculated from sale_items + products.product_type)
+    - non_medical: non-medical products only
+
+    Important: Category revenue is calculated from sale_items joined with products,
+    NOT from sales.product_type, so mixed transactions are handled correctly.
+    """
+    cur = conn.cursor()
+
+    date_clause, date_params = get_date_filter_params(date_from, date_to)
+    type_filter = get_product_type_filter(product_scope)
+
+    # Base query: sale_items joined with products and sales, filtered by Completed status
+    base_from = """
+        FROM sale_items si
+        JOIN products p ON si.product_id = p.id
+        JOIN sales s ON si.sale_id = s.id
+        WHERE s.sale_status = 'Completed'
+    """
+    where_clause = base_from + date_clause + type_filter
+
+    # Total Revenue (sum of line item subtotals)
+    cur.execute(f"""
+        SELECT IFNULL(SUM(si.quantity * si.price), 0) {where_clause}
+    """, date_params)
+    total_revenue = float(cur.fetchone()[0])
+
+    # Total Quantity Sold
+    cur.execute(f"""
+        SELECT IFNULL(SUM(si.quantity), 0) {where_clause}
+    """, date_params)
+    total_quantity = int(cur.fetchone()[0])
+
+    # Distinct Transaction Count (distinct sale IDs to avoid double-counting mixed transactions)
+    cur.execute(f"""
+        SELECT COUNT(DISTINCT s.id) {where_clause}
+    """, date_params)
+    total_transactions = int(cur.fetchone()[0])
+
+    # Average Order Value
+    avg_order_value = round(total_revenue / total_transactions, 2) if total_transactions > 0 else 0.0
+
+    # Best-selling products (by quantity)
+    cur.execute(f"""
+        SELECT p.product_name, p.product_type,
+               IFNULL(SUM(si.quantity), 0) as total_qty,
+               IFNULL(SUM(si.quantity * si.price), 0) as total_rev
+        {where_clause}
+        GROUP BY p.id, p.product_name, p.product_type
+        ORDER BY total_qty DESC
+        LIMIT 10
+    """, date_params)
+    best_selling = [
+        {'name': row[0], 'type': row[1], 'qty': int(row[2]), 'revenue': float(row[3])}
+        for row in cur.fetchall()
+    ]
+
+    # Revenue trend (daily) for last 30 days or date range
+    if date_from and date_to:
+        trend_where = f"""
+            FROM sale_items si
+            JOIN products p ON si.product_id = p.id
+            JOIN sales s ON si.sale_id = s.id
+            WHERE s.sale_status = 'Completed'
+            AND DATE(s.sale_date) >= ? AND DATE(s.sale_date) <= ?
+            {type_filter}
+            GROUP BY DATE(s.sale_date)
+            ORDER BY DATE(s.sale_date) ASC
+        """
+        trend_params = [date_from, date_to]
+    else:
+        trend_where = f"""
+            FROM sale_items si
+            JOIN products p ON si.product_id = p.id
+            JOIN sales s ON si.sale_id = s.id
+            WHERE s.sale_status = 'Completed'
+            AND DATE(s.sale_date) >= date('now', '-30 days', 'localtime')
+            {type_filter}
+            GROUP BY DATE(s.sale_date)
+            ORDER BY DATE(s.sale_date) ASC
+        """
+        trend_params = []
+
+    cur.execute(f"""
+        SELECT DATE(s.sale_date) as day, IFNULL(SUM(si.quantity * si.price), 0) as daily_total
+        {trend_where}
+    """, trend_params)
+    trend_data = cur.fetchall()
+    trend_labels = [str(row[0]) for row in trend_data]
+    trend_values = [float(row[1]) for row in trend_data]
+
+    # Period comparison: current vs previous period
+    # Determine period length from date range, default to 30 days
+    if date_from and date_to:
+        from datetime import datetime
+        d1 = datetime.strptime(date_from, '%Y-%m-%d')
+        d2 = datetime.strptime(date_to, '%Y-%m-%d')
+        days = (d2 - d1).days + 1
+    else:
+        days = 30
+
+    # Current period revenue
+    cur.execute(f"""
+        SELECT IFNULL(SUM(si.quantity * si.price), 0)
+        FROM sale_items si
+        JOIN products p ON si.product_id = p.id
+        JOIN sales s ON si.sale_id = s.id
+        WHERE s.sale_status = 'Completed'
+        {date_clause}
+        {type_filter}
+    """, date_params)
+    current_revenue = float(cur.fetchone()[0])
+
+    # Previous period revenue (same length, before current period)
+    if date_from and date_to:
+        from datetime import datetime, timedelta
+        d1 = datetime.strptime(date_from, '%Y-%m-%d')
+        d2 = datetime.strptime(date_to, '%Y-%m-%d')
+        days = (d2 - d1).days + 1
+        prev_to = (d1 - timedelta(days=1)).strftime('%Y-%m-%d')
+        prev_from = (d1 - timedelta(days=days)).strftime('%Y-%m-%d')
+        prev_params = [prev_from, prev_to]
+        prev_date_clause = " AND DATE(s.sale_date) >= ? AND DATE(s.sale_date) <= ?"
+    else:
+        prev_params = []
+        prev_date_clause = " AND DATE(s.sale_date) >= date('now', '-60 days', 'localtime') AND DATE(s.sale_date) < date('now', '-30 days', 'localtime')"
+
+    cur.execute("""
+        SELECT IFNULL(SUM(si.quantity * si.price), 0)
+        FROM sale_items si
+        JOIN products p ON si.product_id = p.id
+        JOIN sales s ON si.sale_id = s.id
+        WHERE s.sale_status = 'Completed'
+        """ + prev_date_clause + """
+        """ + type_filter + """
+    """, prev_params)
+    previous_revenue = float(cur.fetchone()[0])
+
+    # Sales growth percentage
+    if previous_revenue > 0:
+        sales_growth = round(((current_revenue - previous_revenue) / previous_revenue) * 100, 2)
+    else:
+        sales_growth = 100.0 if current_revenue > 0 else 0.0
+
+    # Gross Profit (placeholder - no cost data available yet)
+    # We estimate profit as revenue (no cost basis in current schema)
+    gross_profit = total_revenue
+    profit_margin = 100.0 if total_revenue > 0 else 0.0
+
+    return {
+        'scope': product_scope,
+        'total_revenue': round(total_revenue, 2),
+        'total_transactions': total_transactions,
+        'total_quantity': total_quantity,
+        'avg_order_value': avg_order_value,
+        'gross_profit': round(gross_profit, 2),
+        'profit_margin': round(profit_margin, 2),
+        'sales_growth': sales_growth,
+        'best_selling': best_selling,
+        'trend_labels': trend_labels,
+        'trend_values': trend_values,
+        'current_revenue': round(current_revenue, 2),
+        'previous_revenue': round(previous_revenue, 2),
+    }
+
+
+def generate_business_insights(analytics_data, scope_name):
+    """Generate automated business insights from analytics data."""
+    insights = []
+
+    revenue = analytics_data['total_revenue']
+    transactions = analytics_data['total_transactions']
+    growth = analytics_data['sales_growth']
+    best = analytics_data['best_selling']
+
+    if transactions > 0:
+        insights.append({
+            'type': 'info',
+            'title': f'{scope_name} Performance',
+            'message': f'Total {scope_name.lower()} revenue of ₱{revenue:,.2f} across {transactions} transactions.'
+        })
+
+    if growth > 0:
+        insights.append({
+            'type': 'success',
+            'title': 'Sales Growth',
+            'message': f'{scope_name} sales grew by {growth}% compared to the previous period.'
+        })
+    elif growth < 0:
+        insights.append({
+            'type': 'warning',
+            'title': 'Sales Decline',
+            'message': f'{scope_name} sales declined by {abs(growth)}% compared to the previous period.'
+        })
+    else:
+        insights.append({
+            'type': 'info',
+            'title': 'Sales Stable',
+            'message': f'{scope_name} sales remained stable compared to the previous period.'
+        })
+
+    if best:
+        top = best[0]
+        insights.append({
+            'type': 'info',
+            'title': 'Top Product',
+            'message': f'"{top["name"]}" is the best-selling {scope_name.lower()} product with {top["qty"]} units sold (₱{top["revenue"]:,.2f}).'
+        })
+
+    if len(best) > 1:
+        second = best[1]
+        if top['revenue'] > 0:
+            pct = round((second['revenue'] / top['revenue']) * 100, 1)
+            insights.append({
+                'type': 'info',
+                'title': 'Product Comparison',
+                'message': f'{second["name"]} contributes {pct}% of the revenue of the top product.'
+            })
+
+    if revenue > 0 and transactions > 0:
+        aov = analytics_data['avg_order_value']
+        insights.append({
+            'type': 'info',
+            'title': 'Average Order Value',
+            'message': f'Customers spend an average of ₱{aov:,.2f} per {scope_name.lower()} transaction.'
+        })
+
+    return insights
+
+
+def export_to_pdf(data, headers, filename, title="Sales Report"):
+    """Export data to PDF file using reportlab (offline)."""
+    mem = BytesIO()
+    doc = SimpleDocTemplate(mem, pagesize=A4,
+                            rightMargin=40, leftMargin=40,
+                            topMargin=40, bottomMargin=40)
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle(
+        'CustomTitle', parent=styles['Title'],
+        fontSize=18, textColor=colors.HexColor('#1e293b'),
+        spaceAfter=12, alignment=1
+    )
+    subtitle_style = ParagraphStyle(
+        'CustomSubtitle', parent=styles['Normal'],
+        fontSize=10, textColor=colors.HexColor('#64748b'),
+        spaceAfter=20, alignment=1
+    )
+
+    elements = []
+    elements.append(Paragraph(title, title_style))
+    elements.append(Paragraph(f"Generated on {datetime.now().strftime('%Y-%m-%d %H:%M')}", subtitle_style))
+    elements.append(Spacer(1, 12))
+
+    # Build table
+    table_data = [headers] + [list(row) for row in data]
+    col_widths = [max(len(str(h)) * 8, 80) for h in headers]
+    total_width = sum(col_widths)
+    if total_width > 500:
+        scale = 500 / total_width
+        col_widths = [w * scale for w in col_widths]
+
+    table = Table(table_data, colWidths=col_widths, repeatRows=1)
+    table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1e293b')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 9),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
+        ('TOPPADDING', (0, 0), (-1, 0), 10),
+        ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#f8fafc')),
+        ('TEXTCOLOR', (0, 1), (-1, -1), colors.HexColor('#334155')),
+        ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+        ('FONTSIZE', (0, 1), (-1, -1), 8),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#cbd5e1')),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f1f5f9')]),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('TOPPADDING', (0, 1), (-1, -1), 6),
+        ('BOTTOMPADDING', (0, 1), (-1, -1), 6),
+    ]))
+    elements.append(table)
+
+    doc.build(elements)
+    mem.seek(0)
+    return send_file(
+        mem, as_attachment=True, download_name=filename, mimetype='application/pdf'
+    )
+
+
+def export_to_excel(data, headers, filename, title="Sales Report"):
+    """Export data to Excel file using openpyxl (offline)."""
+    mem = BytesIO()
+    wb = Workbook()
+    ws = wb.active
+    ws.title = title[:31]
+
+    # Title row
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=len(headers))
+    title_cell = ws.cell(row=1, column=1, value=title)
+    title_cell.font = Font(bold=True, size=16, color="1E293B")
+    title_cell.alignment = Alignment(horizontal="center", vertical="center")
+
+    # Subtitle row
+    ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=len(headers))
+    sub_cell = ws.cell(row=2, column=1, value=f"Generated on {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+    sub_cell.font = Font(size=10, color="64748B")
+    sub_cell.alignment = Alignment(horizontal="center", vertical="center")
+
+    # Header row
+    header_row = 4
+    for col_idx, header in enumerate(headers, 1):
+        cell = ws.cell(row=header_row, column=col_idx, value=header)
+        cell.font = Font(bold=True, color="FFFFFF", size=10)
+        cell.fill = PatternFill(start_color="1E293B", end_color="1E293B", fill_type="solid")
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+        cell.border = Border(
+            left=Side(style="thin", color="CBD5E1"),
+            right=Side(style="thin", color="CBD5E1"),
+            top=Side(style="thin", color="CBD5E1"),
+            bottom=Side(style="thin", color="CBD5E1")
+        )
+
+    # Data rows
+    for row_idx, row in enumerate(data, header_row + 1):
+        for col_idx, value in enumerate(row, 1):
+            cell = ws.cell(row=row_idx, column=col_idx, value=value)
+            cell.font = Font(size=10, color="334155")
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+            cell.border = Border(
+                left=Side(style="thin", color="CBD5E1"),
+                right=Side(style="thin", color="CBD5E1"),
+                top=Side(style="thin", color="CBD5E1"),
+                bottom=Side(style="thin", color="CBD5E1")
+            )
+            if row_idx % 2 == 0:
+                cell.fill = PatternFill(start_color="F1F5F9", end_color="F1F5F9", fill_type="solid")
+
+    # Auto column widths
+    for col_idx in range(1, len(headers) + 1):
+        max_len = max(len(str(headers[col_idx - 1])), 10)
+        for row in data:
+            max_len = max(max_len, len(str(row[col_idx - 1])))
+        ws.column_dimensions[get_column_letter(col_idx)].width = min(max_len + 2, 50)
+
+    wb.save(mem)
+    mem.seek(0)
+    return send_file(
+        mem, as_attachment=True,
+        download_name=filename,
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
     )
 
 def clean_input(value):
@@ -1510,51 +1904,78 @@ def edit_product(id):
 def medical_sales():
     conn = get_db()
     cur = conn.cursor()
-    
-    # Get sales with product names
-    cur.execute("""
-        SELECT s.id, s.receipt_number, GROUP_CONCAT(p.product_name, ', ') as products, 
-               s.total_amount, s.sale_status, s.product_type, s.sale_date
+
+    date_from = request.args.get('date_from', '').strip()
+    date_to = request.args.get('date_to', '').strip()
+    date_clause, date_params = get_date_filter_params(date_from, date_to)
+
+    # Get sales with product names (Medical only, line-item level)
+    cur.execute(f"""
+        SELECT s.id, s.receipt_number, GROUP_CONCAT(p.product_name, ', ') as products,
+               IFNULL(SUM(si.quantity * si.price), 0) as line_total,
+               s.sale_status, s.sale_date
         FROM sales s
         LEFT JOIN sale_items si ON s.id = si.sale_id
         LEFT JOIN products p ON si.product_id = p.id
-        WHERE s.product_type = 'Medical' AND s.sale_status = 'Completed'
+        WHERE s.sale_status = 'Completed'
+        AND p.product_type = 'Medical'
+        {date_clause}
         GROUP BY s.id
         ORDER BY s.sale_date DESC
-    """)
+    """, date_params)
     sales = cur.fetchall()
-    
+
     cur.execute("SELECT COUNT(*) FROM products WHERE stock <= ?", (LOW_STOCK_THRESHOLD,))
     low_stock_count = cur.fetchone()[0]
-    
+
     cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date <= date('now', '+30 days', 'localtime') AND expiration_date IS NOT NULL")
     expiring_count = cur.fetchone()[0]
-    
-    # Get daily sales for chart (last 30 days)
-    cur.execute("""
-        SELECT DATE(sale_date) as day, SUM(total_amount) as daily_total
-        FROM sales
-        WHERE product_type='Medical' AND sale_date >= date('now', '-30 days', 'localtime') AND 
-        sale_status = 'Completed'
-        GROUP BY DATE(sale_date)
-        ORDER BY day ASC
-    """)
-    chart_data = cur.fetchall()
-    chart_labels = [str(row[0]) for row in chart_data]
-    chart_values = [float(row[1]) for row in chart_data]
-    
-    # Check if CSV export is requested
-    if request.args.get('export') == 'csv':
-        headers = ['ID', 'Receipt Number', 'Products', 'Total Amount', 'Status', 'Product Type', 'Sale Date']
+
+    # Use shared analytics engine for medical scope
+    conn2 = get_db()
+    analytics = calculate_sales_analytics(conn2, date_from, date_to, 'medical')
+    conn2.close()
+
+    # Generate business insights
+    insights = generate_business_insights(analytics, 'Medical')
+
+    # Check if export is requested
+    export_format = request.args.get('export')
+    if export_format == 'csv':
+        headers = ['ID', 'Receipt Number', 'Products', 'Line Total', 'Status', 'Sale Date']
         filename = f"medical_sales_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
         conn.close()
         return export_to_csv(sales, headers, filename)
-    
+
+    if export_format == 'excel':
+        headers = ['ID', 'Receipt Number', 'Products', 'Line Total', 'Status', 'Sale Date']
+        filename = f"medical_sales_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        conn.close()
+        return export_to_excel(sales, headers, filename, "Medical Sales Report")
+
+    if export_format == 'pdf':
+        headers = ['ID', 'Receipt Number', 'Products', 'Line Total', 'Status', 'Sale Date']
+        filename = f"medical_sales_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+        conn.close()
+        return export_to_pdf(sales, headers, filename, "Medical Sales Report")
+
     conn.close()
     return render_template('sales_medical.html', sales=sales,
                            low_stock_count=low_stock_count,
                            expiring_count=expiring_count,
-                           chart_labels=chart_labels, chart_values=chart_values,
+                           date_from=date_from, date_to=date_to,
+                           # Analytics variables
+                           total_revenue=analytics['total_revenue'],
+                           total_transactions=analytics['total_transactions'],
+                           total_quantity=analytics['total_quantity'],
+                           gross_profit=analytics['gross_profit'],
+                           profit_margin=analytics['profit_margin'],
+                           sales_growth=analytics['sales_growth'],
+                           avg_order_value=analytics['avg_order_value'],
+                           best_selling=analytics['best_selling'],
+                           trend_labels=analytics['trend_labels'],
+                           trend_values=analytics['trend_values'],
+                           insights=insights,
                            active_main='sales', active_sub='medical_sales')
 
 @app.route('/sales_dashboard')
@@ -1575,118 +1996,90 @@ def sales_dashboard():
     use_custom_range = bool(date_from or date_to)
     
     if use_custom_range and date_from and date_to:
-        date_filter = f"AND sale_date >= '{date_from}' AND sale_date < '{date_to} 23:59:59'"
-        date_filter_medical = f"AND sale_date >= '{date_from}' AND sale_date < '{date_to} 23:59:59'"
-        date_filter_nonmedical = f"AND sale_date >= '{date_from}' AND sale_date < '{date_to} 23:59:59'"
-        chart_date_filter = f"AND sale_date >= '{date_from}' AND sale_date <= '{date_to}'"
+        date_filter = f"AND DATE(s.sale_date) >= '{date_from}' AND DATE(s.sale_date) <= '{date_to}'"
+        chart_date_filter = f"AND DATE(s.sale_date) >= '{date_from}' AND DATE(s.sale_date) <= '{date_to}'"
     else:
         date_filter = ""
-        date_filter_medical = ""
-        date_filter_nonmedical = ""
         chart_date_filter = ""
-    
-    # Daily sales (today) - Medical
+
+    # Helper: build WHERE clause for line-item level filtering
+    def build_where(extra="", params=None):
+        if params is None:
+            params = []
+        where = f"""
+            FROM sale_items si
+            JOIN products p ON si.product_id = p.id
+            JOIN sales s ON si.sale_id = s.id
+            WHERE s.sale_status = 'Completed'
+            {date_filter}
+            {extra}
+        """
+        return where, params
+
+    # Daily sales (today)
     cur.execute(f"""
-        SELECT IFNULL(SUM(total_amount), 0), COUNT(*) 
-        FROM sales 
-        WHERE DATE(sale_date) = date('now', 'localtime') AND sale_status = 'Completed' AND product_type = 'Medical' {date_filter_medical if use_custom_range else ''}
-    """)
-    daily_medical = cur.fetchone()
-    daily_medical_sales = float(daily_medical[0]) if daily_medical[0] else 0
-    
-    # Daily sales (today) - Non-Medical
-    cur.execute(f"""
-        SELECT IFNULL(SUM(total_amount), 0), COUNT(*) 
-        FROM sales 
-        WHERE DATE(sale_date) = date('now', 'localtime') AND sale_status = 'Completed' AND product_type = 'Non-Medical' {date_filter_nonmedical if use_custom_range else ''}
-    """)
-    daily_nonmedical = cur.fetchone()
-    daily_nonmedical_sales = float(daily_nonmedical[0]) if daily_nonmedical[0] else 0
-    
+        SELECT IFNULL(SUM(CASE WHEN p.product_type = 'Medical' THEN si.quantity * si.price ELSE 0 END), 0),
+               IFNULL(SUM(CASE WHEN p.product_type = 'Non-Medical' THEN si.quantity * si.price ELSE 0 END), 0),
+               COUNT(DISTINCT s.id)
+        {build_where(" AND DATE(s.sale_date) = date('now', 'localtime')")[0]}
+    """, build_where(" AND DATE(s.sale_date) = date('now', 'localtime')")[1])
+    daily_row = cur.fetchone()
+    daily_medical_sales = float(daily_row[0]) if daily_row[0] else 0
+    daily_nonmedical_sales = float(daily_row[1]) if daily_row[1] else 0
     daily_sales = daily_medical_sales + daily_nonmedical_sales
-    daily_count = daily_medical[1] if daily_medical[1] else 0
-    
-    # Weekly sales (last 7 days) - Medical
+    daily_count = int(daily_row[2]) if daily_row[2] else 0
+
+    # Weekly sales (last 7 days)
     cur.execute(f"""
-        SELECT IFNULL(SUM(total_amount), 0), COUNT(*) 
-        FROM sales 
-        WHERE sale_date >= date('now', '-7 days', 'localtime') AND sale_status = 'Completed' AND product_type = 'Medical' {date_filter_medical if use_custom_range else ''}
-    """)
-    weekly_medical = cur.fetchone()
-    weekly_medical_sales = float(weekly_medical[0]) if weekly_medical[0] else 0
-    
-    # Weekly sales (last 7 days) - Non-Medical
-    cur.execute(f"""
-        SELECT IFNULL(SUM(total_amount), 0), COUNT(*) 
-        FROM sales 
-        WHERE sale_date >= date('now', '-7 days', 'localtime') AND sale_status = 'Completed' AND product_type = 'Non-Medical' {date_filter_nonmedical if use_custom_range else ''}
-    """)
-    weekly_nonmedical = cur.fetchone()
-    weekly_nonmedical_sales = float(weekly_nonmedical[0]) if weekly_nonmedical[0] else 0
-    
+        SELECT IFNULL(SUM(CASE WHEN p.product_type = 'Medical' THEN si.quantity * si.price ELSE 0 END), 0),
+               IFNULL(SUM(CASE WHEN p.product_type = 'Non-Medical' THEN si.quantity * si.price ELSE 0 END), 0),
+               COUNT(DISTINCT s.id)
+        {build_where(" AND s.sale_date >= date('now', '-7 days', 'localtime')")[0]}
+    """, build_where(" AND s.sale_date >= date('now', '-7 days', 'localtime')")[1])
+    weekly_row = cur.fetchone()
+    weekly_medical_sales = float(weekly_row[0]) if weekly_row[0] else 0
+    weekly_nonmedical_sales = float(weekly_row[1]) if weekly_row[1] else 0
     weekly_sales = weekly_medical_sales + weekly_nonmedical_sales
-    weekly_count = weekly_medical[1] if weekly_medical[1] else 0
-    
-    # Monthly sales (this month) - Medical
+    weekly_count = int(weekly_row[2]) if weekly_row[2] else 0
+
+    # Monthly sales (this month)
     cur.execute(f"""
-        SELECT IFNULL(SUM(total_amount), 0), COUNT(*) 
-        FROM sales 
-        WHERE strftime('%m', sale_date) = strftime('%m', 'now') AND strftime('%Y', sale_date) = strftime('%Y', 'now') AND sale_status = 'Completed' AND product_type = 'Medical' {date_filter_medical if use_custom_range else ''}
-    """)
-    monthly_medical = cur.fetchone()
-    monthly_medical_sales = float(monthly_medical[0]) if monthly_medical[0] else 0
-    
-    # Monthly sales (this month) - Non-Medical
-    cur.execute(f"""
-        SELECT IFNULL(SUM(total_amount), 0), COUNT(*) 
-        FROM sales 
-        WHERE strftime('%m', sale_date) = strftime('%m', 'now') AND strftime('%Y', sale_date) = strftime('%Y', 'now') AND sale_status = 'Completed' AND product_type = 'Non-Medical' {date_filter_nonmedical if use_custom_range else ''}
-    """)
-    monthly_nonmedical = cur.fetchone()
-    monthly_nonmedical_sales = float(monthly_nonmedical[0]) if monthly_nonmedical[0] else 0
-    
+        SELECT IFNULL(SUM(CASE WHEN p.product_type = 'Medical' THEN si.quantity * si.price ELSE 0 END), 0),
+               IFNULL(SUM(CASE WHEN p.product_type = 'Non-Medical' THEN si.quantity * si.price ELSE 0 END), 0),
+               COUNT(DISTINCT s.id)
+        {build_where(" AND strftime('%m', s.sale_date) = strftime('%m', 'now') AND strftime('%Y', s.sale_date) = strftime('%Y', 'now')")[0]}
+    """, build_where(" AND strftime('%m', s.sale_date) = strftime('%m', 'now') AND strftime('%Y', s.sale_date) = strftime('%Y', 'now')")[1])
+    monthly_row = cur.fetchone()
+    monthly_medical_sales = float(monthly_row[0]) if monthly_row[0] else 0
+    monthly_nonmedical_sales = float(monthly_row[1]) if monthly_row[1] else 0
     monthly_sales = monthly_medical_sales + monthly_nonmedical_sales
-    monthly_count = monthly_medical[1] if monthly_medical[1] else 0
-    
-    # Yearly sales (this year) - Medical
+    monthly_count = int(monthly_row[2]) if monthly_row[2] else 0
+
+    # Yearly sales (this year)
     cur.execute(f"""
-        SELECT IFNULL(SUM(total_amount), 0), COUNT(*) 
-        FROM sales 
-        WHERE strftime('%Y', sale_date) = strftime('%Y', 'now') AND sale_status = 'Completed' AND product_type = 'Medical' {date_filter_medical if use_custom_range else ''}
-    """)
-    yearly_medical = cur.fetchone()
-    yearly_medical_sales = float(yearly_medical[0]) if yearly_medical[0] else 0
-    
-    # Yearly sales (this year) - Non-Medical
-    cur.execute(f"""
-        SELECT IFNULL(SUM(total_amount), 0), COUNT(*) 
-        FROM sales 
-        WHERE strftime('%Y', sale_date) = strftime('%Y', 'now') AND sale_status = 'Completed' AND product_type = 'Non-Medical' {date_filter_nonmedical if use_custom_range else ''}
-    """)
-    yearly_nonmedical = cur.fetchone()
-    yearly_nonmedical_sales = float(yearly_nonmedical[0]) if yearly_nonmedical[0] else 0
-    
+        SELECT IFNULL(SUM(CASE WHEN p.product_type = 'Medical' THEN si.quantity * si.price ELSE 0 END), 0),
+               IFNULL(SUM(CASE WHEN p.product_type = 'Non-Medical' THEN si.quantity * si.price ELSE 0 END), 0),
+               COUNT(DISTINCT s.id)
+        {build_where(" AND strftime('%Y', s.sale_date) = strftime('%Y', 'now')")[0]}
+    """, build_where(" AND strftime('%Y', s.sale_date) = strftime('%Y', 'now')")[1])
+    yearly_row = cur.fetchone()
+    yearly_medical_sales = float(yearly_row[0]) if yearly_row[0] else 0
+    yearly_nonmedical_sales = float(yearly_row[1]) if yearly_row[1] else 0
     yearly_sales = yearly_medical_sales + yearly_nonmedical_sales
-    yearly_count = yearly_medical[1] if yearly_medical[1] else 0
-    
-    # Overall sales - Medical
+    yearly_count = int(yearly_row[2]) if yearly_row[2] else 0
+
+    # Overall sales
     cur.execute(f"""
-        SELECT IFNULL(SUM(total_amount), 0), COUNT(*) 
-        FROM sales WHERE sale_status = 'Completed' AND product_type = 'Medical' {date_filter if use_custom_range else ''}
-    """)
-    overall_medical = cur.fetchone()
-    overall_medical_sales = float(overall_medical[0]) if overall_medical[0] else 0
-    
-    # Overall sales - Non-Medical
-    cur.execute(f"""
-        SELECT IFNULL(SUM(total_amount), 0), COUNT(*) 
-        FROM sales WHERE sale_status = 'Completed' AND product_type = 'Non-Medical' {date_filter if use_custom_range else ''}
-    """)
-    overall_nonmedical = cur.fetchone()
-    overall_nonmedical_sales = float(overall_nonmedical[0]) if overall_nonmedical[0] else 0
-    
+        SELECT IFNULL(SUM(CASE WHEN p.product_type = 'Medical' THEN si.quantity * si.price ELSE 0 END), 0),
+               IFNULL(SUM(CASE WHEN p.product_type = 'Non-Medical' THEN si.quantity * si.price ELSE 0 END), 0),
+               COUNT(DISTINCT s.id)
+        {build_where()[0]}
+    """, build_where()[1])
+    overall_row = cur.fetchone()
+    overall_medical_sales = float(overall_row[0]) if overall_row[0] else 0
+    overall_nonmedical_sales = float(overall_row[1]) if overall_row[1] else 0
     overall_sales = overall_medical_sales + overall_nonmedical_sales
-    overall_count = overall_medical[1] if overall_medical[1] else 0
+    overall_count = int(overall_row[2]) if overall_row[2] else 0
     
     # Popular products (top 10)
     cur.execute(f"""
@@ -1704,18 +2097,23 @@ def sales_dashboard():
     # Daily sales for chart - Medical (last 30 days or custom range)
     if use_custom_range and date_from and date_to:
         cur.execute(f"""
-            SELECT DATE(sale_date) as day, SUM(total_amount) as daily_total
-            FROM sales
-            WHERE sale_date >= '{date_from}' AND sale_date <= '{date_to}' AND sale_status = 'Completed' AND product_type = 'Medical'
-            GROUP BY DATE(sale_date)
+            SELECT DATE(s.sale_date) as day, IFNULL(SUM(si.quantity * si.price), 0) as daily_total
+            FROM sale_items si
+            JOIN products p ON si.product_id = p.id
+            JOIN sales s ON si.sale_id = s.id
+            WHERE s.sale_status = 'Completed' AND p.product_type = 'Medical' {date_filter}
+            GROUP BY DATE(s.sale_date)
             ORDER BY day ASC
         """)
     else:
         cur.execute(f"""
-            SELECT DATE(sale_date) as day, SUM(total_amount) as daily_total
-            FROM sales
-            WHERE sale_date >= date('now', '-30 days', 'localtime') AND sale_status = 'Completed' AND product_type = 'Medical'
-            GROUP BY DATE(sale_date)
+            SELECT DATE(s.sale_date) as day, IFNULL(SUM(si.quantity * si.price), 0) as daily_total
+            FROM sale_items si
+            JOIN products p ON si.product_id = p.id
+            JOIN sales s ON si.sale_id = s.id
+            WHERE s.sale_status = 'Completed' AND p.product_type = 'Medical'
+            AND s.sale_date >= date('now', '-30 days', 'localtime')
+            GROUP BY DATE(s.sale_date)
             ORDER BY day ASC
         """)
     chart_medical = cur.fetchall()
@@ -1725,18 +2123,23 @@ def sales_dashboard():
     # Daily sales for chart - Non-Medical (last 30 days or custom range)
     if use_custom_range and date_from and date_to:
         cur.execute(f"""
-            SELECT DATE(sale_date) as day, SUM(total_amount) as daily_total
-            FROM sales
-            WHERE sale_date >= '{date_from}' AND sale_date <= '{date_to}' AND sale_status = 'Completed' AND product_type = 'Non-Medical'
-            GROUP BY DATE(sale_date)
+            SELECT DATE(s.sale_date) as day, IFNULL(SUM(si.quantity * si.price), 0) as daily_total
+            FROM sale_items si
+            JOIN products p ON si.product_id = p.id
+            JOIN sales s ON si.sale_id = s.id
+            WHERE s.sale_status = 'Completed' AND p.product_type = 'Non-Medical' {date_filter}
+            GROUP BY DATE(s.sale_date)
             ORDER BY day ASC
         """)
     else:
         cur.execute(f"""
-            SELECT DATE(sale_date) as day, SUM(total_amount) as daily_total
-            FROM sales
-            WHERE sale_date >= date('now', '-30 days', 'localtime') AND sale_status = 'Completed' AND product_type = 'Non-Medical'
-            GROUP BY DATE(sale_date)
+            SELECT DATE(s.sale_date) as day, IFNULL(SUM(si.quantity * si.price), 0) as daily_total
+            FROM sale_items si
+            JOIN products p ON si.product_id = p.id
+            JOIN sales s ON si.sale_id = s.id
+            WHERE s.sale_status = 'Completed' AND p.product_type = 'Non-Medical'
+            AND s.sale_date >= date('now', '-30 days', 'localtime')
+            GROUP BY DATE(s.sale_date)
             ORDER BY day ASC
         """)
     chart_nonmedical = cur.fetchall()
@@ -1749,13 +2152,26 @@ def sales_dashboard():
     
     # Check if CSV export is requested
     if request.args.get('export') == 'csv':
-        # Export all sales with details
+        # Export all sales with details (line-item level for mixed transactions)
         cur.execute(f"""
-            SELECT s.id, s.receipt_number, s.total_amount, s.sale_status, 
-                   s.product_type, s.sale_date, c.full_name as cashier_name
+            SELECT s.id, s.receipt_number, 
+                   IFNULL(SUM(si.quantity * si.price), 0) as total_amount,
+                   s.sale_status,
+                   CASE 
+                     WHEN SUM(CASE WHEN p.product_type = 'Medical' THEN 1 ELSE 0 END) > 0 
+                          AND SUM(CASE WHEN p.product_type = 'Non-Medical' THEN 1 ELSE 0 END) > 0 THEN 'Mixed'
+                     WHEN SUM(CASE WHEN p.product_type = 'Medical' THEN 1 ELSE 0 END) > 0 THEN 'Medical'
+                     WHEN SUM(CASE WHEN p.product_type = 'Non-Medical' THEN 1 ELSE 0 END) > 0 THEN 'Non-Medical'
+                     ELSE 'Unknown'
+                   END as product_type,
+                   s.sale_date,
+                   c.full_name as cashier_name
             FROM sales s
+            LEFT JOIN sale_items si ON s.id = si.sale_id
+            LEFT JOIN products p ON si.product_id = p.id
             LEFT JOIN cashiers c ON s.cashier_id = c.id
             WHERE s.sale_status = 'Completed' {date_filter if use_custom_range else ''}
+            GROUP BY s.id
             ORDER BY s.sale_date DESC
         """)
         all_sales = cur.fetchall()
@@ -1763,9 +2179,73 @@ def sales_dashboard():
         filename = f"all_sales_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
         conn.close()
         return export_to_csv(all_sales, headers, filename)
-    
+
+    if request.args.get('export') == 'excel':
+        cur.execute(f"""
+            SELECT s.id, s.receipt_number, 
+                   IFNULL(SUM(si.quantity * si.price), 0) as total_amount,
+                   s.sale_status,
+                   CASE 
+                     WHEN SUM(CASE WHEN p.product_type = 'Medical' THEN 1 ELSE 0 END) > 0 
+                          AND SUM(CASE WHEN p.product_type = 'Non-Medical' THEN 1 ELSE 0 END) > 0 THEN 'Mixed'
+                     WHEN SUM(CASE WHEN p.product_type = 'Medical' THEN 1 ELSE 0 END) > 0 THEN 'Medical'
+                     WHEN SUM(CASE WHEN p.product_type = 'Non-Medical' THEN 1 ELSE 0 END) > 0 THEN 'Non-Medical'
+                     ELSE 'Unknown'
+                   END as product_type,
+                   s.sale_date,
+                   c.full_name as cashier_name
+            FROM sales s
+            LEFT JOIN sale_items si ON s.id = si.sale_id
+            LEFT JOIN products p ON si.product_id = p.id
+            LEFT JOIN cashiers c ON s.cashier_id = c.id
+            WHERE s.sale_status = 'Completed' {date_filter if use_custom_range else ''}
+            GROUP BY s.id
+            ORDER BY s.sale_date DESC
+        """)
+        all_sales = cur.fetchall()
+        headers = ['ID', 'Receipt Number', 'Total Amount', 'Status', 'Product Type', 'Sale Date', 'Cashier']
+        filename = f"all_sales_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        conn.close()
+        return export_to_excel(all_sales, headers, filename, "All Sales Report")
+
+    if request.args.get('export') == 'pdf':
+        cur.execute(f"""
+            SELECT s.id, s.receipt_number, 
+                   IFNULL(SUM(si.quantity * si.price), 0) as total_amount,
+                   s.sale_status,
+                   CASE 
+                     WHEN SUM(CASE WHEN p.product_type = 'Medical' THEN 1 ELSE 0 END) > 0 
+                          AND SUM(CASE WHEN p.product_type = 'Non-Medical' THEN 1 ELSE 0 END) > 0 THEN 'Mixed'
+                     WHEN SUM(CASE WHEN p.product_type = 'Medical' THEN 1 ELSE 0 END) > 0 THEN 'Medical'
+                     WHEN SUM(CASE WHEN p.product_type = 'Non-Medical' THEN 1 ELSE 0 END) > 0 THEN 'Non-Medical'
+                     ELSE 'Unknown'
+                   END as product_type,
+                   s.sale_date,
+                   c.full_name as cashier_name
+            FROM sales s
+            LEFT JOIN sale_items si ON s.id = si.sale_id
+            LEFT JOIN products p ON si.product_id = p.id
+            LEFT JOIN cashiers c ON s.cashier_id = c.id
+            WHERE s.sale_status = 'Completed' {date_filter if use_custom_range else ''}
+            GROUP BY s.id
+            ORDER BY s.sale_date DESC
+        """)
+        all_sales = cur.fetchall()
+        headers = ['ID', 'Receipt Number', 'Total Amount', 'Status', 'Product Type', 'Sale Date', 'Cashier']
+        filename = f"all_sales_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+        conn.close()
+        return export_to_pdf(all_sales, headers, filename, "All Sales Report")
+
     conn.close()
-    
+
+    # Use shared analytics engine for overall scope
+    conn2 = get_db()
+    analytics = calculate_sales_analytics(conn2, date_from, date_to, 'overall')
+    conn2.close()
+
+    # Generate business insights
+    insights = generate_business_insights(analytics, 'Overall')
+
     return render_template('sales_dashboard.html',
                            low_stock_count=low_stock_count,
                            expiring_count=expiring_count,
@@ -1789,6 +2269,16 @@ def sales_dashboard():
                            medical_labels=medical_labels, medical_values=medical_values,
                            nonmedical_labels=nonmedical_labels, nonmedical_values=nonmedical_values,
                            date_from=date_from, date_to=date_to,
+                           # New analytics variables
+                           total_quantity=analytics['total_quantity'],
+                           gross_profit=analytics['gross_profit'],
+                           profit_margin=analytics['profit_margin'],
+                           sales_growth=analytics['sales_growth'],
+                           avg_order_value=analytics['avg_order_value'],
+                           best_selling=analytics['best_selling'],
+                           trend_labels=analytics['trend_labels'],
+                           trend_values=analytics['trend_values'],
+                           insights=insights,
                            active_main='sales', active_sub='sales_dashboard')
 
 @app.route('/non_medical_sales')
@@ -1796,51 +2286,526 @@ def sales_dashboard():
 def non_medical_sales():
     conn = get_db()
     cur = conn.cursor()
-    
-    # Get sales with product names
-    cur.execute("""
-        SELECT s.id, s.receipt_number, GROUP_CONCAT(p.product_name, ', ') as products, 
-               s.total_amount, s.sale_status, s.product_type, s.sale_date
+
+    date_from = request.args.get('date_from', '').strip()
+    date_to = request.args.get('date_to', '').strip()
+    date_clause, date_params = get_date_filter_params(date_from, date_to)
+
+    # Get sales with product names (Non-Medical only, line-item level)
+    cur.execute(f"""
+        SELECT s.id, s.receipt_number, GROUP_CONCAT(p.product_name, ', ') as products,
+               IFNULL(SUM(si.quantity * si.price), 0) as line_total,
+               s.sale_status, s.sale_date
         FROM sales s
         LEFT JOIN sale_items si ON s.id = si.sale_id
         LEFT JOIN products p ON si.product_id = p.id
-        WHERE s.product_type = 'Non-Medical' AND s.sale_status = 'Completed'
+        WHERE s.sale_status = 'Completed'
+        AND p.product_type = 'Non-Medical'
+        {date_clause}
         GROUP BY s.id
         ORDER BY s.sale_date DESC
-    """)
+    """, date_params)
     sales = cur.fetchall()
-    
+
     cur.execute("SELECT COUNT(*) FROM products WHERE stock <= ?", (LOW_STOCK_THRESHOLD,))
     low_stock_count = cur.fetchone()[0]
-    
+
     cur.execute("SELECT COUNT(*) FROM products WHERE expiration_date <= date('now', '+30 days', 'localtime') AND expiration_date IS NOT NULL")
     expiring_count = cur.fetchone()[0]
-    
-    # Get daily sales for chart (last 30 days)
-    cur.execute("""
-        SELECT DATE(sale_date) as day, SUM(total_amount) as daily_total
-        FROM sales
-        WHERE product_type='Non-Medical' AND sale_date >= date('now', '-30 days', 'localtime') AND sale_status = 'Completed'
-        GROUP BY DATE(sale_date)
-        ORDER BY day ASC
-    """)
-    chart_data = cur.fetchall()
-    chart_labels = [str(row[0]) for row in chart_data]
-    chart_values = [float(row[1]) for row in chart_data]
-    
-    # Check if CSV export is requested
-    if request.args.get('export') == 'csv':
-        headers = ['ID', 'Receipt Number', 'Products', 'Total Amount', 'Status', 'Product Type', 'Sale Date']
+
+    # Use shared analytics engine for non_medical scope
+    conn2 = get_db()
+    analytics = calculate_sales_analytics(conn2, date_from, date_to, 'non_medical')
+    conn2.close()
+
+    # Generate business insights
+    insights = generate_business_insights(analytics, 'Non-Medical')
+
+    # Check if export is requested
+    export_format = request.args.get('export')
+    if export_format == 'csv':
+        headers = ['ID', 'Receipt Number', 'Products', 'Line Total', 'Status', 'Sale Date']
         filename = f"non_medical_sales_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
         conn.close()
         return export_to_csv(sales, headers, filename)
-    
+
+    if export_format == 'excel':
+        headers = ['ID', 'Receipt Number', 'Products', 'Line Total', 'Status', 'Sale Date']
+        filename = f"non_medical_sales_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        conn.close()
+        return export_to_excel(sales, headers, filename, "Non-Medical Sales Report")
+
+    if export_format == 'pdf':
+        headers = ['ID', 'Receipt Number', 'Products', 'Line Total', 'Status', 'Sale Date']
+        filename = f"non_medical_sales_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+        conn.close()
+        return export_to_pdf(sales, headers, filename, "Non-Medical Sales Report")
+
     conn.close()
     return render_template('sales_non_medical.html', sales=sales,
                            low_stock_count=low_stock_count,
                            expiring_count=expiring_count,
-                           chart_labels=chart_labels, chart_values=chart_values,
-                           active_main='sales', active_sub='non_medical_sales')
+                           date_from=date_from, date_to=date_to,
+                           # Analytics variables
+                           total_revenue=analytics['total_revenue'],
+                           total_transactions=analytics['total_transactions'],
+                           total_quantity=analytics['total_quantity'],
+                           gross_profit=analytics['gross_profit'],
+                           profit_margin=analytics['profit_margin'],
+                           sales_growth=analytics['sales_growth'],
+                           avg_order_value=analytics['avg_order_value'],
+                           best_selling=analytics['best_selling'],
+                           trend_labels=analytics['trend_labels'],
+                           trend_values=analytics['trend_values'],
+                           insights=insights,
+                            active_main='sales', active_sub='non_medical_sales')
+
+# =============================
+# MANUAL SALES ENTRY
+# =============================
+
+@app.route('/manual_sales_entry')
+@admin_required
+def manual_sales_entry():
+    conn = get_db()
+    cur = conn.cursor()
+
+    date_from = request.args.get('date_from', '').strip()
+    date_to = request.args.get('date_to', '').strip()
+    date_clause, date_params = get_date_filter_params(date_from, date_to)
+    source_filter = ""
+    source_params = []
+    source = request.args.get('source', '').strip()
+    if source:
+        source_filter = " AND s.source = ?"
+        source_params = [source]
+
+    # Get manual sales records
+    cur.execute(f"""
+        SELECT s.id, s.receipt_number, s.sale_date, s.customer_name,
+               s.total_amount, s.sale_status, s.source, s.date_encoded,
+               a.username as encoded_by, s.payment_method, s.discount, s.notes
+        FROM sales s
+        LEFT JOIN admins a ON s.cashier_id = a.id
+        WHERE s.source = 'MANUAL'
+        {date_clause}
+        {source_filter}
+        ORDER BY s.sale_date DESC, s.id DESC
+    """, date_params + source_params)
+    manual_sales = cur.fetchall()
+
+    # Get all products for the form dropdown
+    cur.execute("SELECT id, product_name, product_type, price FROM products WHERE stock >= 0 ORDER BY product_name")
+    products = cur.fetchall()
+
+    conn.close()
+    return render_template('manual_sales_entry.html',
+                           manual_sales=manual_sales,
+                           products=products,
+                           date_from=date_from, date_to=date_to,
+                           source=source,
+                           active_main='sales', active_sub='manual_sales_entry')
+
+
+@app.route('/api/manual_sales_entry', methods=['POST'])
+@admin_required
+def api_manual_sales_entry():
+    """Save a manual historical sale without inventory deduction."""
+    if not request.is_json:
+        return jsonify({'success': False, 'message': 'Invalid request format'})
+
+    data = request.get_json()
+    if not data:
+        return jsonify({'success': False, 'message': 'No data received'})
+
+    # Validate required fields
+    transaction_date = data.get('transaction_date', '').strip()
+    receipt_number = data.get('receipt_number', '').strip()
+    items = data.get('items', [])
+    payment_method = data.get('payment_method', '').strip()
+    customer_name = data.get('customer_name', '').strip()
+    discount = float(data.get('discount', 0) or 0)
+    notes = data.get('notes', '').strip()
+
+    if not transaction_date:
+        return jsonify({'success': False, 'message': 'Transaction date is required'})
+    if not receipt_number:
+        return jsonify({'success': False, 'message': 'Receipt number is required'})
+    if not items or len(items) == 0:
+        return jsonify({'success': False, 'message': 'At least one product is required'})
+    if not payment_method:
+        return jsonify({'success': False, 'message': 'Payment method is required'})
+
+    # Check for duplicate receipt number
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT id FROM sales WHERE receipt_number = ?", (receipt_number,))
+        if cur.fetchone():
+            conn.close()
+            return jsonify({'success': False, 'message': f'Receipt number {receipt_number} already exists'})
+
+        # Calculate totals from line items
+        total_amount = 0.0
+        validated_items = []
+        for item in items:
+            product_id = int(item.get('product_id'))
+            quantity = int(item.get('quantity'))
+            unit_price = float(item.get('unit_price', 0))
+
+            if product_id <= 0 or quantity <= 0 or unit_price < 0:
+                conn.close()
+                return jsonify({'success': False, 'message': 'Invalid item data'})
+
+            # Verify product exists
+            cur.execute("SELECT product_name, product_type FROM products WHERE id = ?", (product_id,))
+            prod = cur.fetchone()
+            if not prod:
+                conn.close()
+                return jsonify({'success': False, 'message': f'Product ID {product_id} not found'})
+
+            subtotal = round(quantity * unit_price, 2)
+            total_amount += subtotal
+            validated_items.append({
+                'product_id': product_id,
+                'quantity': quantity,
+                'unit_price': unit_price,
+                'subtotal': subtotal,
+                'product_name': prod[0],
+                'product_type': prod[1]
+            })
+
+        # Apply discount
+        total_amount = round(total_amount - discount, 2)
+        if total_amount < 0:
+            total_amount = 0.0
+
+        # Generate a unique receipt prefix for manual sales
+        manual_receipt = receipt_number
+
+        # Determine product_type for the sale header (mixed = 'Mixed')
+        has_medical = any(i['product_type'] == 'Medical' for i in validated_items)
+        has_nonmedical = any(i['product_type'] == 'Non-Medical' for i in validated_items)
+        if has_medical and has_nonmedical:
+            sale_product_type = 'Mixed'
+        elif has_medical:
+            sale_product_type = 'Medical'
+        else:
+            sale_product_type = 'Non-Medical'
+
+        # Insert sale header (NO inventory deduction)
+        admin_id = session.get('admin_id')
+        cur.execute("""
+            INSERT INTO sales (receipt_number, cashier_id, total_amount, sale_status,
+                               product_type, sale_date, source, date_encoded,
+                               customer_name, discount, payment_method, notes)
+            VALUES (?, ?, ?, 'Completed', ?, ?, 'MANUAL', datetime('now', 'localtime'),
+                    ?, ?, ?, ?)
+        """, (manual_receipt, admin_id, total_amount, sale_product_type, transaction_date,
+              customer_name, discount, payment_method, notes))
+
+        sale_id = cur.lastrowid
+
+        # Insert sale items
+        for item in validated_items:
+            cur.execute("""
+                INSERT INTO sale_items (sale_id, product_id, quantity, price)
+                VALUES (?, ?, ?, ?)
+            """, (sale_id, item['product_id'], item['quantity'], item['unit_price']))
+
+        # Log admin activity
+        cur.execute("""
+            INSERT INTO admin_activity (admin_id, action, ip_address, details)
+            VALUES (?, ?, ?, ?)
+        """, (admin_id, 'Manual Sale Entry', request.remote_addr,
+              f"Receipt: {manual_receipt}, Date: {transaction_date}, Total: ₱{total_amount:,.2f}, Source: MANUAL"))
+
+        conn.commit()
+        conn.close()
+
+        return jsonify({
+            'success': True,
+            'message': 'Manual sale recorded successfully',
+            'sale_id': sale_id,
+            'receipt_number': manual_receipt,
+            'total_amount': total_amount
+        })
+
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        return jsonify({'success': False, 'message': str(e)})
+
+
+@app.route('/api/manual_sales/<int:sale_id>', methods=['GET'])
+@admin_required
+def api_get_manual_sale(sale_id):
+    """Get details of a manual sale."""
+    conn = get_db()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT s.id, s.receipt_number, s.sale_date, s.customer_name,
+               s.total_amount, s.sale_status, s.source, s.date_encoded,
+               s.payment_method, s.discount, s.notes,
+               a.username as encoded_by
+        FROM sales s
+        LEFT JOIN admins a ON s.cashier_id = a.id
+        WHERE s.id = ? AND s.source = 'MANUAL'
+    """, (sale_id,))
+    sale = cur.fetchone()
+
+    if not sale:
+        conn.close()
+        return jsonify({'success': False, 'message': 'Manual sale not found'}), 404
+
+    cur.execute("""
+        SELECT si.id, si.product_id, p.product_name, p.product_type,
+               si.quantity, si.price, (si.quantity * si.price) as subtotal
+        FROM sale_items si
+        JOIN products p ON si.product_id = p.id
+        WHERE si.sale_id = ?
+    """, (sale_id,))
+    items = cur.fetchall()
+
+    conn.close()
+
+    return jsonify({
+        'success': True,
+        'sale': {
+            'id': sale[0],
+            'receipt_number': sale[1],
+            'transaction_date': sale[2],
+            'customer_name': sale[3],
+            'total_amount': sale[4],
+            'sale_status': sale[5],
+            'source': sale[6],
+            'date_encoded': sale[7],
+            'payment_method': sale[8],
+            'discount': sale[9],
+            'notes': sale[10],
+            'encoded_by': sale[11]
+        },
+        'items': [
+            {
+                'id': row[0],
+                'product_id': row[1],
+                'product_name': row[2],
+                'product_type': row[3],
+                'quantity': row[4],
+                'unit_price': row[5],
+                'subtotal': row[6]
+            } for row in items
+        ]
+    })
+
+
+@app.route('/api/manual_sales/<int:sale_id>', methods=['PUT'])
+@admin_required
+def api_edit_manual_sale(sale_id):
+    """Edit a manual sale."""
+    if not request.is_json:
+        return jsonify({'success': False, 'message': 'Invalid request format'})
+
+    data = request.get_json()
+    if not data:
+        return jsonify({'success': False, 'message': 'No data received'})
+
+    transaction_date = data.get('transaction_date', '').strip()
+    receipt_number = data.get('receipt_number', '').strip()
+    items = data.get('items', [])
+    payment_method = data.get('payment_method', '').strip()
+    customer_name = data.get('customer_name', '').strip()
+    discount = float(data.get('discount', 0) or 0)
+    notes = data.get('notes', '').strip()
+    reason = data.get('reason', '').strip()
+
+    if not transaction_date:
+        return jsonify({'success': False, 'message': 'Transaction date is required'})
+    if not receipt_number:
+        return jsonify({'success': False, 'message': 'Receipt number is required'})
+    if not items or len(items) == 0:
+        return jsonify({'success': False, 'message': 'At least one product is required'})
+    if not payment_method:
+        return jsonify({'success': False, 'message': 'Payment method is required'})
+    if not reason:
+        return jsonify({'success': False, 'message': 'Reason for correction is required'})
+
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        # Verify sale exists and is manual
+        cur.execute("SELECT id, receipt_number FROM sales WHERE id = ? AND source = 'MANUAL'", (sale_id,))
+        sale = cur.fetchone()
+        if not sale:
+            conn.close()
+            return jsonify({'success': False, 'message': 'Manual sale not found'}), 404
+
+        old_receipt = sale[1]
+
+        # Check for duplicate receipt (excluding current sale)
+        cur.execute("SELECT id FROM sales WHERE receipt_number = ? AND id != ?", (receipt_number, sale_id))
+        if cur.fetchone():
+            conn.close()
+            return jsonify({'success': False, 'message': f'Receipt number {receipt_number} already exists'})
+
+        # Calculate totals from line items
+        total_amount = 0.0
+        validated_items = []
+        for item in items:
+            product_id = int(item.get('product_id'))
+            quantity = int(item.get('quantity'))
+            unit_price = float(item.get('unit_price', 0))
+
+            if product_id <= 0 or quantity <= 0 or unit_price < 0:
+                conn.close()
+                return jsonify({'success': False, 'message': 'Invalid item data'})
+
+            cur.execute("SELECT product_name, product_type FROM products WHERE id = ?", (product_id,))
+            prod = cur.fetchone()
+            if not prod:
+                conn.close()
+                return jsonify({'success': False, 'message': f'Product ID {product_id} not found'})
+
+            subtotal = round(quantity * unit_price, 2)
+            total_amount += subtotal
+            validated_items.append({
+                'product_id': product_id,
+                'quantity': quantity,
+                'unit_price': unit_price,
+                'subtotal': subtotal,
+                'product_name': prod[0],
+                'product_type': prod[1]
+            })
+
+        total_amount = round(total_amount - discount, 2)
+        if total_amount < 0:
+            total_amount = 0.0
+
+        has_medical = any(i['product_type'] == 'Medical' for i in validated_items)
+        has_nonmedical = any(i['product_type'] == 'Non-Medical' for i in validated_items)
+        if has_medical and has_nonmedical:
+            sale_product_type = 'Mixed'
+        elif has_medical:
+            sale_product_type = 'Medical'
+        else:
+            sale_product_type = 'Non-Medical'
+
+        admin_id = session.get('admin_id')
+
+        # Update sale header
+        cur.execute("""
+            UPDATE sales
+            SET receipt_number = ?, total_amount = ?, product_type = ?, sale_date = ?,
+                customer_name = ?, discount = ?, payment_method = ?, notes = ?
+            WHERE id = ? AND source = 'MANUAL'
+        """, (receipt_number, total_amount, sale_product_type, transaction_date,
+              customer_name, discount, payment_method, notes, sale_id))
+
+        # Delete old items and re-insert
+        cur.execute("DELETE FROM sale_items WHERE sale_id = ?", (sale_id,))
+        for item in validated_items:
+            cur.execute("""
+                INSERT INTO sale_items (sale_id, product_id, quantity, price)
+                VALUES (?, ?, ?, ?)
+            """, (sale_id, item['product_id'], item['quantity'], item['unit_price']))
+
+        # Log audit trail
+        cur.execute("""
+            INSERT INTO admin_activity (admin_id, action, ip_address, details)
+            VALUES (?, ?, ?, ?)
+        """, (admin_id, 'Manual Sale Edited', request.remote_addr,
+              f"Sale ID: {sale_id}, Old Receipt: {old_receipt}, New Receipt: {receipt_number}, "
+              f"Date: {transaction_date}, Total: ₱{total_amount:,.2f}, Reason: {reason}"))
+
+        conn.commit()
+        conn.close()
+
+        return jsonify({
+            'success': True,
+            'message': 'Manual sale updated successfully',
+            'sale_id': sale_id,
+            'total_amount': total_amount
+        })
+
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        return jsonify({'success': False, 'message': str(e)})
+
+
+@app.route('/api/manual_sales/<int:sale_id>', methods=['DELETE'])
+@admin_required
+def api_void_manual_sale(sale_id):
+    """Void a manual sale (soft delete)."""
+    reason = request.args.get('reason', '').strip()
+    if not reason:
+        return jsonify({'success': False, 'message': 'Void reason is required'})
+
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT id, receipt_number FROM sales WHERE id = ? AND source = 'MANUAL'", (sale_id,))
+        sale = cur.fetchone()
+        if not sale:
+            conn.close()
+            return jsonify({'success': False, 'message': 'Manual sale not found'}), 404
+
+        admin_id = session.get('admin_id')
+
+        cur.execute("""
+            UPDATE sales
+            SET sale_status = 'Voided', voided_at = datetime('now', 'localtime'),
+                voided_by = ?, void_reason = ?
+            WHERE id = ? AND source = 'MANUAL'
+        """, (admin_id, reason, sale_id))
+
+        # Log audit trail
+        cur.execute("""
+            INSERT INTO admin_activity (admin_id, action, ip_address, details)
+            VALUES (?, ?, ?, ?)
+        """, (admin_id, 'Manual Sale Voided', request.remote_addr,
+              f"Sale ID: {sale_id}, Receipt: {sale[1]}, Reason: {reason}"))
+
+        conn.commit()
+        conn.close()
+
+        return jsonify({
+            'success': True,
+            'message': 'Manual sale voided successfully',
+            'sale_id': sale_id
+        })
+
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        return jsonify({'success': False, 'message': str(e)})
+
+
+@app.route('/api/products_search')
+@admin_required
+def api_products_search():
+    """Search products for manual sales entry form."""
+    q = request.args.get('q', '').strip()
+    conn = get_db()
+    cur = conn.cursor()
+    if q:
+        cur.execute("SELECT id, product_name, product_type, price FROM products WHERE product_name LIKE ? ORDER BY product_name LIMIT 20", (f'%{q}%',))
+    else:
+        cur.execute("SELECT id, product_name, product_type, price FROM products ORDER BY product_name LIMIT 50")
+    products = cur.fetchall()
+    conn.close()
+    return jsonify({
+        'success': True,
+        'products': [
+            {
+                'id': row[0],
+                'name': row[1],
+                'type': row[2],
+                'price': row[3]
+            } for row in products
+        ]
+    })
 
 # =============================
 # INVENTORY

@@ -285,5 +285,23 @@ def init_db():
             "('expiry_critical_days', '7'), ('expiry_warning_days', '30')"
         )
 
+    # Migration: Add source column to sales table for transaction source tracking
+    cursor.execute("PRAGMA table_info(sales)")
+    sales_columns = [row[1] for row in cursor.fetchall()]
+    if 'source' not in sales_columns:
+        cursor.execute("ALTER TABLE sales ADD COLUMN source VARCHAR(20)")
+        cursor.execute("UPDATE sales SET source = 'POS' WHERE source IS NULL")
+    if 'date_encoded' not in sales_columns:
+        cursor.execute("ALTER TABLE sales ADD COLUMN date_encoded TEXT")
+        cursor.execute("UPDATE sales SET date_encoded = datetime('now', 'localtime') WHERE date_encoded IS NULL")
+    if 'customer_name' not in sales_columns:
+        cursor.execute("ALTER TABLE sales ADD COLUMN customer_name VARCHAR(200)")
+    if 'discount' not in sales_columns:
+        cursor.execute("ALTER TABLE sales ADD COLUMN discount REAL DEFAULT 0")
+    if 'payment_method' not in sales_columns:
+        cursor.execute("ALTER TABLE sales ADD COLUMN payment_method VARCHAR(50)")
+    if 'notes' not in sales_columns:
+        cursor.execute("ALTER TABLE sales ADD COLUMN notes TEXT")
+
     conn.commit()
     conn.close()

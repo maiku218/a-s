@@ -1,0 +1,625 @@
+{% extends 'admin_dashboard.html' %}
+{% block page_title %}Manual Sales Entry{% endblock %}
+
+{% block content %}
+<script src="/static/js/chart.min.js"></script>
+
+<div class="card">
+    <div class="page-header">
+        <div style="display: flex; align-items: center; gap: 12px;">
+            <a href="{{ url_for('sales_dashboard') }}" class="back-link">← Back to Sales Dashboard</a>
+            <h1 class="page-title">Manual Sales Entry</h1>
+        </div>
+        <p class="page-subtitle">Encode historical sales transactions that were not processed through POS checkout</p>
+    </div>
+
+    <!-- Alert Messages -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    <div class="flash-messages" style="margin-bottom: 16px;">
+        {% for category, message in messages %}
+        <div class="alert alert-{{ category }}" style="padding: 12px 16px; border-radius: var(--radius); margin-bottom: 8px; font-size: 13px;
+             {% if category == 'error' %}background: #fef2f2; border: 1px solid #fecaca; color: #991b1b;{% elif category == 'success' %}background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534;{% else %}background: #eff6ff; border: 1px solid #bfdbfe; color: #1e40af;{% endif %}">
+            {{ message }}
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+    {% endwith %}
+
+    <!-- Tab Navigation -->
+    <div style="display: flex; gap: 0; margin-bottom: 24px; border-bottom: 1px solid var(--border); overflow-x: auto;">
+        <button type="button" class="tab-btn active" onclick="switchTab('encode')" id="tab-encode">
+            Encode Sales
+        </button>
+        <button type="button" class="tab-btn" onclick="switchTab('records')" id="tab-records">
+            Manual Sales Records
+        </button>
+    </div>
+
+    <!-- Tab 1: Encode Sales Form -->
+    <div id="tab-encode-content" class="tab-content active">
+        <form id="manualSalesForm" style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+            <div style="grid-column: 1 / -1; background: var(--bg); padding: 20px; border-radius: var(--radius-lg); border: 1px solid var(--border);">
+                <h3 style="font-size: 16px; font-weight: 700; margin-bottom: 16px; display: flex; align-items: center; gap: 8px;">
+                    <span style="color: var(--accent);">📝</span> Transaction Details
+                </h3>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                    <div style="display: flex; flex-direction: column; gap: 6px;">
+                        <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary);">Transaction Date <span style="color: var(--danger);">*</span></label>
+                        <input type="date" id="txnDate" required style="padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 13px;">
+                        <small style="color: var(--text-muted);">The actual date when the sale occurred (e.g., August 15, 2026)</small>
+                    </div>
+                    <div style="display: flex; flex-direction: column; gap: 6px;">
+                        <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary);">Receipt / Reference Number <span style="color: var(--danger);">*</span></label>
+                        <input type="text" id="receiptNumber" required placeholder="e.g., MAN-001 or original receipt no." style="padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 13px;">
+                    </div>
+                    <div style="display: flex; flex-direction: column; gap: 6px;">
+                        <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary);">Customer Name</label>
+                        <input type="text" id="customerName" placeholder="Optional" style="padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 13px;">
+                    </div>
+                    <div style="display: flex; flex-direction: column; gap: 6px;">
+                        <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary);">Payment Method <span style="color: var(--danger);">*</span></label>
+                        <select id="paymentMethod" required style="padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 13px;">
+                            <option value="">Select payment method</option>
+                            <option value="Cash">Cash</option>
+                            <option value="Card">Card</option>
+                            <option value="GCash">GCash</option>
+                            <option value="Maya">Maya</option>
+                            <option value="Check">Check</option>
+                            <option value="On Account">On Account</option>
+                        </select>
+                    </div>
+                    <div style="display: flex; flex-direction: column; gap: 6px;">
+                        <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary);">Discount (₱)</label>
+                        <input type="number" id="discount" value="0" min="0" step="0.01" style="padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 13px;">
+                    </div>
+                    <div style="grid-column: 1 / -1; display: flex; flex-direction: column; gap: 6px;">
+                        <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary);">Notes</label>
+                        <textarea id="notes" rows="2" placeholder="Optional notes about this historical transaction..." style="padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 13px;"></textarea>
+                    </div>
+                </div>
+            </div>
+
+            <div style="grid-column: 1 / -1; background: var(--bg); padding: 20px; border-radius: var(--radius-lg); border: 1px solid var(--border);">
+                <h3 style="font-size: 16px; font-weight: 700; margin-bottom: 16px; display: flex; align-items: center; gap: 8px;">
+                    <span style="color: var(--accent);">📦</span> Products
+                </h3>
+                <div style="display: flex; gap: 12px; margin-bottom: 16px;">
+                    <input type="text" id="productSearch" placeholder="Search products..." style="flex: 1; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 13px;">
+                    <button type="button" id="addProductBtn" class="btn btn-primary" style="padding: 8px 16px;">Add Product</button>
+                </div>
+                <div id="productResults" style="max-height: 200px; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 16px; background: white;"></div>
+                <table id="itemsTable" style="width: 100%; border-collapse: collapse; margin-bottom: 16px;">
+                    <thead>
+                        <tr style="border-bottom: 2px solid var(--border);">
+                            <th style="text-align: left; padding: 12px; font-size: 13px; color: var(--text-secondary);">Product</th>
+                            <th style="text-align: left; padding: 12px; font-size: 13px; color: var(--text-secondary);">Category</th>
+                            <th style="text-align: center; padding: 12px; font-size: 13px; color: var(--text-secondary);">Quantity</th>
+                            <th style="text-align: right; padding: 12px; font-size: 13px; color: var(--text-secondary);">Unit Price (₱)</th>
+                            <th style="text-align: right; padding: 12px; font-size: 13px; color: var(--text-secondary);">Subtotal (₱)</th>
+                            <th style="text-align: center; padding: 12px; font-size: 13px; color: var(--text-secondary);">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="itemsBody">
+                    </tbody>
+                </table>
+                <div style="display: flex; justify-content: flex-end; gap: 12px; font-size: 14px;">
+                    <div style="font-weight: 700; color: var(--text-secondary);">Total:</div>
+                    <div id="grandTotal" style="font-size: 20px; font-weight: 900; color: var(--text);">₱0.00</div>
+                </div>
+            </div>
+
+            <div style="grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 12px; margin-top: 20px;">
+                <button type="button" onclick="resetForm()" class="btn btn-secondary" style="padding: 10px 24px;">Reset</button>
+                <button type="submit" form="manualSalesForm" class="btn btn-success" style="padding: 10px 24px;">Save Manual Sale</button>
+            </div>
+        </form>
+    </div>
+
+    <!-- Tab 2: Manual Sales Records -->
+    <div id="tab-records-content" class="tab-content" style="display: none;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 12px;">
+            <div style="display: flex; gap: 8px; font-size: 12px; color: var(--text-secondary); font-weight: 600;">
+                Quick Filter:
+                <button type="button" class="btn btn-secondary btn-sm preset-btn" data-source="MANUAL" style="padding: 4px 10px;">Manual Only</button>
+                <button type="button" class="btn btn-secondary btn-sm preset-btn" data-source="all" style="padding: 4px 10px;">All</button>
+            </div>
+            <form method="GET" action="{{ url_for('manual_sales_entry') }}" style="display: flex; gap: 8px; align-items: center;">
+                <input type="date" name="date_from" value="{{ date_from or '' }}" style="padding: 6px 10px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 12px;">
+                <input type="date" name="date_to" value="{{ date_to or '' }}" style="padding: 6px 10px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 12px;">
+                <select name="source" style="padding: 6px 10px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 12px;">
+                    <option value="">All Sources</option>
+                    <option value="MANUAL" {% if source == 'MANUAL' %}selected{% endif %}>Manual Only</option>
+                    <option value="POS" {% if source == 'POS' %}selected{% endif %}>POS Only</option>
+                </select>
+                <button type="submit" class="btn btn-primary" style="padding: 6px 14px; font-size: 12px;">Apply</button>
+                <a href="{{ url_for('manual_sales_entry') }}" class="btn btn-secondary" style="padding: 6px 14px; font-size: 12px; text-decoration: none;">Reset</a>
+            </form>
+        </div>
+
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Transaction ID</th>
+                        <th>Transaction Date</th>
+                        <th>Receipt #</th>
+                        <th>Customer</th>
+                        <th>Items</th>
+                        <th>Total Amount</th>
+                        <th>Payment Method</th>
+                        <th>Source</th>
+                        <th>Encoded By</th>
+                        <th>Date Encoded</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for s in manual_sales %}
+                <tr>
+                    <td style="font-weight: 600; font-family: monospace; font-size: 12px;">#{{ s[0] }}</td>
+                    <td>{{ s[1] | format_date('%Y-%m-%d') if s[1] else '-' }}</td>
+                    <td style="font-weight: 600;">{{ s[2] or '-' }}</td>
+                    <td>{{ s[3] or '-' }}</td>
+                    <td>{{ s[4] if s[4] is not none else 0 }}</td>
+                    <td style="font-weight: 600;">₱{{ "%.2f"|format(s[5]) if s[5] is not none else 0 }}</td>
+                    <td>{{ s[9] or '-' }}</td>
+                    <td><span style="font-size: 11px; padding: 2px 8px; border-radius: 12px; background: {% if s[6] == 'MANUAL' %}#fef3c7{% else %}#dbeafe{% endif %}; color: {% if s[6] == 'MANUAL' %}#d97706{% else %}#2563eb{% endif %};">{{ s[6] }}</span></td>
+                    <td>{{ s[7] or '-' }}</td>
+                    <td>{{ s[8] | format_date('%Y-%m-%d %H:%M') if s[8] else '-' }}</td>
+                    <td>
+                        <div style="display: flex; gap: 4px;">
+                            <button type="button" class="btn btn-sm btn-primary" onclick="viewSaleDetails({{ s[0] }})" title="View Details">View</button>
+                            {% if s[6] == 'MANUAL' and s[5] != 'Voided' %}
+                            <button type="button" class="btn btn-sm btn-primary" onclick="editSale({{ s[0] }})" title="Edit">Edit</button>
+                            <button type="button" class="btn btn-sm btn-danger" onclick="voidSale({{ s[0] }})" title="Void">Void</button>
+                            {% endif %}
+                        </div>
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="11" style="text-align: center; color: var(--text-secondary); padding: 20px;">No manual sales records found.</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Sale Details Modal -->
+<div id="saleModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center;">
+    <div style="background: white; border-radius: var(--radius-lg); padding: 24px; max-width: 600px; width: 90%; max-height: 90vh; overflow-y: auto;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <h3 style="font-size: 18px; font-weight: 700;">Sale Details</h3>
+            <button type="button" onclick="closeSaleModal()" style="background: none; border: none; font-size: 24px; cursor: pointer;">×</button>
+        </div>
+        <div id="saleModalContent"></div>
+        <div style="margin-top: 20px; display: flex; gap: 8px; justify-content: flex-end;">
+            <button type="button" onclick="closeSaleModal()" class="btn btn-secondary">Close</button>
+        </div>
+    </div>
+</div>
+
+<style>
+.tab-btn {
+    flex: 1;
+    padding: 12px 20px;
+    background: var(--bg);
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--text-secondary);
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+.tab-btn:hover {
+    background: var(--surface);
+    color: var(--text);
+}
+.tab-btn.active {
+    background: white;
+    border-bottom: 2px solid var(--accent);
+    color: var(--accent);
+}
+.tab-content {
+    display: none;
+    animation: fadeIn 0.3s ease;
+}
+.tab-content.active {
+    display: block;
+}
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+.btn-sm {
+    padding: 4px 10px;
+    font-size: 12px;
+}
+</style>
+
+<script>
+let items = [];
+let currentEditingSaleId = null;
+
+// Product search
+const productSearch = document.getElementById('productSearch');
+const productResults = document.getElementById('productResults');
+let productDebounce;
+
+productSearch.addEventListener('input', function() {
+    clearTimeout(productDebounce);
+    productDebounce = setTimeout(() => {
+        const q = this.value.trim();
+        if (q.length < 1) {
+            productResults.innerHTML = '';
+            return;
+        }
+        fetch(`/api/products_search?q=${encodeURIComponent(q)}`)
+            .then(r => r.json())
+            .then(data => {
+                productResults.innerHTML = '';
+                if (data.success && data.products.length > 0) {
+                    data.products.forEach(p => {
+                        const div = document.createElement('div');
+                        div.style.padding = '8px 12px';
+                        div.style.borderBottom = '1px solid var(--border)';
+                        div.style.cursor = 'pointer';
+                        div.style.display = 'flex';
+                        div.style.justifyContent = 'space-between';
+                        div.style.alignItems = 'center';
+                        div.innerHTML = `
+                            <div>
+                                <div style="font-weight: 600; font-size: 13px;">${escapeHtml(p.name)}</div>
+                                <div style="font-size: 11px; color: var(--text-secondary);">${p.type} • ₱${parseFloat(p.price).toFixed(2)}</div>
+                            </div>
+                            <span style="font-size: 11px; color: var(--accent); font-weight: 600;">+</span>
+                        `;
+                        div.onclick = () => addProductToList(p);
+                        productResults.appendChild(div);
+                    });
+                } else {
+                    productResults.innerHTML = '<div style="padding: 8px 12px; color: var(--text-muted);">No products found</div>';
+                }
+            });
+    }, 300);
+});
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function addProductToList(product) {
+    productResults.innerHTML = '';
+    productSearch.value = '';
+
+    // Check if already in list
+    const existing = items.find(i => i.product_id === product.id);
+    if (existing) {
+        existing.quantity += 1;
+    } else {
+        items.push({
+            product_id: product.id,
+            product_name: product.name,
+            product_type: product.type,
+            quantity: 1,
+            unit_price: parseFloat(product.price)
+        });
+    }
+    renderItems();
+    productSearch.focus();
+}
+
+function removeItem(index) {
+    items.splice(index, 1);
+    renderItems();
+}
+
+function updateQuantity(index, newQty) {
+    newQty = parseInt(newQty);
+    if (newQty <= 0) {
+        removeItem(index);
+    } else {
+        items[index].quantity = newQty;
+        renderItems();
+    }
+}
+
+function updateUnitPrice(index, newPrice) {
+    items[index].unit_price = parseFloat(newPrice) || 0;
+    renderItems();
+}
+
+function renderItems() {
+    const tbody = document.getElementById('itemsBody');
+    tbody.innerHTML = '';
+    let grandTotal = 0;
+
+    items.forEach((item, index) => {
+        const subtotal = item.quantity * item.unit_price;
+        grandTotal += subtotal;
+
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td style="padding: 12px; font-size: 13px;">
+                <div style="font-weight: 600;">${escapeHtml(item.product_name)}</div>
+                <input type="hidden" name="items[${index}][product_id]" value="${item.product_id}">
+            </td>
+            <td style="padding: 12px; font-size: 13px; color: var(--text-secondary);">${item.product_type}</td>
+            <td style="padding: 12px; text-align: center;">
+                <input type="number" value="${item.quantity}" min="1" onchange="updateQuantity(${index}, this.value)" style="width: 60px; padding: 4px 8px; font-size: 13px;">
+                <input type="hidden" name="items[${index}][quantity]" value="${item.quantity}">
+            </td>
+            <td style="padding: 12px; text-align: right;">
+                <input type="number" value="${item.unit_price.toFixed(2)}" min="0" step="0.01" onchange="updateUnitPrice(${index}, this.value)" style="width: 90px; padding: 4px 8px; font-size: 13px; text-align: right;">
+                <input type="hidden" name="items[${index}][unit_price]" value="${item.unit_price}">
+            </td>
+            <td style="padding: 12px; text-align: right; font-weight: 600;">₱${subtotal.toFixed(2)}</td>
+            <td style="padding: 12px; text-align: center;">
+                <button type="button" onclick="removeItem(${index})" class="btn btn-sm btn-danger" style="padding: 4px 8px;">Remove</button>
+            </td>
+        `;
+        tbody.appendChild(tr);
+    });
+
+    document.getElementById('grandTotal').textContent = '₱' + grandTotal.toFixed(2);
+}
+
+function resetForm() {
+    document.getElementById('manualSalesForm').reset();
+    items = [];
+    renderItems();
+    document.getElementById('dateFrom').value = '';
+    document.getElementById('dateTo').value = '';
+}
+
+// Form submission
+document.getElementById('manualSalesForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+
+    const txnDate = document.getElementById('txnDate').value;
+    const receiptNumber = document.getElementById('receiptNumber').value.trim();
+    const customerName = document.getElementById('customerName').value.trim();
+    const paymentMethod = document.getElementById('paymentMethod').value;
+    const discount = document.getElementById('discount').value || 0;
+    const notes = document.getElementById('notes').value.trim();
+
+    if (!txnDate) {
+        alert('Transaction date is required');
+        return;
+    }
+    if (!receiptNumber) {
+        alert('Receipt number is required');
+        return;
+    }
+    if (!paymentMethod) {
+        alert('Payment method is required');
+        return;
+    }
+    if (items.length === 0) {
+        alert('At least one product is required');
+        return;
+    }
+
+    const formData = {
+        transaction_date: txnDate,
+        receipt_number: receiptNumber,
+        customer_name: customerName,
+        payment_method: paymentMethod,
+        discount: discount,
+        notes: notes,
+        items: items.map(item => ({
+            product_id: item.product_id,
+            quantity: item.quantity,
+            unit_price: item.unit_price
+        }))
+    };
+
+    fetch('/api/manual_sales_entry', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData)
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            alert(data.message);
+            window.location.href = window.location.pathname;
+        } else {
+            alert(data.message);
+        }
+    })
+    .catch(err => {
+        alert('Error saving sale: ' + err.message);
+    });
+});
+
+// Tab switching
+function switchTab(tabName) {
+    document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+    document.getElementById('tab-' + tabName).classList.add('active');
+    document.getElementById('tab-' + tabName + '-content').classList.add('active');
+}
+
+// Preset filter buttons
+document.querySelectorAll('.preset-btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+        const source = this.getAttribute('data-source');
+        const url = new URL(window.location.href);
+        if (source === 'all') {
+            url.searchParams.delete('source');
+        } else {
+            url.searchParams.set('source', source);
+        }
+        window.location.href = url.toString();
+    });
+});
+
+// Sale details
+function viewSaleDetails(saleId) {
+    fetch(`/api/manual_sales/${saleId}`)
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                const s = data.sale;
+                const itemsHtml = data.items.map(item => `
+                    <tr>
+                        <td style="padding: 8px; border-bottom: 1px solid var(--border);">${escapeHtml(item.product_name)}</td>
+                        <td style="padding: 8px; border-bottom: 1px solid var(--border); color: var(--text-secondary);">${item.product_type}</td>
+                        <td style="padding: 8px; border-bottom: 1px solid var(--border); text-align: center;">${item.quantity}</td>
+                        <td style="padding: 8px; border-bottom: 1px solid var(--border); text-align: right;">₱${parseFloat(item.unit_price).toFixed(2)}</td>
+                        <td style="padding: 8px; border-bottom: 1px solid var(--border); text-align: right; font-weight: 600;">₱${parseFloat(item.subtotal).toFixed(2)}</td>
+                    </tr>
+                `).join('');
+
+                document.getElementById('saleModalContent').innerHTML = `
+                    <div style="margin-bottom: 16px;">
+                        <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px;">
+                            <span>Receipt Number:</span>
+                            <strong>${escapeHtml(s.receipt_number || '-')}</strong>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px;">
+                            <span>Transaction Date:</span>
+                            <strong>${s.transaction_date || '-'}</strong>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px;">
+                            <span>Customer:</span>
+                            <strong>${escapeHtml(s.customer_name || '-')}</strong>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px;">
+                            <span>Payment Method:</span>
+                            <strong>${escapeHtml(s.payment_method || '-')}</strong>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px;">
+                            <span>Discount:</span>
+                            <strong>-₱${parseFloat(s.discount || 0).toFixed(2)}</strong>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px;">
+                            <span>Status:</span>
+                            <strong style="color: ${s.sale_status === 'Voided' ? 'var(--danger)' : 'var(--success)'}">${s.sale_status}</strong>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px;">
+                            <span>Source:</span>
+                            <strong>${escapeHtml(s.source)}</strong>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px;">
+                            <span>Encoded By:</span>
+                            <strong>${escapeHtml(s.encoded_by || '-')}</strong>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px;">
+                            <span>Date Encoded:</span>
+                            <strong>${s.date_encoded || '-'}</strong>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 12px; padding-top: 8px; border-top: 1px solid var(--border);">
+                            <span>Total Amount:</span>
+                            <strong style="font-size: 16px;">₱${parseFloat(s.total_amount).toFixed(2)}</strong>
+                        </div>
+                    </div>
+                    <table style="width: 100%; font-size: 13px;">
+                        <thead>
+                            <tr>
+                                <th style="text-align: left; padding: 8px; color: var(--text-secondary);">Product</th>
+                                <th style="text-align: left; padding: 8px; color: var(--text-secondary);">Category</th>
+                                <th style="text-align: center; padding: 8px; color: var(--text-secondary);">Qty</th>
+                                <th style="text-align: right; padding: 8px; color: var(--text-secondary);">Unit Price</th>
+                                <th style="text-align: right; padding: 8px; color: var(--text-secondary);">Subtotal</th>
+                            </tr>
+                        </thead>
+                        <tbody>${itemsHtml}</tbody>
+                    </table>
+                `;
+                document.getElementById('saleModal').style.display = 'flex';
+            } else {
+                alert(data.message);
+            }
+        });
+}
+
+function closeSaleModal() {
+    document.getElementById('saleModal').style.display = 'none';
+}
+
+function editSale(saleId) {
+    window.location.href = window.location.pathname + '?edit=' + saleId;
+}
+
+function voidSale(saleId) {
+    const reason = prompt('Enter reason for voiding this sale:');
+    if (reason === null || reason.trim() === '') {
+        alert('Reason is required');
+        return;
+    }
+    if (!confirm('Are you sure you want to void this sale? This cannot be undone.')) {
+        return;
+    }
+    fetch(`/api/manual_sales/${saleId}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' }
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            alert(data.message);
+            window.location.reload();
+        } else {
+            alert(data.message);
+        }
+    });
+}
+
+// Close modal on outside click
+document.getElementById('saleModal').addEventListener('click', function(e) {
+    if (e.target === this) closeSaleModal();
+});
+
+// Initialize
+document.addEventListener('DOMContentLoaded', function() {
+    renderItems();
+});
+</script>
+{% endblock %}
+
+{% block help_tour %}
+<script>
+const HELP_TOUR_STEPS = [
+  {
+    selector: "#tab-encode-content",
+    title: "Manual Sales Entry Form",
+    category: "core-features",
+    purpose: "Encode historical sales transactions that were recorded before the POS system was implemented.",
+    how_to_use: [
+      "Enter the actual transaction date (not the encoding date)",
+      "Enter the original receipt number or create a reference number",
+      "Add products with quantities and historical selling prices",
+      "The system calculates subtotals and grand total automatically",
+      "Click Save to record the transaction without affecting current inventory"
+    ],
+    description: "Form for entering historical sales data.",
+    instruction: "Fill out the transaction details and add products to record a manual sale."
+  },
+  {
+    selector: "#tab-records-content",
+    title: "Manual Sales Records",
+    category: "core-features",
+    purpose: "View and manage all manually encoded sales transactions.",
+    how_to_use: [
+      "View all manual sales with transaction details",
+      "Use search and filters to find specific records",
+      "Click View to see full transaction details",
+      "Click Edit to correct a historical transaction",
+      "Click Void to mark an incorrect transaction as voided"
+    ],
+    description: "Table of manually encoded sales.",
+    instruction: "Review, edit, or void manual sales records as needed."
+  }
+];
+window.HELP_TOUR_STEPS = HELP_TOUR_STEPS;
+window.HELP_TOUR_STORAGE_KEY = "helptour_manual_sales_entry";
+</script>
+<script src="/static/js/help-tour.js"></script>
+{% endblock %}

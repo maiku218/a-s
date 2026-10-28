@@ -2,127 +2,359 @@
 {% block page_title %}Sales Dashboard{% endblock %}
 
 {% block content %}
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="/static/js/chart.min.js"></script>
 
 <div class="card">
     <div class="page-header">
-        <h1 class="page-title">Sales Dashboard</h1>
-        <p class="page-subtitle">Overview of all sales performance</p>
+        <div style="display: flex; align-items: center; gap: 12px;">
+            <a href="{{ url_for('admin_dashboard') }}" class="back-link">← Back to Dashboard</a>
+            <h1 class="page-title">Sales Dashboard</h1>
+        </div>
+        <p class="page-subtitle">Overall sales analytics combining Medical and Non-Medical sales</p>
     </div>
 
-    <form method="GET" action="{{ url_for('sales_dashboard') }}" style="display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap; align-items: end;">
-        <div>
-            <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 4px;">From</label>
-            <input type="date" name="date_from" value="{{ date_from or '' }}" style="padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 13px;">
+    <!-- Date Filter with Quick Presets -->
+    <form method="GET" action="{{ url_for('sales_dashboard') }}" id="dateFilterForm" style="display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap; align-items: center;">
+        <div style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary); font-weight: 600;">
+            Quick Filter:
         </div>
-        <div>
+        <button type="button" class="btn btn-secondary btn-sm preset-btn" data-preset="today" style="padding: 6px 12px; font-size: 12px;">Today</button>
+        <button type="button" class="btn btn-secondary btn-sm preset-btn" data-preset="yesterday" style="padding: 6px 12px; font-size: 12px;">Yesterday</button>
+        <button type="button" class="btn btn-secondary btn-sm preset-btn" data-preset="7days" style="padding: 6px 12px; font-size: 12px;">Last 7 Days</button>
+        <button type="button" class="btn btn-secondary btn-sm preset-btn" data-preset="thismonth" style="padding: 6px 12px; font-size: 12px;">This Month</button>
+        <button type="button" class="btn btn-secondary btn-sm preset-btn" data-preset="lastmonth" style="padding: 6px 12px; font-size: 12px;">Last Month</button>
+        <button type="button" class="btn btn-secondary btn-sm preset-btn" data-preset="thisyear" style="padding: 6px 12px; font-size: 12px;">This Year</button>
+        <div style="display: flex; align-items: center; gap: 6px; border-left: 1px solid var(--border); padding-left: 12px; margin-left: 8px;">
+            <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 4px;">From</label>
+            <input type="date" name="date_from" id="dateFrom" value="{{ date_from or '' }}" style="padding: 6px 10px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 12px;">
+        </div>
+        <div style="display: flex; align-items: center; gap: 6px;">
             <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 4px;">To</label>
-            <input type="date" name="date_to" value="{{ date_to or '' }}" style="padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 13px;">
+            <input type="date" name="date_to" id="dateTo" value="{{ date_to or '' }}" style="padding: 6px 10px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 12px;">
         </div>
         <button type="submit" class="btn btn-primary" style="padding: 8px 16px; font-size: 13px;">Apply Filter</button>
         <a href="{{ url_for('sales_dashboard') }}" class="btn btn-secondary" style="padding: 8px 16px; font-size: 13px; text-decoration: none;">Reset</a>
-        <button type="submit" name="export" value="csv" class="btn btn-success" style="padding: 8px 16px; font-size: 13px; margin-left: auto;">Export CSV</button>
+
+        <!-- Export Controls -->
+        <div style="border-left: 1px solid var(--border); padding-left: 12px; margin-left: 8px; display: flex; gap: 6px; align-items: center;">
+            <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary);">Export:</label>
+            <button type="submit" name="export" value="csv" class="btn btn-success btn-sm" style="padding: 6px 12px; font-size: 12px;">CSV</button>
+            <button type="submit" name="export" value="excel" class="btn btn-primary btn-sm" style="padding: 6px 12px; font-size: 12px; background: var(--success); border: none;">Excel</button>
+            <button type="submit" name="export" value="pdf" class="btn btn-danger btn-sm" style="padding: 6px 12px; font-size: 12px; background: var(--danger); border: none;">PDF</button>
+            <button type="button" onclick="window.print()" class="btn btn-secondary btn-sm" style="padding: 6px 12px; font-size: 12px;">Print</button>
+        </div>
     </form>
 
     {% if date_from or date_to %}
     <div style="background: #f0f9ff; border: 1px solid #bae6fd; border-radius: var(--radius); padding: 10px 16px; margin-bottom: 20px; font-size: 13px; color: #0369a1;">
-        Showing custom range: {{ date_from or '...' }} to {{ date_to or '...' }}
+        Showing custom range: <strong>{{ date_from or '...' }} to {{ date_to or '...' }}</strong>
     </div>
     {% endif %}
 
-    {% if date_from or date_to %}
-    <div class="stats-grid" style="margin-bottom: 20px;">
-        <div class="stat-card" style="grid-column: 1 / -1; background: #f0f9ff; border: 1px solid #bae6fd;">
-            <div class="stat-label">Custom Range</div>
-            <div class="stat-value" style="color: #0369a1; font-size: 18px;">{{ date_from or '...' }} to {{ date_to or '...' }}</div>
+    <!-- Overall KPI Cards -->
+    <div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px;">
+        <div class="stat-card" style="background: linear-gradient(135deg, #1e293b, #334155); color: white;">
+            <div class="stat-label" style="color: #94a3b8; font-size: 12px;">Total Overall Revenue</div>
+            <div class="stat-value" style="color: white; font-size: 28px; font-weight: 900;">₱{{ "%.2f"|format(overall_sales) }}</div>
+            <div class="stat-meta" style="color: #94a3b8; font-size: 12px;">{{ overall_count }} transactions</div>
+        </div>
+        <div class="stat-card" style="background: linear-gradient(135deg, #10b981, #059669); color: white;">
+            <div class="stat-label" style="color: #a7f3d0; font-size: 12px;">Medical Revenue</div>
+            <div class="stat-value" style="color: white; font-size: 28px; font-weight: 900;">₱{{ "%.2f"|format(overall_medical_sales) }}</div>
+            <div class="stat-meta" style="color: #a7f3d0; font-size: 12px;">{{ "%.1f"|format((overall_medical_sales / overall_sales * 100) if overall_sales > 0 else 0) }}% of total</div>
+        </div>
+        <div class="stat-card" style="background: linear-gradient(135deg, #3b82f6, #2563eb); color: white;">
+            <div class="stat-label" style="color: #bfdbfe; font-size: 12px;">Non-Medical Revenue</div>
+            <div class="stat-value" style="color: white; font-size: 28px; font-weight: 900;">₱{{ "%.2f"|format(overall_nonmedical_sales) }}</div>
+            <div class="stat-meta" style="color: #bfdbfe; font-size: 12px;">{{ "%.1f"|format((overall_nonmedical_sales / overall_sales * 100) if overall_sales > 0 else 0) }}% of total</div>
+        </div>
+        <div class="stat-card" style="background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: white;">
+            <div class="stat-label" style="color: #ddd6fe; font-size: 12px;">Completed Transactions</div>
+            <div class="stat-value" style="color: white; font-size: 28px; font-weight: 900;">{{ overall_count }}</div>
+            <div class="stat-meta" style="color: #ddd6fe; font-size: 12px;">Distinct orders</div>
+        </div>
+        <div class="stat-card" style="background: linear-gradient(135deg, #f59e0b, #d97706); color: white;">
+            <div class="stat-label" style="color: #fef3c7; font-size: 12px;">Products Sold</div>
+            <div class="stat-value" style="color: white; font-size: 28px; font-weight: 900;">{{ total_quantity }}</div>
+            <div class="stat-meta" style="color: #fef3c7; font-size: 12px;">Total units</div>
+        </div>
+        <div class="stat-card" style="background: linear-gradient(135deg, #ec4899, #db2777); color: white;">
+            <div class="stat-label" style="color: #fce7f3; font-size: 12px;">Gross Profit</div>
+            <div class="stat-value" style="color: white; font-size: 28px; font-weight: 900;">₱{{ "%.2f"|format(gross_profit) }}</div>
+            <div class="stat-meta" style="color: #fce7f3; font-size: 12px;">{{ "%.1f"|format(profit_margin) }}% margin</div>
+        </div>
+        <div class="stat-card" style="background: linear-gradient(135deg, #06b6d4, #0891b2); color: white;">
+            <div class="stat-label" style="color: #cffafe; font-size: 12px;">Sales Growth</div>
+            <div class="stat-value" style="color: white; font-size: 28px; font-weight: 900;">{{ sales_growth }}%</div>
+            <div class="stat-meta" style="color: #cffafe; font-size: 12px;">vs previous period</div>
+        </div>
+        <div class="stat-card" style="background: linear-gradient(135deg, #6366f1, #4f46e5); color: white;">
+            <div class="stat-label" style="color: #e0e7ff; font-size: 12px;">Avg Transaction Value</div>
+            <div class="stat-value" style="color: white; font-size: 28px; font-weight: 900;">₱{{ "%.2f"|format(avg_order_value) }}</div>
+            <div class="stat-meta" style="color: #e0e7ff; font-size: 12px;">Per order</div>
         </div>
     </div>
-    {% endif %}
 
-    <div class="stats-grid">
-        {% if not date_from and not date_to %}
-        <div class="stat-card">
-            <div class="stat-label">Today</div>
-            <div class="stat-value" style="color: var(--accent);">₱{{ "%.2f"|format(daily_sales) }}</div>
-            <div class="stat-meta"><span style="color: var(--accent);">M: ₱{{ "%.2f"|format(daily_medical_sales) }}</span> &nbsp; <span style="color: var(--success);">NM: ₱{{ "%.2f"|format(daily_nonmedical_sales) }}</span></div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-label">This Week</div>
-            <div class="stat-value" style="color: var(--success);">₱{{ "%.2f"|format(weekly_sales) }}</div>
-            <div class="stat-meta"><span style="color: var(--accent);">M: ₱{{ "%.2f"|format(weekly_medical_sales) }}</span> &nbsp; <span style="color: var(--success);">NM: ₱{{ "%.2f"|format(weekly_nonmedical_sales) }}</span></div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-label">This Month</div>
-            <div class="stat-value" style="color: var(--accent);">₱{{ "%.2f"|format(monthly_sales) }}</div>
-            <div class="stat-meta"><span style="color: var(--accent);">M: ₱{{ "%.2f"|format(monthly_medical_sales) }}</span> &nbsp; <span style="color: var(--success);">NM: ₱{{ "%.2f"|format(monthly_nonmedical_sales) }}</span></div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-label">This Year</div>
-            <div class="stat-value" style="color: var(--text);">₱{{ "%.2f"|format(yearly_sales) }}</div>
-            <div class="stat-meta"><span style="color: var(--accent);">M: ₱{{ "%.2f"|format(yearly_medical_sales) }}</span> &nbsp; <span style="color: var(--success);">NM: ₱{{ "%.2f"|format(yearly_nonmedical_sales) }}</span></div>
-        </div>
-        {% endif %}
-        <div class="stat-card">
-            <div class="stat-label">Overall</div>
-            <div class="stat-value" style="color: var(--text);">₱{{ "%.2f"|format(overall_sales) }}</div>
-            <div class="stat-meta"><span style="color: var(--accent);">M: ₱{{ "%.2f"|format(overall_medical_sales) }}</span> &nbsp; <span style="color: var(--success);">NM: ₱{{ "%.2f"|format(overall_nonmedical_sales) }}</span></div>
-        </div>
-    </div>
-
-    <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 20px;">
+    <!-- Charts Row -->
+    <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 20px; margin-bottom: 24px;">
+        <!-- Overall Revenue Trend (Line Chart) -->
         <div class="card" style="padding: 24px;">
-            <h3 style="font-size: 16px; font-weight: 700; margin-bottom: 20px;">
-                {% if date_from or date_to %}
-                Daily Sales - Medical vs Non-Medical ({{ date_from or '...' }} to {{ date_to or '...' }})
-                {% else %}
-                Daily Sales - Medical vs Non-Medical (Last 30 Days)
-                {% endif %}
+            <h3 style="font-size: 16px; font-weight: 700; margin-bottom: 16px; display: flex; align-items: center; gap: 8px;">
+                <span style="color: var(--accent);">📈</span> Revenue Trend
             </h3>
-            <canvas id="salesChart" height="150"></canvas>
-            <div style="margin-top: 15px; display: flex; gap: 20px; justify-content: center;">
-                <span style="color: var(--accent); font-weight: 600;">● Medical</span>
-                <span style="color: #3b82f6; font-weight: 600;">● Non-Medical</span>
+            <div style="display: flex; gap: 8px; margin-bottom: 16px;">
+                <button type="button" class="btn btn-secondary btn-sm trend-period-btn" data-period="daily" style="padding: 6px 12px;">Daily</button>
+                <button type="button" class="btn btn-secondary btn-sm trend-period-btn" data-period="weekly" style="padding: 6px 12px;">Weekly</button>
+                <button type="button" class="btn btn-secondary btn-sm trend-period-btn" data-period="monthly" style="padding: 6px 12px;">Monthly</button>
+                <button type="button" class="btn btn-secondary btn-sm trend-period-btn" data-period="yearly" style="padding: 6px 12px;">Yearly</button>
+            </div>
+            <canvas id="revenueTrendChart" height="200"></canvas>
+        </div>
+
+        <!-- Medical vs Non-Medical Comparison (Grouped Bar) -->
+        <div class="card" style="padding: 24px;">
+            <h3 style="font-size: 16px; font-weight: 700; margin-bottom: 16px; display: flex; align-items: center; gap: 8px;">
+                <span style="color: var(--accent);">📊</span> Category Comparison
+            </h3>
+            <canvas id="categoryComparisonChart" height="200"></canvas>
+        </div>
+    </div>
+
+    <!-- Sales Distribution (Donut) + Revenue vs Profit -->
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 24px;">
+        <div class="card" style="padding: 24px;">
+            <h3 style="font-size: 16px; font-weight: 700; margin-bottom: 16px; display: flex; align-items: center; gap: 8px;">
+                <span style="color: var(--accent);">🥧</span> Sales Distribution
+            </h3>
+            <canvas id="distributionChart" height="200"></canvas>
+            <div style="margin-top: 16px; display: flex; flex-direction: column; gap: 6px; font-size: 13px;">
+                <div style="display: flex; justify-content: space-between;">
+                    <span style="color: var(--text-secondary);">Medical</span>
+                    <span style="font-weight: 600; color: #10b981;">{{ "%.1f"|format((overall_medical_sales / overall_sales * 100) if overall_sales > 0 else 0) }}%</span>
+                </div>
+                <div style="display: flex; justify-content: space-between;">
+                    <span style="color: var(--text-secondary);">Non-Medical</span>
+                    <span style="font-weight: 600; color: #3b82f6;">{{ "%.1f"|format((overall_nonmedical_sales / overall_sales * 100) if overall_sales > 0 else 0) }}%</span>
+                </div>
             </div>
         </div>
 
         <div class="card" style="padding: 24px;">
-            <h3 style="font-size: 16px; font-weight: 700; margin-bottom: 20px;">Top Selling Products</h3>
-            <div style="max-height: 250px; overflow-y: auto;">
-                {% for p in popular %}
-                <div style="display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--border);">
-                    <div>
-                        <div style="font-weight: 600; font-size: 14px;">{{ p[0] }}</div>
-                        <div style="font-size: 12px; color: var(--text-secondary);">{{ p[1] }} sold</div>
-                    </div>
-                    <div style="font-weight: 800; color: var(--success);">₱{{ "%.2f"|format(p[2]) }}</div>
-                </div>
+            <h3 style="font-size: 16px; font-weight: 700; margin-bottom: 16px; display: flex; align-items: center; gap: 8px;">
+                <span style="color: var(--accent);">💰</span> Revenue & Profit Analysis
+            </h3>
+            <canvas id="revenueProfitChart" height="200"></canvas>
+        </div>
+    </div>
+
+    <!-- Automated Business Insights -->
+    <div class="card" style="margin-bottom: 24px;">
+        <h3 style="font-size: 16px; font-weight: 700; margin-bottom: 16px; display: flex; align-items: center; gap: 8px;">
+            <span style="color: var(--accent);">💡</span> Automated Business Insights
+        </h3>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px;">
+            {% for insight in insights %}
+            <div style="background: var(--bg); border-left: 4px solid var(--accent); padding: 12px 16px; border-radius: 0 var(--radius) var(--radius) 0; font-size: 13px;">
+                {% if insight.type == 'success' %}
+                <span style="color: #10b981; font-weight: 700;">✓ {{ insight.title }}</span>
+                {% elif insight.type == 'warning' %}
+                <span style="color: #f59e0b; font-weight: 700;">⚠ {{ insight.title }}</span>
                 {% else %}
-                <p class="table-empty">No sales data yet</p>
-                {% endfor %}
+                <span style="color: var(--accent); font-weight: 700;">ℹ {{ insight.title }}</span>
+                {% endif %}
+                <div style="margin-top: 4px; color: var(--text-secondary);">{{ insight.message }}</div>
             </div>
+            {% else %}
+            <div style="background: var(--bg); border-left: 4px solid var(--accent); padding: 12px 16px; border-radius: 0 var(--radius) var(--radius) 0; font-size: 13px;">
+                <span style="color: var(--text-secondary);">No insights available yet. Record some sales to generate insights.</span>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- Top Products Table -->
+    <div class="card">
+        <h3 style="font-size: 16px; font-weight: 700; margin-bottom: 16px;">Top Selling Products</h3>
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Product</th>
+                        <th>Type</th>
+                        <th>Qty Sold</th>
+                        <th>Revenue</th>
+                        <th>% of Total</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for p in best_selling %}
+                <tr>
+                    <td style="font-weight: 600;">{{ p.name }}</td>
+                    <td><span style="font-size: 11px; padding: 2px 8px; border-radius: 12px; background: {% if p.type == 'Medical' %}#dcfce7{% else %}#dbeafe{% endif %}; color: {% if p.type == 'Medical' %}#10b981{% else %}#2563eb{% endif %};">{{ p.type }}</span></td>
+                    <td>{{ p.qty }}</td>
+                    <td style="font-weight: 600;">₱{{ "%.2f"|format(p.revenue) }}</td>
+                    <td>{{ "%.1f"|format((p.revenue / overall_sales * 100) if overall_sales > 0 else 0) }}%</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="5" style="text-align: center; color: var(--text-secondary); padding: 20px;">No product sales data yet</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
         </div>
     </div>
 </div>
 
 <script>
-const ctx = document.getElementById('salesChart');
-new Chart(ctx, {
-    type: 'line',
-    data: {
-        labels: {{ medical_labels | tojson }},
-        datasets: [
-            { label: 'Medical Sales (₱)', data: {{ medical_values | tojson }}, borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,0.08)', tension: 0.4, fill: true },
-            { label: 'Non-Medical Sales (₱)', data: {{ nonmedical_values | tojson }}, borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.08)', tension: 0.4, fill: true }
-        ]
-    },
-    options: {
-        responsive: true,
-        plugins: { legend: { labels: { color: 'var(--text-secondary)', usePointStyle: true } } },
-        scales: {
-            x: { ticks: { color: '#94a3b8' }, grid: { color: '#f3f4f6' } },
-            y: { ticks: { color: '#94a3b8', callback: v => '₱' + v }, grid: { color: '#f3f4f6' } }
-        }
+// Chart instances
+let revenueTrendChart = null;
+let categoryComparisonChart = null;
+let distributionChart = null;
+let revenueProfitChart = null;
+
+// Initialize charts after data is loaded
+function initCharts() {
+    const trendCtx = document.getElementById('revenueTrendChart');
+    const catCtx = document.getElementById('categoryComparisonChart');
+    const distCtx = document.getElementById('distributionChart');
+    const revProfitCtx = document.getElementById('revenueProfitChart');
+
+    if (trendCtx && {{ trend_labels|tojson }}.length > 0) {
+        revenueTrendChart = new Chart(trendCtx, {
+            type: 'line',
+            data: {
+                labels: {{ trend_labels|tojson }},
+                datasets: [{
+                    label: 'Revenue (₱)',
+                    data: {{ trend_values|tojson }},
+                    borderColor: '#1e293b',
+                    backgroundColor: 'rgba(30,41,59,0.1)',
+                    tension: 0.4,
+                    fill: true,
+                    pointRadius: 3,
+                    pointHoverRadius: 6
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: { legend: { display: false } },
+                scales: {
+                    y: { ticks: { color: '#94a3b8', callback: v => '₱' + v }, grid: { color: '#f3f4f6' } },
+                    x: { ticks: { color: '#94a3b8' }, grid: { color: '#f3f4f6' } }
+                }
+            }
+        });
     }
+
+    if (catCtx) {
+        categoryComparisonChart = new Chart(catCtx, {
+            type: 'bar',
+            data: {
+                labels: ['Medical', 'Non-Medical'],
+                datasets: [{
+                    label: 'Revenue (₱)',
+                    data: [{{ overall_medical_sales }}, {{ overall_nonmedical_sales }}],
+                    backgroundColor: ['#10b981', '#3b82f6'],
+                    borderRadius: 6
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: { legend: { display: false } },
+                scales: {
+                    y: { ticks: { color: '#94a3b8', callback: v => '₱' + v }, grid: { color: '#f3f4f6', beginAtZero: true } },
+                    x: { ticks: { color: '#94a3b8' }, grid: { color: '#f3f4f6' } }
+                }
+            }
+        });
+    }
+
+    if (distCtx && {{ overall_sales }} > 0) {
+        distributionChart = new Chart(distCtx, {
+            type: 'doughnut',
+            data: {
+                labels: ['Medical', 'Non-Medical'],
+                datasets: [{
+                    data: [{{ overall_medical_sales }}, {{ overall_nonmedical_sales }}],
+                    backgroundColor: ['#10b981', '#3b82f6'],
+                    borderWidth: 0,
+                    hoverOffset: 20
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    legend: { position: 'bottom', labels: { color: '#94a3b8', font: { size: 12 } } },
+                    tooltip: { callbacks: { label: ctx => ctx.label + ': ₱' + ctx.parsed + ' (' + ((ctx.parsed / ({{ overall_medical_sales }} + {{ overall_nonmedical_sales }})) * 100).toFixed(1) + '%)' } }
+                },
+                cutout: '70%'
+            }
+        });
+    }
+
+    if (revProfitCtx) {
+        revenueProfitChart = new Chart(revProfitCtx, {
+            type: 'bar',
+            data: {
+                labels: ['Total Revenue', 'Medical Revenue', 'Non-Medical Revenue', 'Gross Profit'],
+                datasets: [{
+                    label: 'Amount (₱)',
+                    data: [{{ overall_sales }}, {{ overall_medical_sales }}, {{ overall_nonmedical_sales }}, {{ gross_profit }}],
+                    backgroundColor: ['#1e293b', '#10b981', '#3b82f6', '#ec4899'],
+                    borderRadius: 6
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: { legend: { display: false } },
+                scales: {
+                    y: { ticks: { color: '#94a3b8', callback: v => '₱' + v }, grid: { color: '#f3f4f6', beginAtZero: true } },
+                    x: { ticks: { color: '#94a3b8' }, grid: { color: '#f3f4f6' } }
+                }
+            }
+        });
+    }
+}
+
+// Quick preset filter buttons
+document.querySelectorAll('.preset-btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+        const preset = this.getAttribute('data-preset');
+        const today = new Date();
+        let from = '';
+        let to = today.toISOString().split('T')[0];
+
+        if (preset === 'today') {
+            from = today.toISOString().split('T')[0];
+            to = from;
+        } else if (preset === 'yesterday') {
+            const yesterday = new Date(today);
+            yesterday.setDate(yesterday.getDate() - 1);
+            from = yesterday.toISOString().split('T')[0];
+            to = from;
+        } else if (preset === '7days') {
+            const sevenDaysAgo = new Date(today);
+            sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+            from = sevenDaysAgo.toISOString().split('T')[0];
+        } else if (preset === 'thismonth') {
+            from = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-01';
+        } else if (preset === 'lastmonth') {
+            const lastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+            from = lastMonth.getFullYear() + '-' + String(lastMonth.getMonth() + 1).padStart(2, '0') + '-01';
+            const endOfLastMonth = new Date(today.getFullYear(), today.getMonth(), 0);
+            to = endOfLastMonth.toISOString().split('T')[0];
+        } else if (preset === 'thisyear') {
+            from = today.getFullYear() + '-01-01';
+        }
+
+        document.getElementById('dateFrom').value = from;
+        document.getElementById('dateTo').value = to;
+        document.getElementById('dateFilterForm').submit();
+    });
+});
+
+// Initialize charts on load
+document.addEventListener('DOMContentLoaded', function() {
+    setTimeout(initCharts, 100);
 });
 </script>
 {% endblock %}
@@ -132,42 +364,81 @@ new Chart(ctx, {
 const HELP_TOUR_STEPS = [
   {
     selector: ".stats-grid",
-    title: "Sales Statistics",
+    title: "Overall Sales KPIs",
     category: "core-features",
-    purpose: "Sales statistics give you an at-a-glance view of business performance across daily, weekly, monthly, and yearly periods.",
+    purpose: "Key performance indicators give you an at-a-glance view of overall business performance combining Medical and Non-Medical sales.",
     how_to_use: [
-      "Review Today, Week, Month, Year, and Overall totals to track performance trends",
-      "Compare Medical vs Non-Medical sales to understand product mix",
+      "Review Total Revenue, Medical vs Non-Medical breakdown, Transactions, Products Sold, Gross Profit, Sales Growth, and Average Transaction Value",
+      "All values are calculated from actual database records using line-item level categorization",
       "Use the date filter to isolate specific periods for deeper analysis"
     ],
-    description: "Overview of sales performance across different time periods.",
-    instruction: "View Today, Week, Month, Year, and Overall totals. Medical and Non-Medical sales are tracked separately."
+    description: "Overall sales statistics across all categories.",
+    instruction: "View KPI cards for revenue, transactions, quantities, profit, growth, and average order value."
   },
   {
-    selector: "#salesChart",
-    title: "Daily Sales Chart",
+    selector: "#revenueTrendChart",
+    title: "Revenue Trend Chart",
     category: "core-features",
-    purpose: "The chart visualizes sales trends, making it easy to spot spikes, drops, or seasonal patterns.",
+    purpose: "Visualize daily/weekly/monthly/yearly revenue trends over time.",
     how_to_use: [
-      "Hover over data points to see exact sales values for each day",
-      "Compare the Medical and Non-Medical lines to analyze category performance",
-      "Use the visual trend to plan inventory and staffing for upcoming days"
+      "Switch between Daily, Weekly, Monthly, and Yearly views using the period buttons",
+      "Hover over data points to see exact revenue values",
+      "Identify seasonal patterns and growth trends"
     ],
-    description: "Visualize daily sales trends over the past 30 days.",
-    instruction: "The chart shows Medical vs Non-Medical sales. Hover over data points for exact values."
+    description: "Line chart showing revenue trends over the selected period.",
+    instruction: "Use the period buttons to change the time granularity of the trend chart."
   },
   {
-    selector: ".card:has(h3)",
-    title: "Top Selling Products",
+    selector: "#categoryComparisonChart",
+    title: "Category Comparison Chart",
     category: "core-features",
-    purpose: "Knowing your best-selling products helps with merchandising, stock prioritization, and marketing decisions.",
+    purpose: "Compare Medical vs Non-Medical revenue side by side to understand your product mix.",
     how_to_use: [
-      "Review the ranked list to identify your highest-grossing products",
-      "Check both quantity sold and revenue to understand margins",
-      "Use this list to ensure top sellers are always well-stocked"
+      "See which category generates more revenue",
+      "Use this to inform inventory stocking decisions",
+      "Compare against the Sales Distribution donut for percentage context"
     ],
-    description: "See your best-performing products by quantity sold.",
-    instruction: "Products are ranked by total quantity sold and total revenue."
+    description: "Grouped bar chart comparing Medical vs Non-Medical revenue.",
+    instruction: "Bar chart showing Medical and Non-Medical revenue comparison."
+  },
+  {
+    selector: "#distributionChart",
+    title: "Sales Distribution Donut",
+    category: "core-features",
+    purpose: "See the percentage contribution of Medical vs Non-Medical sales to total revenue.",
+    how_to_use: [
+      "Hover over segments to see exact values and percentages",
+      "Medical and Non-Medical percentages always add up to 100%",
+      "Use this to understand your revenue concentration"
+    ],
+    description: "Donut chart showing revenue distribution by category.",
+    instruction: "Hover over donut segments for exact percentages."
+  },
+  {
+    selector: ".card:has(h3:contains('Automated Business Insights'))",
+    title: "Automated Business Insights",
+    category: "core-features",
+    purpose: "AI-generated insights based on your actual sales data to help you make informed business decisions.",
+    how_to_use: [
+      "Read insights about sales growth, top products, and average order value",
+      "Insights update automatically when you change the date filter",
+      "Use insights to identify opportunities and concerns"
+    ],
+    description: "Automated insights generated from sales data analysis.",
+    instruction: "Review business insights for performance trends and recommendations."
+  },
+  {
+    selector: ".card:has(table)",
+    title: "Top Selling Products Table",
+    category: "core-features",
+    purpose: "Ranked list of your best-selling products by quantity sold.",
+    how_to_use: [
+      "Review top products to prioritize stock and merchandising",
+      "See revenue contribution and percentage of total for each product",
+      "Use this to ensure best-sellers are always well-stocked"
+    ],
+    description: "Top-selling products ranked by quantity sold.",
+    instruction: "Products are ranked by quantity sold with revenue and percentage contribution."
   }
 ];
 window.HELP_TOUR_STEPS = HELP_TOUR_STEPS;
