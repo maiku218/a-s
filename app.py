@@ -591,7 +591,7 @@ def api_transactions():
                s.product_type, c.full_name as cashier_name,
                (SELECT COUNT(*) FROM sale_items WHERE sale_id = s.id) as items_count
         FROM sales s
-        JOIN cashiers c ON s.cashier_id = c.id
+        LEFT JOIN cashiers c ON s.cashier_id = c.id
         ORDER BY s.sale_date DESC
     """)
     sales = cur.fetchall()
@@ -606,7 +606,7 @@ def api_transactions():
             'total_amount': s[3],
             'sale_status': s[4],
             'product_type': s[5],
-            'cashier_name': s[6],
+            'cashier_name': s[6] if s[6] else 'pharmacon',
             'items_count': s[7]
         })
 

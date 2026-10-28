@@ -1,0 +1,63 @@
+TRANSACTION HISTORY IS BLANK - REASON AND FIX
+==============================================
+
+PROBLEM:
+--------
+The Transaction History page (/admin/transaction_history) shows blank / no data,
+even though the database contains 168 restored sales records.
+
+ROOT CAUSE:
+-----------
+The API endpoint /api/transactions (app.py:583) uses an INNER JOIN between
+sales and cashiers:
+
+    FROM sales s
+    JOIN cashiers c ON s.cashier_id = c.id
+
+After restoring pharmacon_backup.sql:
+- Sales table has 168 rows (all with cashier_id = 1)
+- Cashiers table has 0 rows
+
+An INNER JOIN requires a matching row in BOTH tables. Since there are no
+cashier records, the JOIN returns 0 rows, and the transaction list is empty.
+
+This happened because:
+1. The backup restore preserves admin credentials but NOT cashier accounts
+   (per the "restore all except credentials in admin and cashier" requirement).
+2. The original cashier who made those sales is no longer in the cashiers table.
+3. Sales made by the admin user (cashier_id = 1) have no matching cashier row.
+
+FIX:
+----
+Change the INNER JOIN to a LEFT JOIN in /api/transactions so sales are still
+returned even when the cashier record is missing. Display "Unknown Cashier" or
+the cashier_id when the cashier name is NULL.
+
+In app.py:583-596, change:
+
+    FROM sales s
+    JOIN cashiers c ON s.cashier_id = c.id
+
+to:
+
+    FROM sales s
+    LEFT JOIN cashiers c ON s.cashier_id = c.id
+
+And in the result mapping, handle NULL cashier_name:
+
+    'cashier_name': s[6] if s[6] else 'Unknown Cashier'
+
+ALTERNATIVE FIX (if cashier_id = 1 refers to admin):
+If cashier_id 1 corresponds to the admin user, you could also insert a cashier
+record with id = 1 so the JOIN matches. But LEFT JOIN is the safer, more robust
+solution.
+
+VERIFICATION:
+-------------
+Before fix:
+- SELECT COUNT(*) FROM sales JOIN cashiers ON sales.cashier_id = cashiers.id
+  -> 0 rows
+
+After fix (LEFT JOIN):
+- SELECT COUNT(*) FROM sales LEFT JOIN cashiers ON sales.cashier_id = cashiers.id
+  -> 168 rows
