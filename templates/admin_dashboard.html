@@ -100,6 +100,9 @@
         .badge-secondary { background: #f3f4f6; color: #475569; }
         .badge-void { background: #ffedd5; color: #9a3412; }
 
+        /* Nav badges */
+        .nav-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; padding: 0 6px; background: var(--danger); color: white; border-radius: 10px; font-size: 11px; font-weight: 700; margin-left: auto; }
+
         /* Forms */
         .form-group { display: flex; flex-direction: column; gap: 6px; }
         .form-label { font-size: 14px; font-weight: 600; color: var(--text); }
@@ -132,7 +135,7 @@
         .notification-btn { position: relative; padding: 8px; border-radius: var(--radius); cursor: pointer; transition: background 0.15s; background: none; border: none; color: var(--text-secondary); }
         .notification-btn:hover { background: var(--bg); }
         .notification-badge { position: absolute; top: 2px; right: 2px; width: 18px; height: 18px; background: var(--danger); color: white; font-size: 10px; font-weight: 700; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
-        .notification-dropdown { display: none; position: absolute; top: calc(100% + 8px); right: 0; width: 360px; max-height: 480px; overflow-y: auto; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); z-index: 2000; }
+        .notification-dropdown { display: none; position: absolute; top: calc(100% + 8px); right: 0; width: 512px; max-height: 480px; overflow-y: auto; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); z-index: 2000; }
         .notification-dropdown.show { display: block; }
         .notification-header { padding: 16px; border-bottom: 1px solid var(--border); font-weight: 700; font-size: 14px; display: flex; justify-content: space-between; align-items: center; }
         .notification-section { padding: 12px 16px; border-bottom: 1px solid var(--border); }
@@ -290,10 +293,10 @@
             Alerts
         </div>
         <div id="alerts-menu" style="display: {% if active_main == 'alerts' %}block{% else %}none{% endif %}; padding-left: 36px;">
-            <div class="nav-item {% if active_sub == 'out_of_stock' %}active{% endif %} nav-sub-item" id="tour-nav-out-of-stock"><a href="{{ url_for('out_of_stock') }}" style="color: inherit; text-decoration: none;">Out of Stock</a></div>
-            <div class="nav-item {% if active_sub == 'low_stock' %}active{% endif %} nav-sub-item" id="tour-nav-low-stock"><a href="{{ url_for('low_stock') }}" style="color: inherit; text-decoration: none;">Low Stock</a></div>
-            <div class="nav-item {% if active_sub == 'expired_products' %}active{% endif %} nav-sub-item" id="tour-nav-expired"><a href="{{ url_for('expired_products') }}" style="color: inherit; text-decoration: none;">Expired Products</a></div>
-            <div class="nav-item {% if active_sub == 'expiring_medical' %}active{% endif %} nav-sub-item" id="tour-nav-expiring"><a href="{{ url_for('expiring_medical') }}" style="color: inherit; text-decoration: none;">Expiring Products</a></div>
+            <div class="nav-item {% if active_sub == 'out_of_stock' %}active{% endif %} nav-sub-item" id="tour-nav-out-of-stock"><a href="{{ url_for('out_of_stock') }}" style="color: inherit; text-decoration: none;">Out of Stock <span class="nav-badge" id="nav-badge-out_of_stock">0</span></a></div>
+            <div class="nav-item {% if active_sub == 'low_stock' %}active{% endif %} nav-sub-item" id="tour-nav-low-stock"><a href="{{ url_for('low_stock') }}" style="color: inherit; text-decoration: none;">Low Stock <span class="nav-badge" id="nav-badge-low_stock">0</span></a></div>
+            <div class="nav-item {% if active_sub == 'expired_products' %}active{% endif %} nav-sub-item" id="tour-nav-expired"><a href="{{ url_for('expired_products') }}" style="color: inherit; text-decoration: none;">Expired Products <span class="nav-badge" id="nav-badge-expired">0</span></a></div>
+            <div class="nav-item {% if active_sub == 'expiring_medical' %}active{% endif %} nav-sub-item" id="tour-nav-expiring"><a href="{{ url_for('expiring_medical') }}" style="color: inherit; text-decoration: none;">Expiring Products <span class="nav-badge" id="nav-badge-expiring_medical">0</span></a></div>
             <div class="nav-item {% if active_sub == 'alert_history' %}active{% endif %} nav-sub-item" id="tour-nav-alert-history"><a href="{{ url_for('alert_history') }}" style="color: inherit; text-decoration: none;">Alert History</a></div>
         </div>
 
@@ -448,12 +451,56 @@
         dropdown.classList.toggle('show');
         if (dropdown.classList.contains('show')) {
             loadNotifications();
+            updateNavBadges();
         }
     }
 
+    function updateNavBadges() {
+        fetch('/api/notifications')
+            .then(res => {
+                if (!res.ok) throw new Error('API returned ' + res.status);
+                return res.json();
+            })
+            .then(data => {
+                const counts = {
+                    'out_of_stock': data.out_of_stock ? data.out_of_stock.length : 0,
+                    'low_stock': data.low_stock ? data.low_stock.length : 0,
+                    'expired': data.expired ? data.expired.length : 0,
+                    'expiring_medical': data.expiring_warning ? data.expiring_warning.length : 0
+                };
+                Object.entries(counts).forEach(([type, count]) => {
+                    const badge = document.getElementById('nav-badge-' + type);
+                    if (badge) {
+                        badge.textContent = count;
+                        badge.style.display = count > 0 ? 'inline-flex' : 'none';
+                    }
+                });
+
+                // Update bell badge
+                const total = Object.values(counts).reduce((a, b) => a + b, 0);
+                const bellBadge = document.getElementById('notificationBadge');
+                if (bellBadge) {
+                    bellBadge.textContent = total;
+                    bellBadge.style.display = total > 0 ? 'flex' : 'none';
+                }
+            })
+            .catch(err => {
+                console.error('updateNavBadges error:', err);
+                if (err.message && err.message.includes('401')) {
+                    window.location.href = '/admin_login';
+                }
+            });
+    }
+
+    // Update badges on page load
+    updateNavBadges();
+
     function loadNotifications() {
         fetch('/api/notifications')
-            .then(res => res.json())
+            .then(res => {
+                if (!res.ok) throw new Error('API returned ' + res.status);
+                return res.json();
+            })
             .then(data => {
                 const list = document.getElementById('notificationList');
                 let html = '';
@@ -470,8 +517,8 @@
                             </div>
                             <span class="notification-status out-of-stock">OUT OF STOCK</span>
                             <div class="notification-actions">
-                                <button class="btn btn-sm btn-primary" onclick="acknowledgeNotification('out_of_stock', ${item.id})" title="Acknowledge">Ack</button>
-                                <button class="btn btn-sm btn-danger" onclick="dismissNotification('out_of_stock', ${item.id})" title="Dismiss">Dismiss</button>
+                                <button class="btn btn-sm btn-primary" onclick="event.stopPropagation(); acknowledgeNotification('out_of_stock', ${item.id})" title="Acknowledge">Ack</button>
+                                <button class="btn btn-sm btn-danger" onclick="event.stopPropagation(); dismissNotification('out_of_stock', ${item.id})" title="Dismiss">Dismiss</button>
                             </div>
                         </div>`;
                     });
@@ -489,8 +536,8 @@
                             </div>
                             <span class="notification-status low">LOW</span>
                             <div class="notification-actions">
-                                <button class="btn btn-sm btn-primary" onclick="acknowledgeNotification('low_stock', ${item.id})" title="Acknowledge">Ack</button>
-                                <button class="btn btn-sm btn-danger" onclick="dismissNotification('low_stock', ${item.id})" title="Dismiss">Dismiss</button>
+                                <button class="btn btn-sm btn-primary" onclick="event.stopPropagation(); acknowledgeNotification('low_stock', ${item.id})" title="Acknowledge">Ack</button>
+                                <button class="btn btn-sm btn-danger" onclick="event.stopPropagation(); dismissNotification('low_stock', ${item.id})" title="Dismiss">Dismiss</button>
                             </div>
                         </div>`;
                     });
@@ -504,12 +551,12 @@
                         html += `<div class="notification-item expiring" data-id="${item.id}" data-type="expired">
                             <div onclick="window.location.href='/expired_products'" class="notification-info">
                                 <div class="notification-item-title">${item.name}</div>
-                                <div class="notification-item-detail">Expired: ${item.expiry} | Barcode: ${item.barcode}</div>
+                                <div class="notification-item-detail">Expired: ${item.expiry || item.expiration_date || 'N/A'} | Barcode: ${item.barcode}</div>
                             </div>
                             <span class="notification-status danger">EXPIRED</span>
                             <div class="notification-actions">
-                                <button class="btn btn-sm btn-primary" onclick="acknowledgeNotification('expired', ${item.id})" title="Acknowledge">Ack</button>
-                                <button class="btn btn-sm btn-danger" onclick="dismissNotification('expired', ${item.id})" title="Dismiss">Dismiss</button>
+                                <button class="btn btn-sm btn-primary" onclick="event.stopPropagation(); acknowledgeNotification('expired', ${item.id})" title="Acknowledge">Ack</button>
+                                <button class="btn btn-sm btn-danger" onclick="event.stopPropagation(); dismissNotification('expired', ${item.id})" title="Dismiss">Dismiss</button>
                             </div>
                         </div>`;
                     });
@@ -523,12 +570,12 @@
                         html += `<div class="notification-item expiring" data-id="${item.id}" data-type="expiring_critical">
                             <div onclick="window.location.href='/expiring_medical?level=critical'" class="notification-info">
                                 <div class="notification-item-title">${item.name}</div>
-                                <div class="notification-item-detail">Expires: ${item.expiry} (${item.days_left} days) | Barcode: ${item.barcode}</div>
+                                <div class="notification-item-detail">Expires: ${item.expiry || item.expiration_date || 'N/A'} (${item.days_left || 0} days) | Barcode: ${item.barcode}</div>
                             </div>
                             <span class="notification-status warning">CRITICAL</span>
                             <div class="notification-actions">
-                                <button class="btn btn-sm btn-primary" onclick="acknowledgeNotification('expiring_critical', ${item.id})" title="Acknowledge">Ack</button>
-                                <button class="btn btn-sm btn-danger" onclick="dismissNotification('expiring_critical', ${item.id})" title="Dismiss">Dismiss</button>
+                                <button class="btn btn-sm btn-primary" onclick="event.stopPropagation(); acknowledgeNotification('expiring_critical', ${item.id})" title="Acknowledge">Ack</button>
+                                <button class="btn btn-sm btn-danger" onclick="event.stopPropagation(); dismissNotification('expiring_critical', ${item.id})" title="Dismiss">Dismiss</button>
                             </div>
                         </div>`;
                     });
@@ -542,12 +589,12 @@
                         html += `<div class="notification-item expiring" data-id="${item.id}" data-type="expiring_warning">
                             <div onclick="window.location.href='/expiring_medical?level=warning'" class="notification-info">
                                 <div class="notification-item-title">${item.name}</div>
-                                <div class="notification-item-detail">Expires: ${item.expiry} (${item.days_left} days) | Barcode: ${item.barcode}</div>
+                                <div class="notification-item-detail">Expires: ${item.expiry || item.expiration_date || 'N/A'} (${item.days_left || 0} days) | Barcode: ${item.barcode}</div>
                             </div>
                             <span class="notification-status warning">WARNING</span>
                             <div class="notification-actions">
-                                <button class="btn btn-sm btn-primary" onclick="acknowledgeNotification('expiring_warning', ${item.id})" title="Acknowledge">Ack</button>
-                                <button class="btn btn-sm btn-danger" onclick="dismissNotification('expiring_warning', ${item.id})" title="Dismiss">Dismiss</button>
+                                <button class="btn btn-sm btn-primary" onclick="event.stopPropagation(); acknowledgeNotification('expiring_warning', ${item.id})" title="Acknowledge">Ack</button>
+                                <button class="btn btn-sm btn-danger" onclick="event.stopPropagation(); dismissNotification('expiring_warning', ${item.id})" title="Dismiss">Dismiss</button>
                             </div>
                         </div>`;
                     });
@@ -564,6 +611,17 @@
                     badge.textContent = totalUnread;
                     badge.style.display = totalUnread > 0 ? 'flex' : 'none';
                 }
+            })
+            .catch(err => {
+                console.error('loadNotifications error:', err);
+                if (err.message && err.message.includes('401')) {
+                    window.location.href = '/admin_login';
+                } else {
+                    const list = document.getElementById('notificationList');
+                    if (list) list.innerHTML = '<div class="no-notifications">Failed to load notifications. Please try again.</div>';
+                    const bellBadge = document.getElementById('notificationBadge');
+                    if (bellBadge) { bellBadge.textContent = '0'; bellBadge.style.display = 'none'; }
+                }
             });
     }
 
@@ -573,13 +631,19 @@
             headers: { 'Content-Type': 'application/json', 'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').getAttribute('content') },
             body: JSON.stringify({ alert_type: type, product_id: productId })
         })
-        .then(res => res.json())
+        .then(res => res.json().catch(() => ({ success: false })))
         .then(data => {
             if (data.success) {
-                location.reload();
+                // Remove the notification item from the dropdown
+                const item = document.querySelector('.notification-item[data-type="' + type + '"][data-id="' + productId + '"]');
+                if (item) item.remove();
+                updateNavBadges();
+                loadNotifications();
             } else {
-                alert(data.message);
+                alert(data.message || 'Failed to acknowledge alert.');
             }
+        }).catch(() => {
+            alert('Network error. Please try again.');
         });
     }
 
@@ -592,18 +656,28 @@
             headers: { 'Content-Type': 'application/json', 'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').getAttribute('content') },
             body: JSON.stringify({ alert_type: type, product_id: productId, reason: reason.trim() })
         })
-        .then(res => res.json())
+        .then(res => res.json().catch(() => ({ success: false })))
         .then(data => {
             if (data.success) {
-                location.reload();
+                // Remove the notification item from the dropdown
+                const item = document.querySelector('.notification-item[data-type="' + type + '"][data-id="' + productId + '"]');
+                if (item) item.remove();
+                updateNavBadges();
+                loadNotifications();
             } else {
-                alert(data.message);
+                alert(data.message || 'Failed to dismiss alert.');
             }
+        }).catch(() => {
+            alert('Network error. Please try again.');
         });
     }
 
     function markAllAsRead() {
         const items = document.querySelectorAll('#notificationList .notification-item');
+        if (!items.length) {
+            updateNavBadges();
+            return;
+        }
         const promises = [];
         items.forEach(item => {
             const type = item.getAttribute('data-type');
@@ -614,12 +688,17 @@
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json', 'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').getAttribute('content') },
                         body: JSON.stringify({ alert_type: type, product_id: parseInt(id) })
-                    }).then(res => res.json())
+                    }).then(res => res.json().catch(() => ({ success: false })))
                 );
             }
         });
         Promise.all(promises).then(() => {
-            location.reload();
+            // Clear all notification items from the dropdown
+            const list = document.getElementById('notificationList');
+            list.innerHTML = '<div class="no-notifications">All caught up! No unread alerts.</div>';
+            updateNavBadges();
+        }).catch(() => {
+            updateNavBadges();
         });
     }
 

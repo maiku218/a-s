@@ -120,6 +120,8 @@ def admin_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if 'admin_user' not in session or session.get('role') != 'admin':
+            if request.path.startswith('/api/'):
+                return jsonify({'success': False, 'message': 'Session expired. Please login again.'}), 401
             return redirect(url_for('admin_login'))
         return f(*args, **kwargs)
     return decorated_function
@@ -851,39 +853,84 @@ def api_cashier_history():
 def get_notifications():
     conn = get_db()
     cur = conn.cursor()
-    
+
+    # Out of stock (stock = 0)
     cur.execute("""
         SELECT id, product_name, stock, barcode 
         FROM products 
-        WHERE stock <= ?
+        WHERE stock = 0
         AND NOT EXISTS (
             SELECT 1 FROM alert_acknowledgments aa 
             WHERE aa.product_id = products.id AND aa.alert_type = 'out_of_stock'
         )
+        ORDER BY product_name ASC
+    """)
+    out_of_stock = cur.fetchall()
+
+    # Low stock (0 < stock <= threshold)
+    cur.execute("""
+        SELECT id, product_name, stock, barcode 
+        FROM products 
+        WHERE stock > 0 AND stock <= ?
+        AND NOT EXISTS (
+            SELECT 1 FROM alert_acknowledgments aa 
+            WHERE aa.product_id = products.id AND aa.alert_type = 'low_stock'
+        )
         ORDER BY stock ASC
-        LIMIT 10
     """, (LOW_STOCK_THRESHOLD,))
     low_stock = cur.fetchall()
-    
+
+    # Expired
     cur.execute("""
-        SELECT id, product_name, expiration_date, barcode
+        SELECT id, product_name, stock, barcode, expiration_date
         FROM products 
-        WHERE expiration_date <= date('now', '+30 days', 'localtime') 
+        WHERE expiration_date < date('now', 'localtime')
         AND expiration_date IS NOT NULL
         AND NOT EXISTS (
             SELECT 1 FROM alert_acknowledgments aa 
-            WHERE aa.product_id = products.id AND aa.alert_type = 'expiring_medical'
+            WHERE aa.product_id = products.id AND aa.alert_type = 'expired'
         )
         ORDER BY expiration_date ASC
-        LIMIT 10
     """)
-    expiring = cur.fetchall()
-    
+    expired = cur.fetchall()
+
+    # Expiring critical (within 7 days)
+    cur.execute("""
+        SELECT id, product_name, stock, barcode, expiration_date
+        FROM products 
+        WHERE expiration_date BETWEEN date('now', 'localtime') AND date('now', '+7 days', 'localtime')
+        AND expiration_date IS NOT NULL
+        AND NOT EXISTS (
+            SELECT 1 FROM alert_acknowledgments aa 
+            WHERE aa.product_id = products.id AND aa.alert_type = 'expiring_critical'
+        )
+        ORDER BY expiration_date ASC
+    """)
+    expiring_critical = cur.fetchall()
+
+    # Expiring warning (within 30 days, not critical)
+    cur.execute("""
+        SELECT id, product_name, stock, barcode, expiration_date
+        FROM products 
+        WHERE expiration_date > date('now', '+7 days', 'localtime')
+        AND expiration_date <= date('now', '+30 days', 'localtime')
+        AND expiration_date IS NOT NULL
+        AND NOT EXISTS (
+            SELECT 1 FROM alert_acknowledgments aa 
+            WHERE aa.product_id = products.id AND aa.alert_type = 'expiring_warning'
+        )
+        ORDER BY expiration_date ASC
+    """)
+    expiring_warning = cur.fetchall()
+
     conn.close()
-    
+
     return jsonify({
+        'out_of_stock': [{'id': p[0], 'name': p[1], 'stock': p[2], 'barcode': p[3]} for p in out_of_stock],
         'low_stock': [{'id': p[0], 'name': p[1], 'stock': p[2], 'barcode': p[3]} for p in low_stock],
-        'expiring': [{'id': p[0], 'name': p[1], 'expiry': str(p[2]), 'barcode': p[3]} for p in expiring]
+        'expired': [{'id': p[0], 'name': p[1], 'stock': p[2], 'barcode': p[3], 'expiry': str(p[4]) if p[4] else None} for p in expired],
+        'expiring_critical': [{'id': p[0], 'name': p[1], 'stock': p[2], 'barcode': p[3], 'expiry': str(p[4]) if p[4] else None, 'days_left': 0} for p in expiring_critical],
+        'expiring_warning': [{'id': p[0], 'name': p[1], 'stock': p[2], 'barcode': p[3], 'expiry': str(p[4]) if p[4] else None, 'days_left': 0} for p in expiring_warning]
     })
 
 @app.route('/api/cashier/notifications')

@@ -428,6 +428,10 @@ function resumeTransaction(index) {
 
         function markAllCashierAsRead() {
             const items = document.querySelectorAll('#cashierNotificationList .notification-item');
+            if (!items.length) {
+                location.reload();
+                return;
+            }
             const promises = [];
             items.forEach(item => {
                 const type = item.getAttribute('data-type');
@@ -438,11 +442,13 @@ function resumeTransaction(index) {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json', 'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').getAttribute('content') },
                             body: JSON.stringify({ alert_type: type, product_id: parseInt(id) })
-                        }).then(res => res.json())
+                        }).then(res => res.json().catch(() => ({ success: false })))
                     );
                 }
             });
             Promise.all(promises).then(() => {
+                location.reload();
+            }).catch(() => {
                 location.reload();
             });
         }
