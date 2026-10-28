@@ -13,20 +13,6 @@
         <p class="page-subtitle">Encode historical sales transactions that were not processed through POS checkout</p>
     </div>
 
-    <!-- Alert Messages -->
-    {% with messages = get_flashed_messages(with_categories=true) %}
-    {% if messages %}
-    <div class="flash-messages" style="margin-bottom: 16px;">
-        {% for category, message in messages %}
-        <div class="alert alert-{{ category }}" style="padding: 12px 16px; border-radius: var(--radius); margin-bottom: 8px; font-size: 13px;
-             {% if category == 'error' %}background: #fef2f2; border: 1px solid #fecaca; color: #991b1b;{% elif category == 'success' %}background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534;{% else %}background: #eff6ff; border: 1px solid #bfdbfe; color: #1e40af;{% endif %}">
-            {{ message }}
-        </div>
-        {% endfor %}
-    </div>
-    {% endif %}
-    {% endwith %}
-
     <!-- Tab Navigation -->
     <div style="display: flex; gap: 0; margin-bottom: 24px; border-bottom: 1px solid var(--border); overflow-x: auto;">
         <button type="button" class="tab-btn active" onclick="switchTab('encode')" id="tab-encode">
@@ -48,35 +34,15 @@
                     <div style="display: flex; flex-direction: column; gap: 6px;">
                         <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary);">Transaction Date <span style="color: var(--danger);">*</span></label>
                         <input type="date" id="txnDate" required style="padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 13px;">
-                        <small style="color: var(--text-muted);">The actual date when the sale occurred (e.g., August 15, 2026)</small>
+                        <small style="color: var(--text-muted);">The actual date when the sale occurred</small>
                     </div>
                     <div style="display: flex; flex-direction: column; gap: 6px;">
                         <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary);">Receipt / Reference Number <span style="color: var(--danger);">*</span></label>
-                        <input type="text" id="receiptNumber" required placeholder="e.g., MAN-001 or original receipt no." style="padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 13px;">
+                        <input type="text" id="receiptNumber" required placeholder="e.g., MAN-001" style="padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 13px;">
                     </div>
                     <div style="display: flex; flex-direction: column; gap: 6px;">
-                        <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary);">Customer Name</label>
-                        <input type="text" id="customerName" placeholder="Optional" style="padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 13px;">
-                    </div>
-                    <div style="display: flex; flex-direction: column; gap: 6px;">
-                        <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary);">Payment Method <span style="color: var(--danger);">*</span></label>
-                        <select id="paymentMethod" required style="padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 13px;">
-                            <option value="">Select payment method</option>
-                            <option value="Cash">Cash</option>
-                            <option value="Card">Card</option>
-                            <option value="GCash">GCash</option>
-                            <option value="Maya">Maya</option>
-                            <option value="Check">Check</option>
-                            <option value="On Account">On Account</option>
-                        </select>
-                    </div>
-                    <div style="display: flex; flex-direction: column; gap: 6px;">
-                        <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary);">Discount (₱)</label>
-                        <input type="number" id="discount" value="0" min="0" step="0.01" style="padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 13px;">
-                    </div>
-                    <div style="grid-column: 1 / -1; display: flex; flex-direction: column; gap: 6px;">
-                        <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary);">Notes</label>
-                        <textarea id="notes" rows="2" placeholder="Optional notes about this historical transaction..." style="padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 13px;"></textarea>
+                        <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary);">Payment Method</label>
+                        <input type="text" id="paymentMethod" value="Cash" readonly style="padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 13px; background: var(--bg);">
                     </div>
                 </div>
             </div>
@@ -87,10 +53,9 @@
                 </h3>
                 <div style="display: flex; gap: 12px; margin-bottom: 16px;">
                     <input type="text" id="productSearch" placeholder="Search products..." style="flex: 1; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 13px;">
-                    <button type="button" id="addProductBtn" class="btn btn-primary" style="padding: 8px 16px;">Add Product</button>
                 </div>
                 <div id="productResults" style="max-height: 200px; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 16px; background: white;"></div>
-                <table id="itemsTable" style="width: 100%; border-collapse: collapse; margin-bottom: 16px;">
+                <table style="width: 100%; border-collapse: collapse; margin-bottom: 16px;">
                     <thead>
                         <tr style="border-bottom: 2px solid var(--border);">
                             <th style="text-align: left; padding: 12px; font-size: 13px; color: var(--text-secondary);">Product</th>
@@ -118,14 +83,10 @@
     </div>
 
     <!-- Tab 2: Manual Sales Records -->
-    <div id="tab-records-content" class="tab-content" style="display: none;">
+    <div id="tab-records-content" class="tab-content">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 12px;">
-            <div style="display: flex; gap: 8px; font-size: 12px; color: var(--text-secondary); font-weight: 600;">
-                Quick Filter:
-                <button type="button" class="btn btn-secondary btn-sm preset-btn" data-source="MANUAL" style="padding: 4px 10px;">Manual Only</button>
-                <button type="button" class="btn btn-secondary btn-sm preset-btn" data-source="all" style="padding: 4px 10px;">All</button>
-            </div>
-            <form method="GET" action="{{ url_for('manual_sales_entry') }}" style="display: flex; gap: 8px; align-items: center;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 12px;">
+            <form method="GET" action="{{ url_for('manual_sales_entry') }}" style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
                 <input type="date" name="date_from" value="{{ date_from or '' }}" style="padding: 6px 10px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 12px;">
                 <input type="date" name="date_to" value="{{ date_to or '' }}" style="padding: 6px 10px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 12px;">
                 <select name="source" style="padding: 6px 10px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 12px;">
@@ -150,6 +111,7 @@
                         <th>Total Amount</th>
                         <th>Payment Method</th>
                         <th>Source</th>
+                        <th>Status</th>
                         <th>Encoded By</th>
                         <th>Date Encoded</th>
                         <th>Actions</th>
@@ -159,21 +121,26 @@
                 {% for s in manual_sales %}
                 <tr>
                     <td style="font-weight: 600; font-family: monospace; font-size: 12px;">#{{ s[0] }}</td>
-                    <td>{{ s[1] | format_date('%Y-%m-%d') if s[1] else '-' }}</td>
-                    <td style="font-weight: 600;">{{ s[2] or '-' }}</td>
+                    <td>{{ s[2] | format_date('%Y-%m-%d') if s[2] else '-' }}</td>
+                    <td style="font-weight: 600;">{{ s[1] or '-' }}</td>
                     <td>{{ s[3] or '-' }}</td>
-                    <td>{{ s[4] if s[4] is not none else 0 }}</td>
-                    <td style="font-weight: 600;">₱{{ "%.2f"|format(s[5]) if s[5] is not none else 0 }}</td>
-                    <td>{{ s[9] or '-' }}</td>
+                    <td style="text-align: center;">{{ s[12] if s[12] is not none else 0 }}</td>
+                    <td style="font-weight: 600;">₱{{ "%.2f"|format(s[4]) if s[4] is not none else 0 }}</td>
+                    <td>Cash</td>
                     <td><span style="font-size: 11px; padding: 2px 8px; border-radius: 12px; background: {% if s[6] == 'MANUAL' %}#fef3c7{% else %}#dbeafe{% endif %}; color: {% if s[6] == 'MANUAL' %}#d97706{% else %}#2563eb{% endif %};">{{ s[6] }}</span></td>
-                    <td>{{ s[7] or '-' }}</td>
-                    <td>{{ s[8] | format_date('%Y-%m-%d %H:%M') if s[8] else '-' }}</td>
+                    <td><span style="font-size: 11px; padding: 2px 8px; border-radius: 12px; background: {% if s[5] == 'Voided' %}#fee2e2{% else %}#dcfce7{% endif %}; color: {% if s[5] == 'Voided' %}#991b1b{% else %}#166534{% endif %};">{{ s[5] }}</span></td>
+                    <td>{{ s[8] or '-' }}</td>
+                    <td>{{ s[7] | format_date('%Y-%m-%d %H:%M') if s[7] else '-' }}</td>
                     <td>
-                        <div style="display: flex; gap: 4px;">
+                        <div style="display: flex; gap: 4px; flex-wrap: wrap;">
                             <button type="button" class="btn btn-sm btn-primary" onclick="viewSaleDetails({{ s[0] }})" title="View Details">View</button>
+                            <button type="button" class="btn btn-sm btn-secondary" onclick="viewAuditHistory({{ s[0] }})" title="Audit History">History</button>
                             {% if s[6] == 'MANUAL' and s[5] != 'Voided' %}
-                            <button type="button" class="btn btn-sm btn-primary" onclick="editSale({{ s[0] }})" title="Edit">Edit</button>
-                            <button type="button" class="btn btn-sm btn-danger" onclick="voidSale({{ s[0] }})" title="Void">Void</button>
+                            <button type="button" class="btn btn-sm btn-warning" onclick="openEditModal({{ s[0] }})" title="Edit">Edit</button>
+                            <button type="button" class="btn btn-sm btn-danger" onclick="openVoidModal({{ s[0] }})" title="Void">Void</button>
+                            {% endif %}
+                            {% if s[6] == 'MANUAL' and s[5] == 'Voided' %}
+                            <button type="button" class="btn btn-sm btn-success" onclick="openRestoreModal({{ s[0] }})" title="Restore">Restore</button>
                             {% endif %}
                         </div>
                     </td>
@@ -191,12 +158,79 @@
 <div id="saleModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center;">
     <div style="background: white; border-radius: var(--radius-lg); padding: 24px; max-width: 600px; width: 90%; max-height: 90vh; overflow-y: auto;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-            <h3 style="font-size: 18px; font-weight: 700;">Sale Details</h3>
+            <h3 style="font-size: 18px; font-weight: 700;">Transaction Details</h3>
             <button type="button" onclick="closeSaleModal()" style="background: none; border: none; font-size: 24px; cursor: pointer;">×</button>
         </div>
         <div id="saleModalContent"></div>
         <div style="margin-top: 20px; display: flex; gap: 8px; justify-content: flex-end;">
             <button type="button" onclick="closeSaleModal()" class="btn btn-secondary">Close</button>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Modal -->
+<div id="editModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center;">
+    <div style="background: white; border-radius: var(--radius-lg); padding: 24px; max-width: 900px; width: 95%; max-height: 90vh; overflow-y: auto;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <h3 style="font-size: 18px; font-weight: 700;">Edit Manual Transaction</h3>
+            <button type="button" onclick="closeEditModal()" style="background: none; border: none; font-size: 24px; cursor: pointer;">×</button>
+        </div>
+        <div id="editModalContent"></div>
+        <div style="margin-top: 20px; display: flex; gap: 8px; justify-content: flex-end;">
+            <button type="button" onclick="closeEditModal()" class="btn btn-secondary">Cancel</button>
+            <button type="button" onclick="saveEdit()" class="btn btn-primary">Save Changes</button>
+        </div>
+    </div>
+</div>
+
+<!-- Void Confirmation Modal -->
+<div id="voidModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center;">
+    <div style="background: white; border-radius: var(--radius-lg); padding: 24px; max-width: 500px; width: 90%;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <h3 style="font-size: 18px; font-weight: 700; color: var(--danger);">Void Transaction</h3>
+            <button type="button" onclick="closeVoidModal()" style="background: none; border: none; font-size: 24px; cursor: pointer;">×</button>
+        </div>
+        <div id="voidModalContent" style="margin-bottom: 16px;"></div>
+        <div style="margin-bottom: 16px;">
+            <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px;">Void Reason <span style="color: var(--danger);">*</span></label>
+            <textarea id="voidReason" rows="3" placeholder="Enter reason for voiding this transaction..." style="width: 100%; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 13px;"></textarea>
+        </div>
+        <div style="display: flex; gap: 8px; justify-content: flex-end;">
+            <button type="button" onclick="closeVoidModal()" class="btn btn-secondary">Cancel</button>
+            <button type="button" onclick="confirmVoid()" class="btn btn-danger">Confirm Void</button>
+        </div>
+    </div>
+</div>
+
+<!-- Restore Confirmation Modal -->
+<div id="restoreModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center;">
+    <div style="background: white; border-radius: var(--radius-lg); padding: 24px; max-width: 500px; width: 90%;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <h3 style="font-size: 18px; font-weight: 700; color: var(--success);">Restore Transaction</h3>
+            <button type="button" onclick="closeRestoreModal()" style="background: none; border: none; font-size: 24px; cursor: pointer;">×</button>
+        </div>
+        <div id="restoreModalContent" style="margin-bottom: 16px;"></div>
+        <div style="margin-bottom: 16px;">
+            <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px;">Restoration Reason <span style="color: var(--danger);">*</span></label>
+            <textarea id="restoreReason" rows="3" placeholder="Enter reason for restoring this transaction..." style="width: 100%; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 13px;"></textarea>
+        </div>
+        <div style="display: flex; gap: 8px; justify-content: flex-end;">
+            <button type="button" onclick="closeRestoreModal()" class="btn btn-secondary">Cancel</button>
+            <button type="button" onclick="confirmRestore()" class="btn btn-success">Confirm Restore</button>
+        </div>
+    </div>
+</div>
+
+<!-- Audit History Modal -->
+<div id="auditModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center;">
+    <div style="background: white; border-radius: var(--radius-lg); padding: 24px; max-width: 800px; width: 95%; max-height: 90vh; overflow-y: auto;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <h3 style="font-size: 18px; font-weight: 700;">Transaction Audit History</h3>
+            <button type="button" onclick="closeAuditModal()" style="background: none; border: none; font-size: 24px; cursor: pointer;">×</button>
+        </div>
+        <div id="auditModalContent"></div>
+        <div style="margin-top: 20px; display: flex; gap: 8px; justify-content: flex-end;">
+            <button type="button" onclick="closeAuditModal()" class="btn btn-secondary">Close</button>
         </div>
     </div>
 </div>
@@ -224,11 +258,11 @@
     color: var(--accent);
 }
 .tab-content {
-    display: none;
+    display: block;
     animation: fadeIn 0.3s ease;
 }
-.tab-content.active {
-    display: block;
+.tab-content:not(.active) {
+    display: none !important;
 }
 @keyframes fadeIn {
     from { opacity: 0; transform: translateY(10px); }
@@ -238,56 +272,69 @@
     padding: 4px 10px;
     font-size: 12px;
 }
+.btn-warning {
+    background: #fef3c7;
+    color: #92400e;
+    border: 1px solid #fbbf24;
+}
+.btn-warning:hover {
+    background: #fde68a;
+}
 </style>
 
 <script>
 let items = [];
-let currentEditingSaleId = null;
+let currentEditSaleId = null;
+let currentVoidSaleId = null;
+let currentRestoreSaleId = null;
 
 // Product search
 const productSearch = document.getElementById('productSearch');
 const productResults = document.getElementById('productResults');
 let productDebounce;
 
-productSearch.addEventListener('input', function() {
-    clearTimeout(productDebounce);
-    productDebounce = setTimeout(() => {
-        const q = this.value.trim();
-        if (q.length < 1) {
-            productResults.innerHTML = '';
-            return;
-        }
-        fetch(`/api/products_search?q=${encodeURIComponent(q)}`)
-            .then(r => r.json())
-            .then(data => {
+if (productSearch) {
+    productSearch.addEventListener('input', function() {
+        clearTimeout(productDebounce);
+        productDebounce = setTimeout(() => {
+            const q = this.value.trim();
+            if (q.length < 1) {
                 productResults.innerHTML = '';
-                if (data.success && data.products.length > 0) {
-                    data.products.forEach(p => {
-                        const div = document.createElement('div');
-                        div.style.padding = '8px 12px';
-                        div.style.borderBottom = '1px solid var(--border)';
-                        div.style.cursor = 'pointer';
-                        div.style.display = 'flex';
-                        div.style.justifyContent = 'space-between';
-                        div.style.alignItems = 'center';
-                        div.innerHTML = `
-                            <div>
-                                <div style="font-weight: 600; font-size: 13px;">${escapeHtml(p.name)}</div>
-                                <div style="font-size: 11px; color: var(--text-secondary);">${p.type} • ₱${parseFloat(p.price).toFixed(2)}</div>
-                            </div>
-                            <span style="font-size: 11px; color: var(--accent); font-weight: 600;">+</span>
-                        `;
-                        div.onclick = () => addProductToList(p);
-                        productResults.appendChild(div);
-                    });
-                } else {
-                    productResults.innerHTML = '<div style="padding: 8px 12px; color: var(--text-muted);">No products found</div>';
-                }
-            });
-    }, 300);
-});
+                return;
+            }
+            fetch(`/api/products_search?q=${encodeURIComponent(q)}`)
+                .then(r => r.json())
+                .then(data => {
+                    productResults.innerHTML = '';
+                    if (data.success && data.products.length > 0) {
+                        data.products.forEach(p => {
+                            const div = document.createElement('div');
+                            div.style.padding = '8px 12px';
+                            div.style.borderBottom = '1px solid var(--border)';
+                            div.style.cursor = 'pointer';
+                            div.style.display = 'flex';
+                            div.style.justifyContent = 'space-between';
+                            div.style.alignItems = 'center';
+                            div.innerHTML = `
+                                <div>
+                                    <div style="font-weight: 600; font-size: 13px;">${escapeHtml(p.name)}</div>
+                                    <div style="font-size: 11px; color: var(--text-secondary);">${p.type} • ₱${parseFloat(p.price).toFixed(2)}</div>
+                                </div>
+                                <span style="font-size: 11px; color: var(--accent); font-weight: 600;">+</span>
+                            `;
+                            div.onclick = () => addProductToList(p);
+                            productResults.appendChild(div);
+                        });
+                    } else {
+                        productResults.innerHTML = '<div style="padding: 8px 12px; color: var(--text-muted);">No products found</div>';
+                    }
+                });
+        }, 300);
+    });
+}
 
 function escapeHtml(text) {
+    if (text === null || text === undefined) return '';
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
@@ -297,7 +344,6 @@ function addProductToList(product) {
     productResults.innerHTML = '';
     productSearch.value = '';
 
-    // Check if already in list
     const existing = items.find(i => i.product_id === product.id);
     if (existing) {
         existing.quantity += 1;
@@ -336,6 +382,7 @@ function updateUnitPrice(index, newPrice) {
 
 function renderItems() {
     const tbody = document.getElementById('itemsBody');
+    if (!tbody) return;
     tbody.innerHTML = '';
     let grandTotal = 0;
 
@@ -347,16 +394,13 @@ function renderItems() {
         tr.innerHTML = `
             <td style="padding: 12px; font-size: 13px;">
                 <div style="font-weight: 600;">${escapeHtml(item.product_name)}</div>
-                <input type="hidden" name="items[${index}][product_id]" value="${item.product_id}">
             </td>
             <td style="padding: 12px; font-size: 13px; color: var(--text-secondary);">${item.product_type}</td>
             <td style="padding: 12px; text-align: center;">
                 <input type="number" value="${item.quantity}" min="1" onchange="updateQuantity(${index}, this.value)" style="width: 60px; padding: 4px 8px; font-size: 13px;">
-                <input type="hidden" name="items[${index}][quantity]" value="${item.quantity}">
             </td>
             <td style="padding: 12px; text-align: right;">
                 <input type="number" value="${item.unit_price.toFixed(2)}" min="0" step="0.01" onchange="updateUnitPrice(${index}, this.value)" style="width: 90px; padding: 4px 8px; font-size: 13px; text-align: right;">
-                <input type="hidden" name="items[${index}][unit_price]" value="${item.unit_price}">
             </td>
             <td style="padding: 12px; text-align: right; font-weight: 600;">₱${subtotal.toFixed(2)}</td>
             <td style="padding: 12px; text-align: center;">
@@ -370,48 +414,30 @@ function renderItems() {
 }
 
 function resetForm() {
-    document.getElementById('manualSalesForm').reset();
+    const form = document.getElementById('manualSalesForm');
+    if (form) form.reset();
     items = [];
     renderItems();
-    document.getElementById('dateFrom').value = '';
-    document.getElementById('dateTo').value = '';
 }
 
-// Form submission
 document.getElementById('manualSalesForm').addEventListener('submit', function(e) {
     e.preventDefault();
 
     const txnDate = document.getElementById('txnDate').value;
     const receiptNumber = document.getElementById('receiptNumber').value.trim();
-    const customerName = document.getElementById('customerName').value.trim();
     const paymentMethod = document.getElementById('paymentMethod').value;
-    const discount = document.getElementById('discount').value || 0;
-    const notes = document.getElementById('notes').value.trim();
 
-    if (!txnDate) {
-        alert('Transaction date is required');
-        return;
-    }
-    if (!receiptNumber) {
-        alert('Receipt number is required');
-        return;
-    }
-    if (!paymentMethod) {
-        alert('Payment method is required');
-        return;
-    }
-    if (items.length === 0) {
-        alert('At least one product is required');
-        return;
-    }
+    if (!txnDate) { alert('Transaction date is required'); return; }
+    if (!receiptNumber) { alert('Receipt number is required'); return; }
+    if (items.length === 0) { alert('At least one product is required'); return; }
 
     const formData = {
         transaction_date: txnDate,
         receipt_number: receiptNumber,
-        customer_name: customerName,
+        customer_name: '',
         payment_method: paymentMethod,
-        discount: discount,
-        notes: notes,
+        discount: 0,
+        notes: '',
         items: items.map(item => ({
             product_id: item.product_id,
             quantity: item.quantity,
@@ -438,7 +464,6 @@ document.getElementById('manualSalesForm').addEventListener('submit', function(e
     });
 });
 
-// Tab switching
 function switchTab(tabName) {
     document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
     document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
@@ -446,21 +471,6 @@ function switchTab(tabName) {
     document.getElementById('tab-' + tabName + '-content').classList.add('active');
 }
 
-// Preset filter buttons
-document.querySelectorAll('.preset-btn').forEach(btn => {
-    btn.addEventListener('click', function() {
-        const source = this.getAttribute('data-source');
-        const url = new URL(window.location.href);
-        if (source === 'all') {
-            url.searchParams.delete('source');
-        } else {
-            url.searchParams.set('source', source);
-        }
-        window.location.href = url.toString();
-    });
-});
-
-// Sale details
 function viewSaleDetails(saleId) {
     fetch(`/api/manual_sales/${saleId}`)
         .then(r => r.json())
@@ -479,57 +489,18 @@ function viewSaleDetails(saleId) {
 
                 document.getElementById('saleModalContent').innerHTML = `
                     <div style="margin-bottom: 16px;">
-                        <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px;">
-                            <span>Receipt Number:</span>
-                            <strong>${escapeHtml(s.receipt_number || '-')}</strong>
-                        </div>
-                        <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px;">
-                            <span>Transaction Date:</span>
-                            <strong>${s.transaction_date || '-'}</strong>
-                        </div>
-                        <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px;">
-                            <span>Customer:</span>
-                            <strong>${escapeHtml(s.customer_name || '-')}</strong>
-                        </div>
-                        <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px;">
-                            <span>Payment Method:</span>
-                            <strong>${escapeHtml(s.payment_method || '-')}</strong>
-                        </div>
-                        <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px;">
-                            <span>Discount:</span>
-                            <strong>-₱${parseFloat(s.discount || 0).toFixed(2)}</strong>
-                        </div>
-                        <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px;">
-                            <span>Status:</span>
-                            <strong style="color: ${s.sale_status === 'Voided' ? 'var(--danger)' : 'var(--success)'}">${s.sale_status}</strong>
-                        </div>
-                        <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px;">
-                            <span>Source:</span>
-                            <strong>${escapeHtml(s.source)}</strong>
-                        </div>
-                        <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px;">
-                            <span>Encoded By:</span>
-                            <strong>${escapeHtml(s.encoded_by || '-')}</strong>
-                        </div>
-                        <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px;">
-                            <span>Date Encoded:</span>
-                            <strong>${s.date_encoded || '-'}</strong>
-                        </div>
-                        <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 12px; padding-top: 8px; border-top: 1px solid var(--border);">
-                            <span>Total Amount:</span>
-                            <strong style="font-size: 16px;">₱${parseFloat(s.total_amount).toFixed(2)}</strong>
-                        </div>
+                        <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px;"><span>Receipt Number:</span><strong>${escapeHtml(s.receipt_number || '-')}</strong></div>
+                        <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px;"><span>Transaction Date:</span><strong>${s.transaction_date || '-'}</strong></div>
+                        <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px;"><span>Customer:</span><strong>${escapeHtml(s.customer_name || '-')}</strong></div>
+                        <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px;"><span>Payment Method:</span><strong>${escapeHtml(s.payment_method || '-')}</strong></div>
+                        <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px;"><span>Discount:</span><strong>-₱${parseFloat(s.discount || 0).toFixed(2)}</strong></div>
+                        <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px;"><span>Status:</span><strong style="color: ${s.sale_status === 'Voided' ? 'var(--danger)' : 'var(--success)'}">${s.sale_status}</strong></div>
+                        <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px;"><span>Source:</span><strong>${escapeHtml(s.source)}</strong></div>
+                        <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px;"><span>Encoded By:</span><strong>${escapeHtml(s.encoded_by || '-')}</strong></div>
+                        <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 12px; padding-top: 8px; border-top: 1px solid var(--border);"><span>Total Amount:</span><strong style="font-size: 16px;">₱${parseFloat(s.total_amount).toFixed(2)}</strong></div>
                     </div>
                     <table style="width: 100%; font-size: 13px;">
-                        <thead>
-                            <tr>
-                                <th style="text-align: left; padding: 8px; color: var(--text-secondary);">Product</th>
-                                <th style="text-align: left; padding: 8px; color: var(--text-secondary);">Category</th>
-                                <th style="text-align: center; padding: 8px; color: var(--text-secondary);">Qty</th>
-                                <th style="text-align: right; padding: 8px; color: var(--text-secondary);">Unit Price</th>
-                                <th style="text-align: right; padding: 8px; color: var(--text-secondary);">Subtotal</th>
-                            </tr>
-                        </thead>
+                        <thead><tr><th style="text-align: left; padding: 8px; color: var(--text-secondary);">Product</th><th style="text-align: left; padding: 8px; color: var(--text-secondary);">Category</th><th style="text-align: center; padding: 8px; color: var(--text-secondary);">Qty</th><th style="text-align: right; padding: 8px; color: var(--text-secondary);">Unit Price</th><th style="text-align: right; padding: 8px; color: var(--text-secondary);">Subtotal</th></tr></thead>
                         <tbody>${itemsHtml}</tbody>
                     </table>
                 `;
@@ -544,22 +515,78 @@ function closeSaleModal() {
     document.getElementById('saleModal').style.display = 'none';
 }
 
-function editSale(saleId) {
-    window.location.href = window.location.pathname + '?edit=' + saleId;
+function openEditModal(saleId) {
+    currentEditSaleId = saleId;
+    fetch(`/api/manual_sales/${saleId}`)
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                const s = data.sale;
+                let itemsHtml = '';
+                data.items.forEach((item, idx) => {
+                    itemsHtml += `
+                        <tr>
+                            <td style="padding: 8px;"><div style="font-weight: 600;">${escapeHtml(item.product_name)}</div><input type="hidden" class="edit-product-id" value="${item.product_id}"></td>
+                            <td style="padding: 8px; color: var(--text-secondary);">${item.product_type}</td>
+                            <td style="padding: 8px; text-align: center;"><input type="number" class="edit-quantity" value="${item.quantity}" min="1" style="width: 60px; padding: 4px 8px;"></td>
+                            <td style="padding: 8px; text-align: right;"><input type="number" class="edit-price" value="${item.unit_price}" min="0" step="0.01" style="width: 90px; padding: 4px 8px; text-align: right;"></td>
+                            <td style="padding: 8px; text-align: right; font-weight: 600;">₱${(item.quantity * item.unit_price).toFixed(2)}</td>
+                        </tr>
+                    `;
+                });
+
+                document.getElementById('editModalContent').innerHTML = `
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px;">
+                        <div><label style="font-size: 12px; font-weight: 600;">Transaction Date *</label><input type="date" id="editTxnDate" value="${s.transaction_date}" style="width: 100%; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius);"></div>
+                        <div><label style="font-size: 12px; font-weight: 600;">Receipt Number *</label><input type="text" id="editReceipt" value="${escapeHtml(s.receipt_number)}" style="width: 100%; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius);"></div>
+                        <div><label style="font-size: 12px; font-weight: 600;">Payment Method</label><input type="text" id="editPayment" value="Cash" readonly style="width: 100%; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg);"></div>
+                        <div style="grid-column: 1 / -1;"><label style="font-size: 12px; font-weight: 600;">Reason for Correction *</label><input type="text" id="editReason" placeholder="Enter reason for correction" style="width: 100%; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius);"></div>
+                    </div>
+                    <table style="width: 100%; font-size: 13px;"><thead><tr><th style="text-align: left; padding: 8px;">Product</th><th style="text-align: left; padding: 8px;">Category</th><th style="text-align: center; padding: 8px;">Qty</th><th style="text-align: right; padding: 8px;">Unit Price</th><th style="text-align: right; padding: 8px;">Subtotal</th></tr></thead><tbody>${itemsHtml}</tbody></table>
+                `;
+                document.getElementById('editModal').style.display = 'flex';
+            } else {
+                alert(data.message);
+            }
+        });
 }
 
-function voidSale(saleId) {
-    const reason = prompt('Enter reason for voiding this sale:');
-    if (reason === null || reason.trim() === '') {
-        alert('Reason is required');
+function closeEditModal() {
+    document.getElementById('editModal').style.display = 'none';
+}
+
+function saveEdit() {
+    const txnDate = document.getElementById('editTxnDate').value;
+    const receiptNumber = document.getElementById('editReceipt').value.trim();
+    const paymentMethod = document.getElementById('editPayment').value;
+    const reason = document.getElementById('editReason').value.trim();
+
+    if (!txnDate || !receiptNumber || !reason) {
+        alert('Please fill in all required fields including reason');
         return;
     }
-    if (!confirm('Are you sure you want to void this sale? This cannot be undone.')) {
-        return;
-    }
-    fetch(`/api/manual_sales/${saleId}`, {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' }
+
+    const editItems = [];
+    document.querySelectorAll('#editModalContent tbody tr').forEach(tr => {
+        const productId = tr.querySelector('.edit-product-id').value;
+        const quantity = tr.querySelector('.edit-quantity').value;
+        const price = tr.querySelector('.edit-price').value;
+        editItems.push({ product_id: productId, quantity: quantity, unit_price: price });
+    });
+
+    fetch(`/api/manual_sales/${currentEditSaleId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            transaction_date: txnDate,
+            receipt_number: receiptNumber,
+            customer_name: '',
+            payment_method: paymentMethod,
+            discount: 0,
+            notes: '',
+            reason: reason,
+            items: editItems
+        })
     })
     .then(r => r.json())
     .then(data => {
@@ -572,54 +599,135 @@ function voidSale(saleId) {
     });
 }
 
-// Close modal on outside click
-document.getElementById('saleModal').addEventListener('click', function(e) {
-    if (e.target === this) closeSaleModal();
+function openVoidModal(saleId) {
+    currentVoidSaleId = saleId;
+    fetch(`/api/manual_sales/${saleId}`)
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                const s = data.sale;
+                document.getElementById('voidModalContent').innerHTML = `
+                    <div style="background: var(--bg); padding: 12px; border-radius: var(--radius); margin-bottom: 12px;">
+                        <div style="font-size: 13px; margin-bottom: 4px;"><strong>Transaction Reference:</strong> ${escapeHtml(s.receipt_number)}</div>
+                        <div style="font-size: 13px; margin-bottom: 4px;"><strong>Transaction Date:</strong> ${s.transaction_date}</div>
+                        <div style="font-size: 13px; margin-bottom: 4px;"><strong>Total Amount:</strong> ₱${parseFloat(s.total_amount).toFixed(2)}</div>
+                        <div style="font-size: 13px;"><strong>Source:</strong> ${s.source}</div>
+                    </div>
+                    <p style="font-size: 13px; color: var(--danger); font-weight: 600;">Are you sure you want to void this historical transaction?</p>
+                `;
+                document.getElementById('voidModal').style.display = 'flex';
+            }
+        });
+}
+
+function closeVoidModal() {
+    document.getElementById('voidModal').style.display = 'none';
+    document.getElementById('voidReason').value = '';
+}
+
+function confirmVoid() {
+    const reason = document.getElementById('voidReason').value.trim();
+    if (!reason) { alert('Void reason is required'); return; }
+    
+    fetch(`/api/manual_sales/${currentVoidSaleId}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason: reason })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            alert(data.message);
+            window.location.reload();
+        } else {
+            alert(data.message);
+        }
+    });
+}
+
+function openRestoreModal(saleId) {
+    currentRestoreSaleId = saleId;
+    fetch(`/api/manual_sales/${saleId}`)
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                const s = data.sale;
+                document.getElementById('restoreModalContent').innerHTML = `
+                    <div style="background: var(--bg); padding: 12px; border-radius: var(--radius); margin-bottom: 12px;">
+                        <div style="font-size: 13px; margin-bottom: 4px;"><strong>Transaction Reference:</strong> ${escapeHtml(s.receipt_number)}</div>
+                        <div style="font-size: 13px; margin-bottom: 4px;"><strong>Transaction Date:</strong> ${s.transaction_date}</div>
+                        <div style="font-size: 13px;"><strong>Status:</strong> <span style="color: var(--danger);">${s.sale_status}</span></div>
+                    </div>
+                    <p style="font-size: 13px; font-weight: 600;">Restore this voided transaction?</p>
+                `;
+                document.getElementById('restoreModal').style.display = 'flex';
+            }
+        });
+}
+
+function closeRestoreModal() {
+    document.getElementById('restoreModal').style.display = 'none';
+    document.getElementById('restoreReason').value = '';
+}
+
+function confirmRestore() {
+    const reason = document.getElementById('restoreReason').value.trim();
+    if (!reason) { alert('Restoration reason is required'); return; }
+    
+    fetch(`/api/manual_sales/${currentRestoreSaleId}/restore`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason: reason })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            alert(data.message);
+            window.location.reload();
+        } else {
+            alert(data.message);
+        }
+    });
+}
+
+function viewAuditHistory(saleId) {
+    fetch(`/api/manual_sales_audit/${saleId}`)
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                let html = `<p style="font-weight: 600; margin-bottom: 12px;">Receipt: ${escapeHtml(data.sale.receipt_number)}</p>`;
+                if (data.audits.length === 0) {
+                    html += '<p style="color: var(--text-secondary);">No audit history found.</p>';
+                } else {
+                    html += '<table style="width: 100%; font-size: 12px;"><thead><tr><th style="text-align: left; padding: 8px;">Action</th><th style="text-align: left; padding: 8px;">Admin</th><th style="text-align: left; padding: 8px;">Date/Time</th><th style="text-align: left; padding: 8px;">Reason</th></tr></thead><tbody>';
+                    data.audits.forEach(audit => {
+                        html += `<tr><td style="padding: 8px; font-weight: 600;">${audit.action}</td><td style="padding: 8px;">${escapeHtml(audit.admin_name)}</td><td style="padding: 8px;">${audit.action_timestamp}</td><td style="padding: 8px;">${escapeHtml(audit.reason || '-')}</td></tr>`;
+                    });
+                    html += '</tbody></table>';
+                }
+                document.getElementById('auditModalContent').innerHTML = html;
+                document.getElementById('auditModal').style.display = 'flex';
+            } else {
+                alert(data.message);
+            }
+        });
+}
+
+function closeAuditModal() {
+    document.getElementById('auditModal').style.display = 'none';
+}
+
+// Close modals on outside click
+document.querySelectorAll('[id$="Modal"]').forEach(modal => {
+    modal.addEventListener('click', function(e) {
+        if (e.target === this) {
+            this.style.display = 'none';
+        }
+    });
 });
 
-// Initialize
 document.addEventListener('DOMContentLoaded', function() {
     renderItems();
 });
 </script>
-{% endblock %}
-
-{% block help_tour %}
-<script>
-const HELP_TOUR_STEPS = [
-  {
-    selector: "#tab-encode-content",
-    title: "Manual Sales Entry Form",
-    category: "core-features",
-    purpose: "Encode historical sales transactions that were recorded before the POS system was implemented.",
-    how_to_use: [
-      "Enter the actual transaction date (not the encoding date)",
-      "Enter the original receipt number or create a reference number",
-      "Add products with quantities and historical selling prices",
-      "The system calculates subtotals and grand total automatically",
-      "Click Save to record the transaction without affecting current inventory"
-    ],
-    description: "Form for entering historical sales data.",
-    instruction: "Fill out the transaction details and add products to record a manual sale."
-  },
-  {
-    selector: "#tab-records-content",
-    title: "Manual Sales Records",
-    category: "core-features",
-    purpose: "View and manage all manually encoded sales transactions.",
-    how_to_use: [
-      "View all manual sales with transaction details",
-      "Use search and filters to find specific records",
-      "Click View to see full transaction details",
-      "Click Edit to correct a historical transaction",
-      "Click Void to mark an incorrect transaction as voided"
-    ],
-    description: "Table of manually encoded sales.",
-    instruction: "Review, edit, or void manual sales records as needed."
-  }
-];
-window.HELP_TOUR_STEPS = HELP_TOUR_STEPS;
-window.HELP_TOUR_STORAGE_KEY = "helptour_manual_sales_entry";
-</script>
-<script src="/static/js/help-tour.js"></script>
 {% endblock %}

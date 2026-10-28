@@ -36,12 +36,12 @@
         <a href="{{ url_for('sales_dashboard') }}" class="btn btn-secondary" style="padding: 8px 16px; font-size: 13px; text-decoration: none;">Reset</a>
 
         <!-- Export Controls -->
-        <div style="border-left: 1px solid var(--border); padding-left: 12px; margin-left: 8px; display: flex; gap: 6px; align-items: center;">
+        <div style="border-left: 1px solid var(--border); padding-left: 12px; margin-left: 8px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
             <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary);">Export:</label>
-            <button type="submit" name="export" value="csv" class="btn btn-success btn-sm" style="padding: 6px 12px; font-size: 12px;">CSV</button>
-            <button type="submit" name="export" value="excel" class="btn btn-primary btn-sm" style="padding: 6px 12px; font-size: 12px; background: var(--success); border: none;">Excel</button>
-            <button type="submit" name="export" value="pdf" class="btn btn-danger btn-sm" style="padding: 6px 12px; font-size: 12px; background: var(--danger); border: none;">PDF</button>
-            <button type="button" onclick="window.print()" class="btn btn-secondary btn-sm" style="padding: 6px 12px; font-size: 12px;">Print</button>
+            <button type="submit" name="export" value="csv" class="btn btn-secondary" style="padding: 6px 12px; font-size: 12px;">CSV</button>
+            <button type="submit" name="export" value="excel" class="btn btn-secondary" style="padding: 6px 12px; font-size: 12px;">Excel</button>
+            <button type="submit" name="export" value="pdf" class="btn btn-secondary" style="padding: 6px 12px; font-size: 12px;">PDF</button>
+            <button type="button" onclick="window.print()" class="btn btn-secondary" style="padding: 6px 12px; font-size: 12px;">Print</button>
         </div>
     </form>
 

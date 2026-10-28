@@ -2384,7 +2384,8 @@ def manual_sales_entry():
     cur.execute(f"""
         SELECT s.id, s.receipt_number, s.sale_date, s.customer_name,
                s.total_amount, s.sale_status, s.source, s.date_encoded,
-               a.username as encoded_by, s.payment_method, s.discount, s.notes
+               a.username as encoded_by, s.payment_method, s.discount, s.notes,
+               (SELECT COUNT(*) FROM sale_items si WHERE si.sale_id = s.id) as item_count
         FROM sales s
         LEFT JOIN admins a ON s.cashier_id = a.id
         WHERE s.source = 'MANUAL'
@@ -2495,13 +2496,22 @@ def api_manual_sales_entry():
 
         # Insert sale header (NO inventory deduction)
         admin_id = session.get('admin_id')
+        # For manual sales, need a valid cashier_id (FK constraint)
+        cur.execute("SELECT id FROM cashiers LIMIT 1")
+        cashier_row = cur.fetchone()
+        if cashier_row:
+            cashier_id_for_sale = cashier_row[0]
+        else:
+            from werkzeug.security import generate_password_hash
+            cur.execute("INSERT INTO cashiers (full_name, username, password, status) VALUES ('Manual Entry', 'manual_system', ?, 'active')", (generate_password_hash('manual_system'),))
+            cashier_id_for_sale = cur.lastrowid
         cur.execute("""
             INSERT INTO sales (receipt_number, cashier_id, total_amount, sale_status,
                                product_type, sale_date, source, date_encoded,
                                customer_name, discount, payment_method, notes)
             VALUES (?, ?, ?, 'Completed', ?, ?, 'MANUAL', datetime('now', 'localtime'),
                     ?, ?, ?, ?)
-        """, (manual_receipt, admin_id, total_amount, sale_product_type, transaction_date,
+        """, (manual_receipt, cashier_id_for_sale, total_amount, sale_product_type, transaction_date,
               customer_name, discount, payment_method, notes))
 
         sale_id = cur.lastrowid
@@ -2635,13 +2645,48 @@ def api_edit_manual_sale(sale_id):
     cur = conn.cursor()
     try:
         # Verify sale exists and is manual
-        cur.execute("SELECT id, receipt_number FROM sales WHERE id = ? AND source = 'MANUAL'", (sale_id,))
+        cur.execute("""
+            SELECT s.id, s.receipt_number, s.sale_date, s.customer_name,
+                   s.total_amount, s.sale_status, s.source, s.payment_method,
+                   s.discount, s.notes
+            FROM sales s
+            WHERE s.id = ? AND s.source = 'MANUAL'
+        """, (sale_id,))
         sale = cur.fetchone()
         if not sale:
             conn.close()
             return jsonify({'success': False, 'message': 'Manual sale not found'}), 404
 
+        # Block editing if already voided
+        if sale[5] == 'Voided':
+            conn.close()
+            return jsonify({'success': False, 'message': 'Cannot edit a voided transaction. Restore it first.'}), 400
+
         old_receipt = sale[1]
+
+        # Capture previous values for audit
+        previous_values = {
+            'receipt_number': sale[1],
+            'sale_date': sale[2],
+            'customer_name': sale[3],
+            'total_amount': sale[4],
+            'sale_status': sale[5],
+            'payment_method': sale[7],
+            'discount': sale[8],
+            'notes': sale[9]
+        }
+
+        # Get previous items for audit
+        cur.execute("""
+            SELECT si.product_id, si.quantity, si.price
+            FROM sale_items si
+            WHERE si.sale_id = ?
+        """, (sale_id,))
+        prev_items = cur.fetchall()
+        previous_values['items'] = [
+            {'product_id': row[0], 'quantity': row[1], 'unit_price': row[2]}
+            for row in prev_items
+        ]
 
         # Check for duplicate receipt (excluding current sale)
         cur.execute("SELECT id FROM sales WHERE receipt_number = ? AND id != ?", (receipt_number, sale_id))
@@ -2710,7 +2755,30 @@ def api_edit_manual_sale(sale_id):
                 VALUES (?, ?, ?, ?)
             """, (sale_id, item['product_id'], item['quantity'], item['unit_price']))
 
-        # Log audit trail
+        # Capture updated values for audit
+        updated_values = {
+            'receipt_number': receipt_number,
+            'sale_date': transaction_date,
+            'customer_name': customer_name,
+            'total_amount': total_amount,
+            'sale_status': 'Completed',
+            'payment_method': payment_method,
+            'discount': discount,
+            'notes': notes,
+            'items': [
+                {'product_id': item['product_id'], 'quantity': item['quantity'], 'unit_price': item['unit_price']}
+                for item in validated_items
+            ]
+        }
+
+        # Log detailed audit trail in manual_sales_audit table
+        import json
+        cur.execute("""
+            INSERT INTO manual_sales_audit (sale_id, action, previous_values, updated_values, admin_id, reason)
+            VALUES (?, 'EDITED', ?, ?, ?, ?)
+        """, (sale_id, json.dumps(previous_values), json.dumps(updated_values), admin_id, reason))
+
+        # Also log to admin_activity for backward compatibility
         cur.execute("""
             INSERT INTO admin_activity (admin_id, action, ip_address, details)
             VALUES (?, ?, ?, ?)
@@ -2738,20 +2806,51 @@ def api_edit_manual_sale(sale_id):
 @admin_required
 def api_void_manual_sale(sale_id):
     """Void a manual sale (soft delete)."""
-    reason = request.args.get('reason', '').strip()
+    if not request.is_json:
+        return jsonify({'success': False, 'message': 'Invalid request format'})
+
+    data = request.get_json()
+    if not data:
+        return jsonify({'success': False, 'message': 'No data received'})
+
+    reason = data.get('reason', '').strip()
     if not reason:
         return jsonify({'success': False, 'message': 'Void reason is required'})
 
     conn = get_db()
     cur = conn.cursor()
     try:
-        cur.execute("SELECT id, receipt_number FROM sales WHERE id = ? AND source = 'MANUAL'", (sale_id,))
+        cur.execute("""
+            SELECT s.id, s.receipt_number, s.sale_date, s.total_amount, s.source, s.sale_status
+            FROM sales s
+            WHERE s.id = ? AND s.source = 'MANUAL'
+        """, (sale_id,))
         sale = cur.fetchone()
         if not sale:
             conn.close()
             return jsonify({'success': False, 'message': 'Manual sale not found'}), 404
 
+        # Block voiding if already voided
+        if sale[5] == 'Voided':
+            conn.close()
+            return jsonify({'success': False, 'message': 'Transaction is already voided'}), 400
+
         admin_id = session.get('admin_id')
+
+        # Capture previous values for audit
+        import json
+        previous_values = {
+            'receipt_number': sale[1],
+            'sale_date': sale[2],
+            'total_amount': sale[3],
+            'source': sale[4],
+            'sale_status': sale[5]
+        }
+        updated_values = {
+            'sale_status': 'Voided',
+            'voided_reason': reason,
+            'voided_by': admin_id
+        }
 
         cur.execute("""
             UPDATE sales
@@ -2760,12 +2859,18 @@ def api_void_manual_sale(sale_id):
             WHERE id = ? AND source = 'MANUAL'
         """, (admin_id, reason, sale_id))
 
-        # Log audit trail
+        # Log detailed audit trail in manual_sales_audit table
+        cur.execute("""
+            INSERT INTO manual_sales_audit (sale_id, action, previous_values, updated_values, admin_id, reason)
+            VALUES (?, 'VOIDED', ?, ?, ?, ?)
+        """, (sale_id, json.dumps(previous_values), json.dumps(updated_values), admin_id, reason))
+
+        # Also log to admin_activity for backward compatibility
         cur.execute("""
             INSERT INTO admin_activity (admin_id, action, ip_address, details)
             VALUES (?, ?, ?, ?)
         """, (admin_id, 'Manual Sale Voided', request.remote_addr,
-              f"Sale ID: {sale_id}, Receipt: {sale[1]}, Reason: {reason}"))
+              f"Sale ID: {sale_id}, Receipt: {sale[1]}, Total: ₱{float(sale[3]):,.2f}, Reason: {reason}"))
 
         conn.commit()
         conn.close()
@@ -2773,6 +2878,97 @@ def api_void_manual_sale(sale_id):
         return jsonify({
             'success': True,
             'message': 'Manual sale voided successfully',
+            'sale_id': sale_id
+        })
+
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        return jsonify({'success': False, 'message': str(e)})
+
+
+@app.route('/api/manual_sales/<int:sale_id>/restore', methods=['POST'])
+@admin_required
+def api_restore_manual_sale(sale_id):
+    """Restore a voided manual sale."""
+    if not request.is_json:
+        return jsonify({'success': False, 'message': 'Invalid request format'})
+
+    data = request.get_json()
+    if not data:
+        return jsonify({'success': False, 'message': 'No data received'})
+
+    reason = data.get('reason', '').strip()
+    if not reason:
+        return jsonify({'success': False, 'message': 'Restoration reason is required'})
+
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        # Verify sale exists, is manual, and is voided
+        cur.execute("""
+            SELECT s.id, s.receipt_number, s.sale_date, s.source, s.sale_status
+            FROM sales s
+            WHERE s.id = ? AND s.source = 'MANUAL'
+        """, (sale_id,))
+        sale = cur.fetchone()
+        if not sale:
+            conn.close()
+            return jsonify({'success': False, 'message': 'Manual sale not found'}), 404
+
+        # Block restoring if not voided
+        if sale[4] != 'Voided':
+            conn.close()
+            return jsonify({'success': False, 'message': 'Only voided transactions can be restored'}), 400
+
+        admin_id = session.get('admin_id')
+
+        # Check for duplicate receipt number (another active sale with same receipt)
+        cur.execute("SELECT id FROM sales WHERE receipt_number = ? AND id != ? AND sale_status != 'Voided'", (sale[1], sale_id))
+        if cur.fetchone():
+            conn.close()
+            return jsonify({'success': False, 'message': f'Cannot restore: receipt number {sale[1]} is already in use by an active transaction'})
+
+        # Capture previous values for audit
+        import json
+        previous_values = {
+            'receipt_number': sale[1],
+            'sale_date': sale[2],
+            'source': sale[3],
+            'sale_status': sale[4]
+        }
+        updated_values = {
+            'sale_status': 'Completed',
+            'restored_reason': reason,
+            'restored_by': admin_id
+        }
+
+        cur.execute("""
+            UPDATE sales
+            SET sale_status = 'Completed', voided_at = NULL,
+                voided_by = NULL, void_reason = NULL
+            WHERE id = ? AND source = 'MANUAL'
+        """, (sale_id,))
+
+        # Log detailed audit trail in manual_sales_audit table
+        cur.execute("""
+            INSERT INTO manual_sales_audit (sale_id, action, previous_values, updated_values, admin_id, reason)
+            VALUES (?, 'RESTORED', ?, ?, ?, ?)
+        """, (sale_id, json.dumps(previous_values), json.dumps(updated_values), admin_id, reason))
+
+        # Also log to admin_activity for backward compatibility
+        cur.execute("""
+            INSERT INTO admin_activity (admin_id, action, ip_address, details)
+            VALUES (?, ?, ?, ?)
+        """, (admin_id, 'Manual Sale Restored', request.remote_addr,
+              f"Sale ID: {sale_id}, Receipt: {sale[1]}, Reason: {reason}"))
+
+        conn.commit()
+        conn.close()
+
+        return jsonify({
+            'success': True,
+            'message': 'Manual sale restored successfully',
             'sale_id': sale_id
         })
 
@@ -2806,6 +3002,56 @@ def api_products_search():
             } for row in products
         ]
     })
+
+
+@app.route('/api/manual_sales_audit/<int:sale_id>', methods=['GET'])
+@admin_required
+def api_manual_sales_audit(sale_id):
+    """Get audit history for a manual sale."""
+    # Verify sale exists and is manual
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT id, receipt_number FROM sales WHERE id = ? AND source = 'MANUAL'", (sale_id,))
+    sale = cur.fetchone()
+    if not sale:
+        conn.close()
+        return jsonify({'success': False, 'message': 'Manual sale not found'}), 404
+
+    cur.execute("""
+        SELECT msa.id, msa.action, msa.previous_values, msa.updated_values,
+               msa.admin_id, msa.action_timestamp, msa.reason,
+               a.username as admin_name
+        FROM manual_sales_audit msa
+        LEFT JOIN admins a ON msa.admin_id = a.id
+        WHERE msa.sale_id = ?
+        ORDER BY msa.action_timestamp DESC
+    """, (sale_id,))
+    audits = cur.fetchall()
+    conn.close()
+
+    import json
+    audit_list = []
+    for row in audits:
+        audit_list.append({
+            'id': row[0],
+            'action': row[1],
+            'previous_values': json.loads(row[2]) if row[2] else None,
+            'updated_values': json.loads(row[3]) if row[3] else None,
+            'admin_id': row[4],
+            'admin_name': row[7] or 'Unknown',
+            'action_timestamp': row[5],
+            'reason': row[6]
+        })
+
+    return jsonify({
+        'success': True,
+        'sale': {
+            'id': sale[0],
+            'receipt_number': sale[1]
+        },
+        'audits': audit_list
+    })
+
 
 # =============================
 # INVENTORY

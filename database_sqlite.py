@@ -303,5 +303,24 @@ def init_db():
     if 'notes' not in sales_columns:
         cursor.execute("ALTER TABLE sales ADD COLUMN notes TEXT")
 
+    # Manual sales audit history table
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS manual_sales_audit (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            sale_id INTEGER NOT NULL,
+            action VARCHAR(20) NOT NULL,
+            previous_values TEXT,
+            updated_values TEXT,
+            admin_id INTEGER NOT NULL,
+            action_timestamp TEXT DEFAULT (datetime('now', 'localtime')),
+            reason TEXT,
+            FOREIGN KEY (sale_id) REFERENCES sales(id) ON DELETE CASCADE,
+            FOREIGN KEY (admin_id) REFERENCES admins(id) ON DELETE CASCADE
+        )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_manual_sales_audit_sale_id ON manual_sales_audit(sale_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_manual_sales_audit_action ON manual_sales_audit(action)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_manual_sales_audit_timestamp ON manual_sales_audit(action_timestamp)")
+
     conn.commit()
     conn.close()
