@@ -1,0 +1,18 @@
+Fix the Revenue Trend chart in the sales dashboard so that the Daily/Weekly/Monthly/Yearly period buttons actually work and update the chart dynamically without reloading the page.
+
+Current issues:
+1. The trend period buttons (Daily, Weekly, Monthly, Yearly) with class `trend-period-btn` exist in templates/sales_dashboard.html but clicking them just reloads the page with a `trend_period` query parameter. The chart needs to be updated client-side.
+2. The backend in app.py (sales_dashboard route) may already compute trend data based on trend_period, but the frontend needs to handle switching periods properly.
+3. The chart is initialized once with `trend_labels` and `trend_values` from the backend. When the period changes, we need to either fetch new data via AJAX or compute it differently.
+
+Requirements:
+- Make the trend period buttons functional - clicking them should update the Revenue Trend chart without full page reload
+- Keep the buttons styled (highlight active period)
+- Fetch trend data for the selected period from the backend or compute client-side
+- Update the chart labels and values dynamically
+- Preserve the current styling and chart configuration
+- The chart should show appropriate labels based on the period (daily dates, weekly ranges, monthly names, yearly values)
+
+Look at how the backend handles trend data in the sales_dashboard route and how trend_labels/trend_values are passed to the template. Add JavaScript to handle the button clicks, fetch new data, and update the Chart.js instance.
+
+Also check if there are API endpoints for trend data or if we need to modify the backend to provide trend data via JSON.

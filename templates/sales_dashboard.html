@@ -352,8 +352,26 @@ document.querySelectorAll('.preset-btn').forEach(btn => {
     });
 });
 
-// Initialize charts on load
+// Revenue trend period buttons
+document.querySelectorAll('.trend-period-btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+        const period = this.getAttribute('data-period');
+        const url = new URL(window.location.href);
+        url.searchParams.set('trend_period', period);
+        window.location.href = url.toString();
+    });
+});
+
+// Highlight active trend period button
 document.addEventListener('DOMContentLoaded', function() {
+    const params = new URLSearchParams(window.location.search);
+    const trendPeriod = params.get('trend_period') || 'daily';
+    document.querySelectorAll('.trend-period-btn').forEach(btn => {
+        if (btn.getAttribute('data-period') === trendPeriod) {
+            btn.classList.remove('btn-secondary');
+            btn.classList.add('btn-primary');
+        }
+    });
     setTimeout(initCharts, 100);
 });
 </script>
