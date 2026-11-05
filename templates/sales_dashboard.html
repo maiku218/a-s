@@ -354,20 +354,36 @@ document.querySelectorAll('.preset-btn').forEach(btn => {
 
 // Revenue trend period buttons
 document.querySelectorAll('.trend-period-btn').forEach(btn => {
-    btn.addEventListener('click', function() {
+    btn.addEventListener('click', async function() {
         const period = this.getAttribute('data-period');
-        const url = new URL(window.location.href);
-        url.searchParams.set('trend_period', period);
-        window.location.href = url.toString();
+        document.querySelectorAll('.trend-period-btn').forEach(b => {
+            b.classList.remove('btn-primary');
+            b.classList.add('btn-secondary');
+        });
+        this.classList.remove('btn-secondary');
+        this.classList.add('btn-primary');
+
+        const dateFrom = document.getElementById('dateFrom')?.value || '';
+        const dateTo = document.getElementById('dateTo')?.value || '';
+        try {
+            const params = new URLSearchParams({ period, scope: 'all', date_from: dateFrom, date_to: dateTo });
+            const res = await fetch('/api/sales/trend?' + params.toString());
+            const data = await res.json();
+            if (revenueTrendChart && data.labels) {
+                revenueTrendChart.data.labels = data.labels;
+                revenueTrendChart.data.datasets[0].data = data.values;
+                revenueTrendChart.update();
+            }
+        } catch (e) {
+            console.error(e);
+        }
     });
 });
 
-// Highlight active trend period button
+// Highlight active trend period button on load
 document.addEventListener('DOMContentLoaded', function() {
-    const params = new URLSearchParams(window.location.search);
-    const trendPeriod = params.get('trend_period') || 'daily';
     document.querySelectorAll('.trend-period-btn').forEach(btn => {
-        if (btn.getAttribute('data-period') === trendPeriod) {
+        if (btn.getAttribute('data-period') === 'daily') {
             btn.classList.remove('btn-secondary');
             btn.classList.add('btn-primary');
         }

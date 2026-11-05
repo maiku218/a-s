@@ -36,12 +36,12 @@
         <a href="{{ url_for('medical_sales') }}" class="btn btn-secondary" style="padding: 8px 16px; font-size: 13px; text-decoration: none;">Reset</a>
 
         <!-- Export Controls -->
-        <div style="border-left: 1px solid var(--border); padding-left: 12px; margin-left: 8px; display: flex; gap: 6px; align-items: center;">
+        <div style="border-left: 1px solid var(--border); padding-left: 12px; margin-left: 8px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
             <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary);">Export:</label>
-            <button type="submit" name="export" value="csv" class="btn btn-success btn-sm" style="padding: 6px 12px; font-size: 12px;">CSV</button>
-            <button type="submit" name="export" value="excel" class="btn btn-primary btn-sm" style="padding: 6px 12px; font-size: 12px; background: var(--success); border: none;">Excel</button>
-            <button type="submit" name="export" value="pdf" class="btn btn-danger btn-sm" style="padding: 6px 12px; font-size: 12px; background: var(--danger); border: none;">PDF</button>
-            <button type="button" onclick="window.print()" class="btn btn-secondary btn-sm" style="padding: 6px 12px; font-size: 12px;">Print</button>
+            <button type="submit" name="export" value="csv" class="btn btn-secondary" style="padding: 6px 12px; font-size: 12px;">CSV</button>
+            <button type="submit" name="export" value="excel" class="btn btn-secondary" style="padding: 6px 12px; font-size: 12px;">Excel</button>
+            <button type="submit" name="export" value="pdf" class="btn btn-secondary" style="padding: 6px 12px; font-size: 12px;">PDF</button>
+            <button type="button" onclick="window.print()" class="btn btn-secondary" style="padding: 6px 12px; font-size: 12px;">Print</button>
         </div>
     </form>
 
@@ -247,7 +247,41 @@ document.querySelectorAll('.preset-btn').forEach(btn => {
     });
 });
 
+// Revenue trend period buttons
+document.querySelectorAll('.trend-period-btn').forEach(btn => {
+    btn.addEventListener('click', async function() {
+        const period = this.getAttribute('data-period');
+        document.querySelectorAll('.trend-period-btn').forEach(b => {
+            b.classList.remove('btn-primary');
+            b.classList.add('btn-secondary');
+        });
+        this.classList.remove('btn-secondary');
+        this.classList.add('btn-primary');
+
+        const dateFrom = document.getElementById('dateFrom')?.value || '';
+        const dateTo = document.getElementById('dateTo')?.value || '';
+        try {
+            const params = new URLSearchParams({ period, scope: 'medical', date_from: dateFrom, date_to: dateTo });
+            const res = await fetch('/api/sales/trend?' + params.toString());
+            const data = await res.json();
+            if (medicalTrendChart && data.labels) {
+                medicalTrendChart.data.labels = data.labels;
+                medicalTrendChart.data.datasets[0].data = data.values;
+                medicalTrendChart.update();
+            }
+        } catch (e) {
+            console.error(e);
+        }
+    });
+});
+
 document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('.trend-period-btn').forEach(btn => {
+        if (btn.getAttribute('data-period') === 'daily') {
+            btn.classList.remove('btn-secondary');
+            btn.classList.add('btn-primary');
+        }
+    });
     setTimeout(initMedicalCharts, 100);
 });
 </script>

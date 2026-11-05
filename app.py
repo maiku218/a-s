@@ -169,39 +169,196 @@ def calculate_sales_analytics(conn, date_from=None, date_to=None, product_scope=
         for row in cur.fetchall()
     ]
 
-    # Revenue trend (daily) for last 30 days or date range
-    if date_from and date_to:
-        trend_where = f"""
-            FROM sale_items si
-            JOIN products p ON si.product_id = p.id
-            JOIN sales s ON si.sale_id = s.id
-            WHERE s.sale_status = 'Completed'
-            AND DATE(s.sale_date) >= ? AND DATE(s.sale_date) <= ?
-            {type_filter}
-            GROUP BY DATE(s.sale_date)
-            ORDER BY DATE(s.sale_date) ASC
-        """
-        trend_params = [date_from, date_to]
-    else:
-        trend_where = f"""
-            FROM sale_items si
-            JOIN products p ON si.product_id = p.id
-            JOIN sales s ON si.sale_id = s.id
-            WHERE s.sale_status = 'Completed'
-            AND DATE(s.sale_date) >= date('now', '-30 days', 'localtime')
-            {type_filter}
-            GROUP BY DATE(s.sale_date)
-            ORDER BY DATE(s.sale_date) ASC
-        """
-        trend_params = []
+def calculate_sales_analytics(conn, date_from=None, date_to=None, product_scope='overall', trend_period='daily'):
+    """
+    Reusable analytics calculation supporting three scopes:
+    - overall: all sales
+    - medical: medical products only (calculated from sale_items + products.product_type)
+    - non_medical: non-medical products only
 
+    Important: Category revenue is calculated from sale_items joined with products,
+    NOT from sales.product_type, so mixed transactions are handled correctly.
+    """
+    cur = conn.cursor()
+
+    date_clause, date_params = get_date_filter_params(date_from, date_to)
+    type_filter = get_product_type_filter(product_scope)
+
+    # Base query: sale_items joined with products and sales, filtered by Completed status
+    base_from = """
+        FROM sale_items si
+        JOIN products p ON si.product_id = p.id
+        JOIN sales s ON si.sale_id = s.id
+        WHERE s.sale_status = 'Completed'
+    """
+    where_clause = base_from + date_clause + type_filter
+
+    # Total Revenue (sum of line item subtotals)
     cur.execute(f"""
-        SELECT DATE(s.sale_date) as day, IFNULL(SUM(si.quantity * si.price), 0) as daily_total
-        {trend_where}
-    """, trend_params)
-    trend_data = cur.fetchall()
-    trend_labels = [str(row[0]) for row in trend_data]
-    trend_values = [float(row[1]) for row in trend_data]
+        SELECT IFNULL(SUM(si.quantity * si.price), 0) {where_clause}
+    """, date_params)
+    total_revenue = float(cur.fetchone()[0])
+
+    # Total Quantity Sold
+    cur.execute(f"""
+        SELECT IFNULL(SUM(si.quantity), 0) {where_clause}
+    """, date_params)
+    total_quantity = int(cur.fetchone()[0])
+
+    # Distinct Transaction Count (distinct sale IDs to avoid double-counting mixed transactions)
+    cur.execute(f"""
+        SELECT COUNT(DISTINCT s.id) {where_clause}
+    """, date_params)
+    total_transactions = int(cur.fetchone()[0])
+
+    # Average Order Value
+    avg_order_value = round(total_revenue / total_transactions, 2) if total_transactions > 0 else 0.0
+
+    # Best-selling products (by quantity)
+    cur.execute(f"""
+        SELECT p.product_name, p.product_type,
+               IFNULL(SUM(si.quantity), 0) as total_qty,
+               IFNULL(SUM(si.quantity * si.price), 0) as total_rev
+        {where_clause}
+        GROUP BY p.id, p.product_name, p.product_type
+        ORDER BY total_qty DESC
+        LIMIT 10
+    """, date_params)
+    best_selling = [
+        {'name': row[0], 'type': row[1], 'qty': int(row[2]), 'revenue': float(row[3])}
+        for row in cur.fetchall()
+    ]
+
+    # Revenue trend based on period
+    trend_labels = []
+    trend_values = []
+    if trend_period == 'daily':
+        if date_from and date_to:
+            trend_where = f"""
+                FROM sale_items si
+                JOIN products p ON si.product_id = p.id
+                JOIN sales s ON si.sale_id = s.id
+                WHERE s.sale_status = 'Completed'
+                AND DATE(s.sale_date) >= ? AND DATE(s.sale_date) <= ?
+                {type_filter}
+                GROUP BY DATE(s.sale_date)
+                ORDER BY DATE(s.sale_date) ASC
+            """
+            trend_params = [date_from, date_to]
+        else:
+            trend_where = f"""
+                FROM sale_items si
+                JOIN products p ON si.product_id = p.id
+                JOIN sales s ON si.sale_id = s.id
+                WHERE s.sale_status = 'Completed'
+                AND DATE(s.sale_date) >= date('now', '-30 days', 'localtime')
+                {type_filter}
+                GROUP BY DATE(s.sale_date)
+                ORDER BY DATE(s.sale_date) ASC
+            """
+            trend_params = []
+        cur.execute(f"""
+            SELECT DATE(s.sale_date) as day, IFNULL(SUM(si.quantity * si.price), 0) as daily_total
+            {trend_where}
+        """, trend_params)
+        trend_data = cur.fetchall()
+        trend_labels = [str(row[0]) for row in trend_data]
+        trend_values = [float(row[1]) for row in trend_data]
+    elif trend_period == 'weekly':
+        if date_from and date_to:
+            trend_where = f"""
+                FROM sale_items si
+                JOIN products p ON si.product_id = p.id
+                JOIN sales s ON si.sale_id = s.id
+                WHERE s.sale_status = 'Completed'
+                AND DATE(s.sale_date) >= ? AND DATE(s.sale_date) <= ?
+                {type_filter}
+                GROUP BY strftime('%Y-%W', s.sale_date)
+                ORDER BY strftime('%Y-%W', s.sale_date) ASC
+            """
+            trend_params = [date_from, date_to]
+        else:
+            trend_where = f"""
+                FROM sale_items si
+                JOIN products p ON si.product_id = p.id
+                JOIN sales s ON si.sale_id = s.id
+                WHERE s.sale_status = 'Completed'
+                AND DATE(s.sale_date) >= date('now', '-12 weeks', 'localtime')
+                {type_filter}
+                GROUP BY strftime('%Y-%W', s.sale_date)
+                ORDER BY strftime('%Y-%W', s.sale_date) ASC
+            """
+            trend_params = []
+        cur.execute(f"""
+            SELECT strftime('%Y-W%W', s.sale_date) as week, IFNULL(SUM(si.quantity * si.price), 0) as weekly_total
+            {trend_where}
+        """, trend_params)
+        trend_data = cur.fetchall()
+        trend_labels = [str(row[0]) for row in trend_data]
+        trend_values = [float(row[1]) for row in trend_data]
+    elif trend_period == 'monthly':
+        if date_from and date_to:
+            trend_where = f"""
+                FROM sale_items si
+                JOIN products p ON si.product_id = p.id
+                JOIN sales s ON si.sale_id = s.id
+                WHERE s.sale_status = 'Completed'
+                AND DATE(s.sale_date) >= ? AND DATE(s.sale_date) <= ?
+                {type_filter}
+                GROUP BY strftime('%Y-%m', s.sale_date)
+                ORDER BY strftime('%Y-%m', s.sale_date) ASC
+            """
+            trend_params = [date_from, date_to]
+        else:
+            trend_where = f"""
+                FROM sale_items si
+                JOIN products p ON si.product_id = p.id
+                JOIN sales s ON si.sale_id = s.id
+                WHERE s.sale_status = 'Completed'
+                AND DATE(s.sale_date) >= date('now', '-12 months', 'localtime')
+                {type_filter}
+                GROUP BY strftime('%Y-%m', s.sale_date)
+                ORDER BY strftime('%Y-%m', s.sale_date) ASC
+            """
+            trend_params = []
+        cur.execute(f"""
+            SELECT strftime('%Y-%m', s.sale_date) as month, IFNULL(SUM(si.quantity * si.price), 0) as monthly_total
+            {trend_where}
+        """, trend_params)
+        trend_data = cur.fetchall()
+        trend_labels = [str(row[0]) for row in trend_data]
+        trend_values = [float(row[1]) for row in trend_data]
+    elif trend_period == 'yearly':
+        if date_from and date_to:
+            trend_where = f"""
+                FROM sale_items si
+                JOIN products p ON si.product_id = p.id
+                JOIN sales s ON si.sale_id = s.id
+                WHERE s.sale_status = 'Completed'
+                AND DATE(s.sale_date) >= ? AND DATE(s.sale_date) <= ?
+                {type_filter}
+                GROUP BY strftime('%Y', s.sale_date)
+                ORDER BY strftime('%Y', s.sale_date) ASC
+            """
+            trend_params = [date_from, date_to]
+        else:
+            trend_where = f"""
+                FROM sale_items si
+                JOIN products p ON si.product_id = p.id
+                JOIN sales s ON si.sale_id = s.id
+                WHERE s.sale_status = 'Completed'
+                {type_filter}
+                GROUP BY strftime('%Y', s.sale_date)
+                ORDER BY strftime('%Y', s.sale_date) ASC
+            """
+            trend_params = []
+        cur.execute(f"""
+            SELECT strftime('%Y', s.sale_date) as year, IFNULL(SUM(si.quantity * si.price), 0) as yearly_total
+            {trend_where}
+        """, trend_params)
+        trend_data = cur.fetchall()
+        trend_labels = [str(row[0]) for row in trend_data]
+        trend_values = [float(row[1]) for row in trend_data]
 
     # Period comparison: current vs previous period
     # Determine period length from date range, default to 30 days
@@ -275,6 +432,7 @@ def calculate_sales_analytics(conn, date_from=None, date_to=None, product_scope=
         'trend_values': trend_values,
         'current_revenue': round(current_revenue, 2),
         'previous_revenue': round(previous_revenue, 2),
+        'trend_period': trend_period,
     }
 
 
@@ -2238,9 +2396,14 @@ def sales_dashboard():
 
     conn.close()
 
+        # Get trend period
+    trend_period = request.args.get('trend_period', 'daily').strip().lower()
+    if trend_period not in ['daily', 'weekly', 'monthly', 'yearly']:
+        trend_period = 'daily'
+
     # Use shared analytics engine for overall scope
     conn2 = get_db()
-    analytics = calculate_sales_analytics(conn2, date_from, date_to, 'overall')
+    analytics = calculate_sales_analytics(conn2, date_from, date_to, 'overall', trend_period)
     conn2.close()
 
     # Generate business insights
@@ -2278,6 +2441,7 @@ def sales_dashboard():
                            best_selling=analytics['best_selling'],
                            trend_labels=analytics['trend_labels'],
                            trend_values=analytics['trend_values'],
+                           trend_period=trend_period,
                            insights=insights,
                            active_main='sales', active_sub='sales_dashboard')
 
@@ -4826,9 +4990,116 @@ def api_held_transactions():
         })
     return jsonify({'holds': holds})
 
-@app.route('/api/resume_transaction', methods=['POST'])
-@cashier_required
-def api_resume_transaction():
+@app.route('/api/sales/trend')
+@admin_required
+def api_sales_trend():
+    """API endpoint for sales trend data with period filtering."""
+    try:
+        period = request.args.get('period', 'daily').strip().lower()
+        scope = request.args.get('scope', 'all').strip().lower()
+        date_from = request.args.get('date_from', '').strip()
+        date_to = request.args.get('date_to', '').strip()
+
+        if period not in ['daily', 'weekly', 'monthly', 'yearly']:
+            period = 'daily'
+        if scope not in ['all', 'medical', 'non-medical']:
+            scope = 'all'
+
+        conn = get_db()
+        cur = conn.cursor()
+
+        date_clause = ""
+        date_params = []
+        if date_from and date_to:
+            date_clause = " AND DATE(s.sale_date) >= ? AND DATE(s.sale_date) <= ?"
+            date_params = [date_from, date_to]
+        elif date_from:
+            date_clause = " AND DATE(s.sale_date) >= ?"
+            date_params = [date_from]
+        elif date_to:
+            date_clause = " AND DATE(s.sale_date) <= ?"
+            date_params = [date_to]
+
+        scope_clause = ""
+        if scope == 'medical':
+            scope_clause = " AND p.product_type = 'Medical'"
+        elif scope == 'non-medical':
+            scope_clause = " AND p.product_type = 'Non-Medical'"
+
+        labels = []
+        values = []
+
+        if period == 'daily':
+            if not date_from and not date_to:
+                date_clause = " AND DATE(s.sale_date) >= date('now', '-30 days', 'localtime')"
+                date_params = []
+            query = f"""
+                SELECT DATE(s.sale_date) as label, IFNULL(SUM(si.quantity * si.price), 0) as total
+                FROM sale_items si
+                JOIN products p ON si.product_id = p.id
+                JOIN sales s ON si.sale_id = s.id
+                WHERE s.sale_status = 'Completed' {date_clause} {scope_clause}
+                GROUP BY DATE(s.sale_date)
+                ORDER BY DATE(s.sale_date) ASC
+            """
+            cur.execute(query, date_params)
+            for row in cur.fetchall():
+                labels.append(str(row[0]))
+                values.append(float(row[1]))
+        elif period == 'weekly':
+            if not date_from and not date_to:
+                date_clause = " AND DATE(s.sale_date) >= date('now', '-84 days', 'localtime')"
+                date_params = []
+            query = f"""
+                SELECT strftime('%Y', s.sale_date) || '-W' || printf('%02d', CAST(strftime('%W', s.sale_date) AS INTEGER)) as label,
+                       IFNULL(SUM(si.quantity * si.price), 0) as total
+                FROM sale_items si
+                JOIN products p ON si.product_id = p.id
+                JOIN sales s ON si.sale_id = s.id
+                WHERE s.sale_status = 'Completed' {date_clause} {scope_clause}
+                GROUP BY strftime('%Y', s.sale_date), strftime('%W', s.sale_date)
+                ORDER BY CAST(strftime('%Y', s.sale_date) AS INTEGER) ASC, CAST(strftime('%W', s.sale_date) AS INTEGER) ASC
+            """
+            cur.execute(query, date_params)
+            for row in cur.fetchall():
+                labels.append(str(row[0]))
+                values.append(float(row[1]))
+        elif period == 'monthly':
+            if not date_from and not date_to:
+                date_clause = " AND DATE(s.sale_date) >= date('now', '-12 months', 'localtime')"
+                date_params = []
+            query = f"""
+                SELECT strftime('%Y-%m', s.sale_date) as label, IFNULL(SUM(si.quantity * si.price), 0) as total
+                FROM sale_items si
+                JOIN products p ON si.product_id = p.id
+                JOIN sales s ON si.sale_id = s.id
+                WHERE s.sale_status = 'Completed' {date_clause} {scope_clause}
+                GROUP BY strftime('%Y-%m', s.sale_date)
+                ORDER BY strftime('%Y-%m', s.sale_date) ASC
+            """
+            cur.execute(query, date_params)
+            for row in cur.fetchall():
+                labels.append(str(row[0]))
+                values.append(float(row[1]))
+        elif period == 'yearly':
+            query = f"""
+                SELECT strftime('%Y', s.sale_date) as label, IFNULL(SUM(si.quantity * si.price), 0) as total
+                FROM sale_items si
+                JOIN products p ON si.product_id = p.id
+                JOIN sales s ON si.sale_id = s.id
+                WHERE s.sale_status = 'Completed' {date_clause} {scope_clause}
+                GROUP BY strftime('%Y', s.sale_date)
+                ORDER BY strftime('%Y', s.sale_date) ASC
+            """
+            cur.execute(query, date_params)
+            for row in cur.fetchall():
+                labels.append(str(row[0]))
+                values.append(float(row[1]))
+
+        conn.close()
+        return jsonify({'labels': labels, 'values': values})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
     data = request.get_json()
     hold_id = data.get('id')
 
