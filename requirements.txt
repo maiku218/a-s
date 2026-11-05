@@ -5,18 +5,14 @@
 Flask==2.3.3
 Werkzeug==2.3.7
 
-# MySQL Database Support
-Flask-MySQLdb==1.0.1
-mysqlclient==2.2.0  # Required by Flask-MySQLdb (C extension - faster)
-
-# Alternative pure-Python MySQL driver (uncomment if mysqlclient fails to install)
-# PyMySQL==1.1.0
-
 # Password Hashing (included with Werkzeug, but explicit version here)
+<<<<<<< HEAD
 # passlib[bcrypt]==1.7.4  # Optional: for more advanced password handling
 
 # Production Extensions (recommended)
 # gunicorn==21.2.0  # For production server
+=======
+>>>>>>> b064940b44e0541fc0a19b21d8491f812897ea0b
 python-dotenv==1.0.0  # For environment variable management (SECRET_KEY, etc.)
 
 # Development Tools (optional)
@@ -24,15 +20,5 @@ python-dotenv==1.0.0  # For environment variable management (SECRET_KEY, etc.)
 # pytest-flask==1.2.0  # Flask testing integration
 
 # Notes:
-# - mysqlclient requires MySQL development libraries:
-#   Ubuntu/Debian: sudo apt-get install python3-dev default-libmysqlclient-dev build-essential
-#   Windows: Pre-compiled wheels available via pip (may need Visual Studio Build Tools)
-#   XAMPP/WAMP: Usually works out of the box with pip install mysqlclient
-#
-# - If mysqlclient installation fails, use PyMySQL instead:
-#   1) pip uninstall mysqlclient
-#   2) pip install PyMySQL
-#   3) In app.py add: import pymysql; pymysql.install_as_MySQLdb()
-#
 # - Installation: pip install -r requirements.txt
 # - Virtual environment recommended: python -m venv venv && venv\Scripts\activate (Windows)

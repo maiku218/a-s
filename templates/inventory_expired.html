@@ -33,7 +33,11 @@
                     <th>Barcode</th>
                     <th>Price</th>
                     <th>Expiration Date</th>
+<<<<<<< HEAD
                     <th>Status</th>
+=======
+                    <th>Alert Status</th>
+>>>>>>> b064940b44e0541fc0a19b21d8491f812897ea0b
                     <th>Actions</th>
                 </tr>
             </thead>
@@ -52,12 +56,31 @@
                 <td>₱{{ p[5] }}</td>
                 <td>{{ p[7] }}</td>
                 <td>
+<<<<<<< HEAD
                     <span class="badge badge-danger">EXPIRED</span>
                 </td>
                 <td>
                     {% if tab != 'acknowledged' and tab != 'dismissed' %}
                     <button class="btn btn-sm btn-primary" onclick="acknowledgeAlert('expired', {{ p[0] }})" style="margin-right: 4px;">Acknowledge</button>
                     <button class="btn btn-sm btn-danger" onclick="dismissAlert('expired', {{ p[0] }})">Dismiss</button>
+=======
+                    {% if tab == 'acknowledged' %}
+                    <span class="badge badge-success">Acknowledged</span>
+                    {% elif tab == 'dismissed' %}
+                    <span class="badge badge-secondary">Dismissed</span>
+                    {% else %}
+                    <span class="badge badge-danger">Active</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if tab != 'acknowledged' and tab != 'dismissed' %}
+                    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                        <button class="btn btn-sm btn-primary" onclick="acknowledgeAlert('expired', {{ p[0] }})">Acknowledge</button>
+                        <button class="btn btn-sm btn-danger" onclick="dismissAlert('expired', {{ p[0] }})">Dismiss</button>
+                    </div>
+                    {% else %}
+                    <span style="color: var(--text-muted); font-size: 13px;">—</span>
+>>>>>>> b064940b44e0541fc0a19b21d8491f812897ea0b
                     {% endif %}
                 </td>
             </tr>
@@ -66,7 +89,15 @@
         </table>
     </div>
     {% else %}
+<<<<<<< HEAD
     <p style="color: var(--text-secondary); margin-top: 20px;">No expired products found for this filter.</p>
+=======
+    <div class="empty-state">
+        <div class="empty-state-icon">📦</div>
+        <div class="empty-state-title">No expired products found</div>
+        <div class="empty-state-text">All products are within date range or no alerts match the selected filter.</div>
+    </div>
+>>>>>>> b064940b44e0541fc0a19b21d8491f812897ea0b
     {% endif %}
 </div>
 
@@ -114,12 +145,32 @@ const HELP_TOUR_STEPS = [
   {
     selector: "label[style*='margin-right: 10px']",
     title: "Status Filter",
+<<<<<<< HEAD
+=======
+    category: "core-features",
+    purpose: "Filtering expired alerts by status helps you separate new issues from those already addressed by the team.",
+    how_to_use: [
+      "Click Active to view unresolved expired-product alerts",
+      "Click Acknowledged to see items staff have already reviewed",
+      "Click Dismissed to audit alerts closed with a documented reason"
+    ],
+>>>>>>> b064940b44e0541fc0a19b21d8491f812897ea0b
     description: "Filter alerts by acknowledgment status.",
     instruction: "Choose Active, Acknowledged, or Dismissed to filter the list."
   },
   {
     selector: ".table-container table",
     title: "Expired Products",
+<<<<<<< HEAD
+=======
+    category: "core-features",
+    purpose: "This table lists products past their expiration date so they can be removed from sale and from inventory records.",
+    how_to_use: [
+      "Check product names, categories, barcodes, prices, and expiration dates",
+      "Click Acknowledge to confirm you have seen the expired item",
+      "Click Dismiss and provide a reason if the alert is a false positive"
+    ],
+>>>>>>> b064940b44e0541fc0a19b21d8491f812897ea0b
     description: "View products that have passed their expiration date.",
     instruction: "Check product names, categories, barcodes, prices, and expiration dates. Use Acknowledge or Dismiss buttons to manage alerts."
   }
@@ -127,4 +178,8 @@ const HELP_TOUR_STEPS = [
 window.HELP_TOUR_STEPS = HELP_TOUR_STEPS;
 window.HELP_TOUR_STORAGE_KEY = "helptour_expired";
 </script>
+<<<<<<< HEAD
+=======
+<script src="/static/js/help-tour.js"></script>
+>>>>>>> b064940b44e0541fc0a19b21d8491f812897ea0b
 {% endblock %}

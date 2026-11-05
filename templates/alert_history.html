@@ -25,8 +25,13 @@
             <tbody>
             {% for log in logs %}
             <tr>
+<<<<<<< HEAD
                 <td>{{ log[11].strftime('%Y-%m-%d %H:%M') if log[11] else '-' }}</td>
                 <td><strong>{{ log[4] }}</strong></td>
+=======
+                <td>{{ log[5] | format_date('%Y-%m-%d %H:%M') if log[5] else '-' }}</td>
+                <td><strong>{{ log[3] }}</strong></td>
+>>>>>>> b064940b44e0541fc0a19b21d8491f812897ea0b
                 <td>
                     {% if log[1] == 'out_of_stock' %}<span class="badge badge-danger">Out of Stock</span>
                     {% elif log[1] == 'low_stock' %}<span class="badge badge-warning">Low Stock</span>
@@ -36,6 +41,7 @@
                     {% else %}<span class="badge badge-info">{{ log[1] }}</span>{% endif %}
                 </td>
                 <td>
+<<<<<<< HEAD
                     {% if log[6] and not log[8] %}<span class="badge badge-success">Acknowledged</span>
                     {% elif log[8] and not log[6] %}<span class="badge badge-danger">Dismissed</span>
                     {% elif log[6] and log[8] %}<span class="badge badge-info">Ack then Dismissed</span>
@@ -43,6 +49,15 @@
                 </td>
                 <td>User #{{ log[6] or log[8] or '-' }}</td>
                 <td>{{ log[10] or log[5] or '-' }}</td>
+=======
+                    {% if log[6] and not log[7] %}<span class="badge badge-success">Acknowledged</span>
+                    {% elif log[7] and not log[6] %}<span class="badge badge-danger">Dismissed</span>
+                    {% elif log[6] and log[7] %}<span class="badge badge-info">Ack then Dismissed</span>
+                    {% else %}<span class="badge badge-secondary">Unknown</span>{% endif %}
+                </td>
+                <td>User #{{ log[6] or log[7] or '-' }}</td>
+                <td>{{ log[8] or log[5] or '-' }}</td>
+>>>>>>> b064940b44e0541fc0a19b21d8491f812897ea0b
             </tr>
             {% endfor %}
             </tbody>
@@ -60,6 +75,16 @@ const HELP_TOUR_STEPS = [
   {
     selector: ".table-container table",
     title: "Alert History",
+<<<<<<< HEAD
+=======
+    category: "core-features",
+    purpose: "The alert history log provides accountability and an audit trail for all inventory-related decisions made by staff.",
+    how_to_use: [
+      "Review the Date, Product, Alert Type, and Action columns to understand past decisions",
+      "Check the User column to see which staff member handled each alert",
+      "Read the Details or Reason column for context on dismissals or acknowledgments"
+    ],
+>>>>>>> b064940b44e0541fc0a19b21d8491f812897ea0b
     description: "View all alert actions taken in the system.",
     instruction: "Check date, product, alert type, action taken, user, and details/reason."
   }
@@ -67,4 +92,8 @@ const HELP_TOUR_STEPS = [
 window.HELP_TOUR_STEPS = HELP_TOUR_STEPS;
 window.HELP_TOUR_STORAGE_KEY = "helptour_alert_history";
 </script>
+<<<<<<< HEAD
+=======
+<script src="/static/js/help-tour.js"></script>
+>>>>>>> b064940b44e0541fc0a19b21d8491f812897ea0b
 {% endblock %}

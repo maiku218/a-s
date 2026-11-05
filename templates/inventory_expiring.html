@@ -47,7 +47,11 @@
                     <th>Barcode</th>
                     <th>Price</th>
                     <th>Expiration Date</th>
+<<<<<<< HEAD
                     <th>Status</th>
+=======
+                    <th>Alert Status</th>
+>>>>>>> b064940b44e0541fc0a19b21d8491f812897ea0b
                     <th>Actions</th>
                 </tr>
             </thead>
@@ -66,6 +70,7 @@
                 <td>₱{{ p[5] }}</td>
                 <td>{{ p[7] }}</td>
                 <td>
+<<<<<<< HEAD
                     {% if level == 'expired' or (p[7] and p[7] <= now()) %}
                     <span class="badge badge-danger">EXPIRED</span>
                     {% elif level == 'critical' or (p[9] is defined and p[9] <= 7) %}
@@ -74,12 +79,29 @@
                     <span class="badge badge-warning">WARNING ({{ p[9] }} days)</span>
                     {% else %}
                     <span class="badge badge-info">EXPIRING SOON</span>
+=======
+                    {% if tab == 'acknowledged' %}
+                    <span class="badge badge-success">Acknowledged</span>
+                    {% elif tab == 'dismissed' %}
+                    <span class="badge badge-secondary">Dismissed</span>
+                    {% else %}
+                    <span class="badge badge-danger">Active</span>
+>>>>>>> b064940b44e0541fc0a19b21d8491f812897ea0b
                     {% endif %}
                 </td>
                 <td>
                     {% if tab != 'acknowledged' and tab != 'dismissed' %}
+<<<<<<< HEAD
                     <button class="btn btn-sm btn-primary" onclick="acknowledgeAlert('expiring_medical', {{ p[0] }})" style="margin-right: 4px;">Acknowledge</button>
                     <button class="btn btn-sm btn-danger" onclick="dismissAlert('expiring_medical', {{ p[0] }})">Dismiss</button>
+=======
+                    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                        <button class="btn btn-sm btn-primary" onclick="acknowledgeAlert('expiring_medical', {{ p[0] }})">Acknowledge</button>
+                        <button class="btn btn-sm btn-danger" onclick="dismissAlert('expiring_medical', {{ p[0] }})">Dismiss</button>
+                    </div>
+                    {% else %}
+                    <span style="color: var(--text-muted); font-size: 13px;">—</span>
+>>>>>>> b064940b44e0541fc0a19b21d8491f812897ea0b
                     {% endif %}
                 </td>
             </tr>
@@ -88,7 +110,15 @@
         </table>
     </div>
     {% else %}
+<<<<<<< HEAD
     <p style="color: var(--text-secondary); margin-top: 20px;">No expiring products found for this filter.</p>
+=======
+    <div class="empty-state">
+        <div class="empty-state-icon">📦</div>
+        <div class="empty-state-title">No expiring products found</div>
+        <div class="empty-state-text">All products are within date range or no alerts match the selected filter.</div>
+    </div>
+>>>>>>> b064940b44e0541fc0a19b21d8491f812897ea0b
     {% endif %}
 </div>
 
@@ -136,12 +166,32 @@ const HELP_TOUR_STEPS = [
   {
     selector: "label[style*='margin-right: 10px']",
     title: "Level Filter",
+<<<<<<< HEAD
+=======
+    category: "core-features",
+    purpose: "Filtering by severity level helps you triage alerts and focus on the most urgent expirations first.",
+    how_to_use: [
+      "Choose Expired to see products already past their expiration date",
+      "Choose Critical for items expiring within 7 days",
+      "Choose Warning for items expiring within 8 to 30 days"
+    ],
+>>>>>>> b064940b44e0541fc0a19b21d8491f812897ea0b
     description: "Filter expiration alerts by severity level.",
     instruction: "Choose All, Expired, Critical, or Warning to filter the list."
   },
   {
     selector: ".table-container table",
     title: "Expiration Alerts",
+<<<<<<< HEAD
+=======
+    category: "core-features",
+    purpose: "This view lets you proactively manage products approaching expiration to avoid waste and compliance issues.",
+    how_to_use: [
+      "Review product names, categories, barcodes, prices, and days remaining",
+      "Use Acknowledge to flag items you are planning to discount or remove",
+      "Use Dismiss with a reason for alerts that do not require action"
+    ],
+>>>>>>> b064940b44e0541fc0a19b21d8491f812897ea0b
     description: "View products organized by expiration severity.",
     instruction: "Check product names, categories, barcodes, prices, expiration dates, and days remaining. Use Acknowledge or Dismiss buttons to manage alerts."
   }
@@ -149,4 +199,8 @@ const HELP_TOUR_STEPS = [
 window.HELP_TOUR_STEPS = HELP_TOUR_STEPS;
 window.HELP_TOUR_STORAGE_KEY = "helptour_expiring";
 </script>
+<<<<<<< HEAD
+=======
+<script src="/static/js/help-tour.js"></script>
+>>>>>>> b064940b44e0541fc0a19b21d8491f812897ea0b
 {% endblock %}
